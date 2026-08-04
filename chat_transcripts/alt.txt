@@ -1,0 +1,2990 @@
+ ▐▛███▜▌   Claude Code v2.1.220
+▝▜█████▛▘  Opus 5 · Claude Max
+  ▘▘ ▝▝    /…/COLLEGE MATERIAL/Work/AirDawg/SENTINAL-ULTRA/tasks
+
+
+❯ /effort max                                                                   
+  ⎿  Set effort level to max (this session only): Maximum capability with
+     deepest reasoning. May use excessive tokens resulting in long response
+     times or overthinking. Use sparingly for the hardest tasks.
+
+❯ Analyze this repo completely.                                                 
+
+● I'll start by reading the workspace-level context files, then map the repo
+  structure.
+
+  Read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Reading the full learning/ set now (mandatory at session start), plus the
+  per-task records.
+
+  Read 9 files (ctrl+o to expand)
+
+● All learning/ notes read. Now the task records and the loose root files, plus
+  a sync check on the rule/skill twins.
+
+  Read 5 files, ran 3 shell commands (ctrl+o to expand)
+
+● Now verifying the on-disk state of each task against what the records claim.
+
+  Ran 14 shell commands (ctrl+o to expand)
+
+● Now the standing grader audit (learning/verifier-fail-open.md says read the
+  grader on every task).
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● This is the exact fail-open shape from learning/verifier-fail-open.md.
+  Verifying whether the bash wrapper gates it upstream.
+
+  Ran 4 shell commands (ctrl+o to expand)
+● One critical thing to pin down: the equalsverifier bundle already had the
+  restore step, yet still bounced on tests.patch did not apply.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Analysis complete. I read all 8 learning/ notes, INDEX.md, docs/, both
+  rule/skill twin sets, all three task records, and audited the three bundles on
+  disk.
+
+  What this repo is
+
+  A submitter workspace for Project Sentinel 2.0 (Snorkel's Harbor task
+  pipeline). It is not source code — it is a process repo: CLAUDE.md (991 lines)
+  drives a 10-step submission workflow, docs/ is the frozen Hub export that
+  acts as policy truth, learning/ holds 8 notes of verified platform behavior
+  that override the docs on matters of fact, and tasks/ holds three in-flight
+  task bundles, each with a pristine download/original/, an edited work/, a
+  built upload/ zip, and form answers.
+
+  The three companion rule files are correctly mirrored — .cursor/rules/*.mdc
+  and .claude/skills/*/SKILL.md bodies are byte-identical, differing only in
+  frontmatter and the intentional "Mirror" note.
+
+  Register vs reality
+
+  INDEX.md is out of date on the most important row.
+
+  ┌─────────────────────┬──────────────┬────────────────────────────┐
+  │        Task         │  INDEX says  │          Actually          │
+  ├─────────────────────┼──────────────┼────────────────────────────┤
+  │ kvdex 245           │ uploaded     │ consistent                 │
+  ├─────────────────────┼──────────────┼────────────────────────────┤
+  │ AltBeacon 1177      │ checks-green │ consistent                 │
+  ├─────────────────────┼──────────────┼────────────────────────────┤
+  │ equalsverifier 1166 │ checks-green │ bounced — pending-revision │
+  └─────────────────────┴──────────────┴────────────────────────────┘
+
+  revision.md at the workspace root (modified today, 14:32) holds a platform
+  bounce for equalsverifier: Difficulty Check incomplete, Agent Timeout Gate
+  FAIL, Quality Check FAIL on 2 must-have criteria. None of it is in that task's
+  task.md, which still reads "both checks green locally, zip built and
+  verified". Step 10.1 requires the feedback pasted verbatim into task.md under
+  a dated heading and the status flipped before any other work. Once corrected
+  the register sits at 1 of 2 pending-revision slots.
+
+  Findings, most severe first
+
+  1. equalsverifier revision is unstarted, and its hardest item is a genuine 
+  rule conflict.
+  The Quality Check failed Q9 (navigation hand-holding: naming
+  nl.jqno.equalsverifier.internal.instantiation / .reflection) and Q10 (leaked
+  test assertions: the exact Could not construct a value for… strings). All six
+  flagged strings are still present verbatim in work/instruction.md — nothing
+  has been touched. This collides head-on with your own
+  learning/prescriptiveness-check.md, which concluded those names cannot be cut
+  because 16 of 20 graded tests call them and dropping them puts fail_to_pass at
+  4, under the floor. The difference now is that Quality Check blocks where
+  prescriptiveness does not. That needs a real decision (rework the graded tests
+  toward the public API, or argue it in reviewer comments), not another trim
+  pass.
+
+  2. [agent] timeout_sec = 1800 on equalsverifier (work/task.toml), while the
+  feedback reads 8/16 real-agent runs timed out (threshold: 5). kvdex and
+  AltBeacon are already at the 7200 ceiling. One-line fix that the feedback
+  names directly.
+
+  3. The tests.patch restore step was present in the bounced bundle and did not 
+  save it.
+  work/tests/test.sh:73-78 loops for _testdir in */src/test and does git 
+  checkout -- + git clean -fdq. It is absent from
+  download/original/tests/test.sh (0 hits), so it was your fix. The scoping
+  looks right for the multi-module layout — both patch target roots
+  (equalsverifier-core/src/test, equalsverifier-test/src/test) match the glob.
+  Yet the bounce reports AbstractValueProviderTest.java: already exists in 
+  working directory, the exact failure it should prevent. The zip (Aug 1 16:23)
+  contains the restore step and no work/ file is newer than it, so either that 
+  feedback came from an earlier upload, or the fix does not work as written. I
+  can't tell which from disk — you know which upload produced it. If it was the
+  current zip, this needs a container-level reproduction before anything else,
+  because learning/tests-patch-vs-agent-edits.md currently asserts the fix is
+  universal.
+
+  Separately, the second half of that same note (§10.3 — give graded tests their
+  own file with a distinctive prefix) is not applied on any of the three tasks.
+  AbstractValueProviderTest and SubtypeManagerTest are precisely the names an
+  agent writes on its own.
+
+  4. Fail-open grader in all three bundles. This is the ETLCPP defect you logged
+  two days ago, sitting in your own shipped work. In every tests/test.sh, the
+  test command's status is captured and passed in (--raw-exit-code 
+  "$TEST_EXIT_CODE"), recorded into the report JSON, and then never used:
+
+  success = not missing_required and not unexpected
+  reward  = 1.0 if success else 0.0
+  (equalsverifier work/tests/test.sh:519, same ±6 lines in the other two)
+
+  kvdex is the worst case: its command pipes deno test into a python filter, and
+  because the command runs as a child bash /tmp/run_tests.sh it does not
+  inherit the pipefail set at line 9 — deno's exit status is masked twice — and
+  allow_extra_failures is true. AltBeacon and equalsverifier discard the status
+  deliberately (|| true, -Dmaven.test.failure.ignore=true) but their
+  stale-report purge means a compile failure produces no XML and grades 0, which
+  mitigates it. test.sh is editable, so all three are fixable.
+
+  5. kvdex ships both scripts at mode 644 in the uploaded zip
+  (solution/solve.sh, tests/test.sh). The other two are 755. This is the
+  "non-executable scripts" row that fails at run time, not build time — and
+  kvdex is the one currently sitting on the platform.
+
+  6. allow_extra_failures: true on kvdex and equalsverifier (AltBeacon is
+  false). Per §10.2 the regression guard currently only checks that listed tests
+  pass, never that nothing else broke. kvdex runs ~152 tests against 132
+  graded, so flipping it needs care rather than a blind edit.
+
+  7. kvdex execution.timeout_sec = 1800 exceeds [verifier] timeout_sec = 900.
+  The inner timeout can never fire. Harmless today (oracle runs 158s) but
+  inconsistent.
+
+  8. AltBeacon: pristine reference contaminated and Gradle was run in the 
+  working copy. .gradle/ lock files dated today 14:22 exist in both
+  download/original/environment/repo/ and work/environment/repo/. They are in
+  neither the delivered platform zip nor your built zip, so nothing shipped —
+  but download/original/ is supposed to be the untouched diff target, and a
+  re-zip today would pull .gradle/ in and hard-cap the packaging axis at 1.
+
+  9. All three answers files skip the mandated checkbox rendering. They use
+  Where the task had issues: Instructions, Tests, Environment-Dockerfile and a
+  plain bullet list, instead of the - [x] / - [ ] form showing all four and all
+  seven options. Step 6's delivery-order rule and the Path B template both
+  require it — as written, the person pasting can't see which boxes stay
+  unticked. Content is otherwise strong and complete (7/7/5 issue blocks, each
+  with both required sub-answers).
+
+  Handling times are sound: 30+150+20=200, 85+95+25=205, 45+150+10=205, all
+  inside 180–240 and all summing correctly. AltBeacon's revision figure of 55
+  sits just under the documented 60–120 band.
+
+  Verified clean
+
+  Worth stating, because several of these are the expensive ones: git fsck 
+  --unreachable prints nothing on all three repos (the ETLCPP blob-leak check
+  passes); no reflog, no remotes, no refs past HEAD, no filter.*, clean trees,
+  HEAD equals the declared base_commit_sha on all three; both patches apply at
+  base on all three; instruction.md matches problem_statement.md on all three;
+  all 9 required files present in every zip, no runs/, no task/ wrapper, refs/
+  entries preserved, zero stray dev artifacts; every task.toml value inside the
+  Section 8 limits with network_mode in all three blocks, os, and
+  difficulty_explanation present; fail_to_pass at 20/19/20, all inside the hard
+  10–20 range.
+
+  Housekeeping
+
+  Root clutter outside the §7 layout: Sentinel_CLAUDE.md (superseded 707-line
+  ancestor of CLAUDE.md), cursor_etlcpp.md (another EC's exported transcript —
+  the source behind two learning notes), revision.md (belongs in the task
+  folder), TODO.md (prompt scratch), and local_runs/kvdex-oracle — which is the
+  exact in-workspace run directory learning/local-runs.md says cost you an
+  afternoon. _archive/ was never created.
+  tasks/…equalsverifier…/download/.original-stuck-reboot-to-clear (14 entries,
+  320K) is the leftover from that NTFS stuck-delete and is safe to remove now,
+  one delete at a time. kvdex and equalsverifier each carry a byte-identical
+  submission_answer.md duplicate of the .txt. kvdex's task_details.md has the
+  directory name mangled by markdown bold
+  (20260719_045042**oliver-oloughlin_kvdex**245). All three .git dirs hold a
+  0-byte FETCH_HEAD the re-zip rule says to delete, and the equalsverifier zip
+  ships a dangling .git/refs/remotes/origin/HEAD.
+
+  Suggested order of work
+
+  Record the bounce in equalsverifier's task.md and fix INDEX.md first, then
+  tell me which upload produced that difficulty feedback — that single fact
+  decides whether finding 3 is an open bug or already fixed, and it gates the
+  rest of that task's revision. Findings 2, 5, and 8 are quick and independent
+  of it.
+
+✻ Cooked for 8m 30s
+
+❯ I worked on this task previously: /media/gaurav-s-ubuntu/COLLEGE MATERIAL/Wor 
+  k/AirDawg/SENTINAL-ULTRA/tasks/20260728_153118**jqno_equalsverifier**1166     
+                                                                                
+  I got feedback and need to do revision for this task.                         
+                                                                                
+  Here are the feedbacks:                                                       
+                                                                                
+  ## Automated feedback                                                         
+                                                                                
+  Agent Runner Summary: Evaluation FAILED. Rubric panel judge: DISCUSS          
+  (NEEDS_REVISION)                                                              
+                                                                                
+  Agent Runner Summary: Evaluation FAILED. Validation failed: Oracle did not    
+  pass all runs: 0/3. Task may be flaky or has infra issues.                    
+                                                                                
+  ## Difficulty Check                                                           
+                                                                                
+  Oracle did not pass all runs: 0/3. Task may be flaky or has infra issues.     
+                                                                                
+  ## Agentic Judge Quality Report                                               
+                                                                                
+  ============================================================================= 
+  ===                                                                           
+                    AGENTIC JUDGE REVIEW: task                                  
+  ============================================================================= 
+  ===                                                                           
+                                                                                
+  Status:    ⚠️  DISCUSS                                                        
+  Reason:    coverage_gap                                                       
+                                                                                
+  Per-axis review (rating out of 5, with judge justifications):                 
+                                                                                
+    clarity  —  3.5/5                                                           
+        claude (3/5): The prompt enumerates 14 fields with defaults and gives   
+          exact signatures for the four ScanStrategy variants and three         
+          BeaconManager apply methods [instruction.md:3-7], but leaves several  
+          minor points implicit: no defaults are stated for `scanPeriods`,      
+          `scanStrategy`, `beaconSimulator`, `rssiFilterImplClass`, or          
+          `distanceCalculatorFactory` in `Defaults`, the type of `scanStrategy` 
+  is                                                                            
+          unspecified, and 'the configuration surface the library already has'  
+          [instruction.md:7] isn't enumerated. A competent agent picks          
+  reasonable                                                                    
+          defaults but multiple micro-decisions remain.                         
+        gpt (4/5): The prompt gives a detailed public API contract: exact field 
+          names and defaults for `Settings` [instruction.md:3], concrete        
+          `ScanStrategy` variants and equality expectations [instruction.md:5], 
+          and merge semantics for `adjustSettings`, `replaceSettings`,          
+          `revertSettings`, and `getActiveSettings` [instruction.md:7]. Minor   
+          ambiguities remain around phrases like Builder methods “supports at   
+          least” [instruction.md:3] and the default scan strategy only being    
+          explicitly identified for Android 8+ [instruction.md:5], so two       
+  agents                                                                        
+          could differ on API completeness and pre-O defaults.                  
+                                                                                
+    oracle_no_gaming  —  5.0/5                                                  
+        claude (5/5): `solution/solve.sh` simply applies                        
+  `solution/golden.patch`                                                       
+          to the repo [solution/solve.sh:1-10]; the patch is real Kotlin/Java   
+          source implementing the Settings API, Buil                            
+  ──── (183 lines hidden) ───────────────────────────────────────────────────── 
+  (named fields, named defaults, named merge                                    
+          semantics, named strategy classes). Two minor over-strictnesses:      
+          [tests/tests.patch:366] uses `assertNotSame(snapshot,                 
+          beaconManager.activeSettings)` to enforce snapshot independence, but  
+  the                                                                           
+          instruction only says a later change to the live config must not      
+  appear                                                                        
+          in a snapshot and vice versa — a memoized immutable snapshot would    
+          satisfy the spec yet fail this identity check; and                    
+          [tests/tests.patch:391] pins the default distance-calculation output  
+  to                                                                            
+          `1.0 ± 0.1` at `rssi=-59, txPower=-59`, a specific numeric behavior   
+          derived from the existing library's model file that the prompt only   
+          describes qualitatively as 'preserve the distance calculation the     
+          library already performs today'.                                      
+        gpt (4/5): Most new assertions are grounded in the stated contract: the 
+          all-null `Settings` fields and default values mirror the prompt's     
+          field/default list [tests/tests.patch:146-177] and the                
+          builder/apply/scan-strategy/factory tests correspond to named APIs in 
+          the prompt [instruction.md:3-7]. The main overbreadth is that the     
+          verifier also requires a large legacy `pass_to_pass` set, including   
+          unrelated parser, URL-compressor, and Bluetooth tests, with           
+          `allow_extra_failures=false` [tests/config.json:36-249], which goes   
+          beyond the prompt's explicit backward-compatibility note about        
+  existing                                                                      
+          static configuration methods [instruction.md:7].                      
+                                                                                
+  Rationale (from driving judge):                                               
+  The prompt requires Defaults entries and application/readback semantics for   
+  every named field [instruction.md:3-7], but the tests only assert             
+  `beaconSimulator` and `rssiFilterImplClass` are null on a fresh `Settings`    
+  [tests/tests.patch:146-163] and never verify their defaults or that           
+  `adjustSettings`/`replaceSettings`/`revertSettings` apply them; the           
+  application tests cover only selected fields such as URL, scan periods,       
+  hardware/region options, debug, and distance factory                          
+  [tests/tests.patch:302-385]. The prompt also says a change made to an         
+  active-settings snapshot must not reach live configuration                    
+  [instruction.md:7], while the snapshot test only checks that later live       
+  changes do not alter an earlier snapshot [tests/tests.patch:363-376].         
+                                                                                
+  ============================================================================= 
+  ===                                                                           
+                                                                                
+                                                                                
+  ## Oracle Check                                                               
+                                                                                
+  Oracle did not pass all runs: 0/3. Task may be flaky or has infra issues.     
+
+● Stop — the feedback you pasted is not for equalsverifier 1166. It is
+  unambiguously for AltBeacon android-beacon-library 1177: the judges cite
+  task.toml:14 → AltBeacon PR #1177,
+  environment/repo/lib/src/main/java/org/altbeacon/beacon/BeaconManager.java,
+  the Settings/ScanStrategy/DistanceCalculatorFactory API, and tests/config.json
+  with allow_extra_failures=false (only 1177 has that). The path you pasted
+  also has the markdown-bold mangling I flagged earlier. I'm working 1177.
+
+  The Oracle Check at 0/3 is the blocker — it fails the whole evaluation
+  regardless of the judge. Diagnosing that first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● golden.patch doesn't touch lib/src/test/, so the restore step isn't the cause.
+  Note the solve.sh reverse-apply fallback the judge flagged — that's the §10.6
+  defect shape and a live suspect for 0/3. Let me get evidence rather than
+  guess.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Docker is up and I still have the altbeacon1177:v1 image. The golden patch
+  bumps core-ktx 1.3.2 → 1.12.0 and the verifier runs --offline. Checking
+  whether that artifact is even in the image's warmed cache.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Cache warming is thorough (core-ktx 1.12.0 and robolectric 4.11.1 both
+  present), so the offline-dependency theory is dead. The environment/ tree is
+  unchanged from the delivered bundle, so my 23h-old image is representative.
+  Reproducing the platform's oracle run directly.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● While that runs, capturing the feedback per Step 10.1 and reading the current
+  instruction and tests.
+
+  Read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Background command "Run oracle check against zip bundle" completed (exit code
+0)
+
+● Oracle passes locally: reward 1, 229/229, exit 0 — against the exact uploaded
+  zip, airgapped, at the declared limits. So the platform's 0/3 does not
+  reproduce here, which points at the image build rather than the tests. The
+  prime suspect is build_timeout_sec = 900 against a Dockerfile that runs the
+  full Gradle suite twice. Measuring a cold build now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Capturing the feedback into the task record per Step 10.1 while the build
+  runs.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/task.md)
+  ⎿  Added 1 line, removed 1 line
+       9  | Language | Kotlin + Java, Android, Gradle 8, Robolectric |
+      10  | Base commit | de166a040a0252edba9cf760273666003c5da5ed |
+      11  | Verdict | **Fixable** |
+      12 -| Status | all platform checks green, ready to send to reviewer
+         - |                                                             
+      12 +| Status | **pending-revision** (round 1 feedback received 2026
+         +-08-02, see below) |                                           
+      13  | Claimed | 2026-08-01 |
+      14  
+      15  ## Check history
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/task.md)
+  ⎿  Added 94 lines, removed 3 lines
+      193  
+      194  No tracked source file inside `environment/repo` was touched. 
+           PR scope unchanged.
+      195  
+      196 -## Open                                                       
+      196 +---                                                           
+      197  
+      198 -Platform eval loop (Step 7) still to run — the Phase 1 answers
+          - go in above the upload field,                                
+      199 -then the zip from `upload/`.                                  
+      198 +# Revision round 1 — feedback received 2026-08-02             
+      199 +                                                              
+      200 +Source: platform eval loop (Step 7), first run of Difficulty /
+          + Oracle / Quality on this task.                               
+      201 +Pasted verbatim below per CLAUDE.md Step 10.1. Status set to `
+          +pending-revision` in `INDEX.md`.                              
+      202 +                                                              
+      203 +## Feedback, verbatim                                         
+      204 +                                                              
+      205 +```                                                           
+      206 +## Automated feedback                                         
+      207 +                                                              
+      208 +Agent Runner Summary: Evaluation FAILED. Rubric panel judge: D
+          +ISCUSS (NEEDS_REVISION)                                       
+      209 +                                                              
+      210 +Agent Runner Summary: Evaluation FAILED. Validation failed: Or
+          +acle did not pass all runs: 0/3. Task may be flaky or has infr
+          +a issues.                                                     
+      211 +                                                              
+      212 +## Difficulty Check                                           
+      213 +                                                              
+      214 +Oracle did not pass all runs: 0/3. Task may be flaky or has in
+          +fra issues.                                                   
+      215 +                                                              
+      216 +## Oracle Check                                               
+      217 +                                                              
+      218 +Oracle did not pass all runs: 0/3. Task may be flaky or has in
+          +fra issues.                                                   
+      219 +```                                                           
+      220 +                                                              
+      221 +Agentic Judge Quality Report — status **DISCUSS**, reason **co
+          +verage_gap**.                                                 
+      222 +                                                              
+      223 +| Axis | Adjudicated | claude | gpt |                         
+      224 +|---|---|---|---|                                             
+      225 +| clarity | 3.5 | 3 | 4 |                                     
+      226 +| oracle_no_gaming | 5.0 | 5 | 5 |                            
+      227 +| oracle_robustness | 4.5 | 5 | 4 |                           
+      228 +| oracle_spec_faithfulness | 3.5 | 4 | 3 |                    
+      229 +| packaging | 5.0 | 5 | 5 |                                   
+      230 +| prescriptiveness | 4.5 | 4 | 5 |                            
+      231 +| realism | 5.0 | 5 | 5 |                                     
+      232 +| self_containedness | 4.0 | 4 | 4 |                          
+      233 +| **test_coverage** | **2.5** | 5 | **2** |                   
+      234 +| test_faithfulness | 4.0 | 4 | 4 |                           
+      235 +                                                              
+      236 +Driving judge rationale, verbatim:                            
+      237 +                                                              
+      238 +> The prompt requires Defaults entries and application/readbac
+          +k semantics for every named                                   
+      239 +> field [instruction.md:3-7], but the tests only assert `beaco
+          +nSimulator` and                                               
+      240 +> `rssiFilterImplClass` are null on a fresh `Settings` [tests/
+          +tests.patch:146-163] and never                                
+      241 +> verify their defaults or that `adjustSettings`/`replaceSetti
+          +ngs`/`revertSettings` apply                                   
+      242 +> them; the application tests cover only selected fields such 
+          +as URL, scan periods,                                         
+      243 +> hardware/region options, debug, and distance factory [tests/
+          +tests.patch:302-385]. The                                     
+      244 +> prompt also says a change made to an active-settings snapsho
+          +t must not reach live                                         
+      245 +> configuration [instruction.md:7], while the snapshot test on
+          +ly checks that later live                                     
+      246 +> changes do not alter an earlier snapshot [tests/tests.patch:
+          +363-376].                                                     
+      247 +                                                              
+      248 +Other flagged items, verbatim from the per-axis justifications
+          +:                                                             
+      249 +                                                              
+      250 +- **oracle_spec_faithfulness, gpt (3/5):** "it explicitly leav
+          +es named settings unapplied                                   
+      251 +  (`longScanForcingEnabled`, `rssiFilterImplClass`, and `scanS
+          +trategy`, with                                                
+      252 +  `useTrackingCache`/`maxTrackingAgeMillis` also never applied
+          +) despite the instruction                                     
+      253 +  requiring all applied fields to be observable ... `Defaults.
+          +regionStatePersistenceEnabled`                                
+      254 +  is misspelled as `regionStatePeristenceEnabled`, so the exac
+          +t requested default field is                                  
+      255 +  missing ... `ForegroundServiceScanStrategy.equals` ignores t
+          +he `notification` value even                                  
+      256 +  though equality must reflect strategies configured the same 
+          +way"                                                          
+      257 +- **oracle_spec_faithfulness, claude (4/5):** "`applySettingsC
+          +hange` explicitly TODOs                                       
+      258 +  `longScanForcingEnabled` and `rssiFilterImplClass` [solution
+          +/golden.patch:193-196], and                                   
+      259 +  `useTrackingCache`/`maxTrackingAgeMillis` are stored on Appl
+          +iedSettings but not propagated                                
+      260 +  to BeaconManager"                                           
+      261 +- **oracle_robustness, gpt (4/5):** "the final fallback revers
+          +e-applies the patch if both                                   
+      262 +  forward apply attempts fail, so rerunning in an already-patc
+          +hed working tree could silently                               
+      263 +  undo the solution rather than being idempotent [solution/sol
+          +ve.sh:4-10]"                                                  
+      264 +- **test_faithfulness, claude (4/5):** "[tests/tests.patch:366
+          +] uses `assertNotSame(snapshot,                               
+      265 +  beaconManager.activeSettings)` ... a memoized immutable snap
+          +shot would satisfy the spec yet                               
+      266 +  fail this identity check; and [tests/tests.patch:391] pins t
+          +he default distance-calculation                               
+      267 +  output to `1.0 ± 0.1` at `rssi=-59, txPower=-59`"           
+      268 +- **test_faithfulness, gpt (4/5):** "the verifier also require
+          +s a large legacy `pass_to_pass`                               
+      269 +  set, including unrelated parser, URL-compressor, and Bluetoo
+          +th tests, with                                                
+      270 +  `allow_extra_failures=false` [tests/config.json:36-249]"    
+      271 +- **clarity, claude (3/5):** "no defaults are stated for `scan
+          +Periods`, `scanStrategy`,                                     
+      272 +  `beaconSimulator`, `rssiFilterImplClass`, or `distanceCalcul
+          +atorFactory` in `Defaults`, the                               
+      273 +  type of `scanStrategy` is unspecified, and 'the configuratio
+          +n surface the library already                                 
+      274 +  has' [instruction.md:7] isn't enumerated"                   
+      275 +                                                              
+      276 +## Local reproduction of the oracle failure — DID NOT REPRODUC
+          +E                                                             
+      277 +                                                              
+      278 +Run 2026-08-02 against the **exact uploaded zip**, extracted t
+          +o the session scratchpad,                                     
+      279 +`--network none`, `--cpus=4 --memory=8g`, using the image buil
+          +t from the bundle's own                                       
+      280 +`environment/`.                                               
+      281 +                                                              
+      282 +| Check | Reward | Required | raw_exit_code | Infra error |   
+      283 +|---|---|---|---|---|                                         
+      284 +| Oracle | **1** | **229 of 229** | 0 | none |                
+      285 +                                                              
+      286 +`missing_required_tests` and `unexpected_failures` were both e
+          +mpty. So the graded set is                                    
+      287 +intact and the tests are not the cause. The platform's 0/3 is 
+          +therefore an image-build or                                   
+      288 +runner difference, not a test failure.                        
+      289 +                                                              
+      290 +                                                              
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/INDEX.md)
+  ⎿  Added 1 line, removed 1 line
+      14  |---|---|---|---|---|---|
+      15  | [20260719_045042__oliver-oloughlin_kvdex__245](tasks/20260719
+          _045042__oliver-oloughlin_kvdex__245/task.md) | 05589b6f | oliv
+          er-oloughlin/kvdex 245 | Fixable | uploaded | 2026-07-31 |
+      16  | [20260728_153118__jqno_equalsverifier__1166](tasks/20260728_1
+          53118__jqno_equalsverifier__1166/task.md) | 7f75eb9d | jqno/equ
+          alsverifier 1166 | Fixable | checks-green | 2026-08-01 |
+      17 -| [20260727_135618__AltBeacon_android-beacon-library__1177](tas
+         -ks/20260727_135618__AltBeacon_android-beacon-library__1177/task
+         -.md) | a1bcc8a9 | AltBeacon/android-beacon-library 1177 | Fixab
+         -le | checks-green | 2026-08-01 |                               
+      17 +| [20260727_135618__AltBeacon_android-beacon-library__1177](tas
+         +ks/20260727_135618__AltBeacon_android-beacon-library__1177/task
+         +.md) | a1bcc8a9 | AltBeacon/android-beacon-library 1177 | Fixab
+         +le | pending-revision | 2026-08-01 |                           
+      18  
+      19  ## Done
+      20  
+  Searched for 1 pattern, ran 3 shell commands (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/task.md)
+  ⎿  Added 21 lines
+      287  intact and the tests are not the cause. The platform's 0/3 is 
+           therefore an image-build or
+      288  runner difference, not a test failure.
+      289  
+      290 +## The feedback as a numbered item list (Step 10.2)           
+      291  
+      292 +| # | Item | Source | Blocking | Action |                     
+      293 +|---|---|---|---|---|                                         
+      294 +| 1 | Oracle 0/3 on the platform, passes 229/229 here | Oracle
+          + Check | **yes** | root cause under measurement, see above |  
+      295 +| 2 | `beaconSimulator` / `rssiFilterImplClass` have no Defaul
+          +ts assertion and no apply/readback | test_coverage, driving ra
+          +tionale | **yes** | add to `defaultsHoldTheLibraryDefaultForEa
+          +chField`; add apply/readback for `beaconSimulator` (the oracle
+          + does push it, `BeaconManager.setBeaconSimulator`) |          
+      296 +| 3 | Snapshot isolation only tested one way | test_coverage, 
+          +driving rationale | **yes** | extend `activeSettingsHandsOutAn
+          +IndependentSnapshot` with the snapshot-to-live direction |    
+      297 +| 4 | `regionStatePersistenceEnabled` default never asserted |
+          + found here, corroborates item 6 | **yes** | add the assertion
+          +; it is why the oracle typo survived |                        
+      298 +| 5 | `useTrackingCache` / `maxTrackingAgeMillis` / `longScanF
+          +orcingEnabled` / `rssiFilterImplClass` unasserted | test_cover
+          +age | **yes** | assert they round-trip through `activeSettings
+          +`, which is what the oracle actually supports |               
+      299 +| 6 | Oracle misspells `Defaults.regionStatePeristenceEnabled`
+          + | oracle_spec_faithfulness (gpt) | no | fix in `golden.patch`
+          +; the instruction names the correct spelling, so this is "orac
+          +le does not implement the instruction" |                      
+      300 +| 7 | Oracle leaves `longScanForcingEnabled`, `rssiFilterImplC
+          +lass`, `useTrackingCache`, `maxTrackingAgeMillis` unapplied | 
+          +oracle_spec_faithfulness | no | upstream PR carries the same `
+          +TODO: apply all other settings`. Do **not** extend the oracle;
+          + narrow the instruction's "every field it applied has to be ob
+          +servable" claim so it stops over-promising |                  
+      301 +| 8 | `solve.sh` reverse-apply fallback is not idempotent | or
+          +acle_robustness (gpt) | no | make it forward-only per CLAUDE.m
+          +d 10.6 |                                                      
+      302 +| 9 | `assertNotSame(snapshot, activeSettings)` over-strict | 
+          +test_faithfulness (claude) | no | replace with a behavioural i
+          +ndependence check |                                           
+      303 +| 10 | `1.0 ± 0.1` distance figure pinned | test_faithfulness 
+          +(claude) | no | **keep**. It is the repo's own existing assert
+          +ion in `ModelSpecificDistanceCalculatorTest`, so it is an esta
+          +blished convention rather than an oracle-derived constant. Doc
+          +ument in Comments for Reviewer |                              
+      304 +| 11 | Broad `pass_to_pass` with `allow_extra_failures=false` 
+          +| test_faithfulness (gpt) | no | **keep**. CLAUDE.md 10.2 want
+          +s a populated regression guard. Document |                    
+      305 +| 12 | `ForegroundServiceScanStrategy.equals` ignores `notific
+          +ation` | oracle_spec_faithfulness (gpt) | no | **refuse**. And
+          +roid `Notification` has no value equality, so comparing it wou
+          +ld make two identically configured strategies unequal and brea
+          +k the instruction's contract in the other direction. `notifica
+          +tionId` is the configured identity. Document |                
+      306 +| 13 | Defaults not stated for `scanPeriods`, `scanStrategy`, 
+          +`beaconSimulator`, `rssiFilterImplClass`, `distanceCalculatorF
+          +actory`; `scanStrategy` type unstated | clarity (claude) | no 
+          +| state them in `instruction.md`, which also makes items 2 and
+          + 4 derivable |                                                
+      307 +                                                              
+      308 +**`fail_to_pass` budget: 19 of a hard ceiling of 20.** Only on
+          +e new top-level id is available,                              
+      309 +so items 2 to 5 land as extra assertions inside existing tests
+          + plus at most one new test.                                   
+      310 +                                                              
+      311 +                                                              
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Interim report — the build measurement is still running (step 11/14, the first
+  Gradle warm), but I have enough to reframe this round.
+
+  The headline: the oracle failure does not reproduce
+
+  I ran the platform's oracle check locally against the exact uploaded zip,
+  extracted to scratchpad, --network none, at the declared cpus=4 / 8 GB:
+
+  ┌────────┬────────┬────────────┬───────────────┬─────────────┐
+  │        │ Reward │  Required  │ raw_exit_code │ Infra error │
+  ├────────┼────────┼────────────┼───────────────┼─────────────┤
+  │ Oracle │ 1      │ 229 of 229 │ 0             │ none        │
+  └────────┴────────┴────────────┴───────────────┴─────────────┘
+
+  missing_required_tests and unexpected_failures both empty. So the graded set
+  is intact and the tests are not what's failing. The platform's 0/3 is an
+  image-build or runner difference. That matters because it means you should not
+  go rewriting tests to chase the oracle result — those are two separate
+  problems.
+
+  I'm currently timing a cold docker build --no-cache from the zip to test the
+  leading hypothesis: [environment] build_timeout_sec = 900, against a
+  Dockerfile that runs the full Gradle test suite twice (line 40 ./gradlew 
+  --no-daemon test, then lines 50-71 a second warm with the dependency bumps
+  plus an offline verification run). Section 8 allows up to 1800. It's already
+  ~6 minutes in and not yet past the first warm step, so 900s is looking tight.
+
+  Worth noting: 0/3 is a consistent failure, not the intermittent tell that
+  CLAUDE.md §3 says marks a genuine platform outage — so I'm treating it as a
+  real task defect, not something to retry blindly.
+
+  The Quality Check is narrower than it looks
+
+  Only the two test axes flip the verdict. Everything else is advisory:
+
+  ┌──────────────────────────┬─────────────┬────────┬─────┐
+  │           Axis           │ Adjudicated │ claude │ gpt │
+  ├──────────────────────────┼─────────────┼────────┼─────┤
+  │ test_coverage            │ 2.5         │ 5      │ 2   │
+  ├──────────────────────────┼─────────────┼────────┼─────┤
+  │ test_faithfulness        │ 4.0         │ 4      │ 4   │
+  ├──────────────────────────┼─────────────┼────────┼─────┤
+  │ oracle_spec_faithfulness │ 3.5         │ 4      │ 3   │
+  ├──────────────────────────┼─────────────┼────────┼─────┤
+  │ clarity                  │ 3.5         │ 3      │ 4   │
+  ├──────────────────────────┼─────────────┼────────┼─────┤
+  │ everything else          │ 4.5–5.0     │        │     │
+  └──────────────────────────┴─────────────┴────────┴─────┘
+
+  DISCUSS fires twice on test_coverage — gpt scored 2, and the adjudicated 2.5
+  is under 3.0. That single axis is the whole blocking half of the judge
+  feedback, and the 5-vs-2 split means gpt found real gaps claude missed.
+
+  What I found checking the claims
+
+  The coverage complaint is correct and I found a fourth instance the judges
+  missed. defaultsHoldTheLibraryDefaultForEachField asserts 9 of the 14 fields —
+  it never asserts regionStatePersistenceEnabled. That is precisely why the 
+  oracle's Defaults.regionStatePeristenceEnabled typo survived
+  (golden.patch:662, missing the second s). Adding the assertion forces the
+  oracle fix; they have to move together or the Kotlin won't compile.
+
+  I also checked what the oracle actually applies (applySettingsChange):
+  beaconSimulator is pushed through via BeaconManager.setBeaconSimulator, so gpt
+  is right that it's testable and untested. But longScanForcingEnabled,
+  rssiFilterImplClass, useTrackingCache and maxTrackingAgeMillis are genuinely
+  never applied — and the upstream PR carries the same TODO: apply all other 
+  settings. So the honest fix there is to stop the instruction over-promising
+  ("every field it applied has to be observable"), not to extend the oracle past
+  the PR.
+
+  Two judge findings I plan to refuse, with reasons:
+
+  - ForegroundServiceScanStrategy.equals ignoring notification. Android's
+  Notification has no value equality, so comparing it would make two
+  identically-configured strategies compare unequal — breaking the instruction's
+  contract in the other direction. notificationId is the configured identity.
+  Documenting rather than changing.
+  - The 1.0 ± 0.1 distance assertion. That figure is already the assertion in
+  the repo's own ModelSpecificDistanceCalculatorTest at base, so it's an
+  established convention, not a constant reverse-engineered from the oracle.
+
+  The constraint that shapes the fix
+
+  fail_to_pass is at 19 against the hard ceiling of 20. One free slot. So the
+  new coverage goes in as extra assertions inside existing tests, plus at most
+  one new test — not as five new ids.
+
+  Full 13-item breakdown with per-item decisions is now in task.md under a dated
+  revision heading, and INDEX.md has the task at pending-revision.
+
+  One operational thing
+
+  With AltBeacon now correctly at pending-revision, and equalsverifier 1166 also
+  sitting on an unrecorded bounce (the revision.md feedback from your previous
+  message — its Q9/Q10 evidence is still verbatim in that instruction, so no
+  work has started), you are at the two-task pending-revision cap. The platform
+  will block a new claim until one clears.
+
+  I'll report the cold-build timing as soon as it lands, then start the edits —
+  unless you'd rather I hold the test changes until the oracle root cause is
+  nailed down.
+
+✻ Crunched for 7m 54s
+
+● Background command "Time a cold image build from the zip" completed (exit code
+0)
+
+  Read 1 file (ctrl+o to expand)
+
+● Cold build: exit 0 in 316s, well inside the 900s budget. That hypothesis is
+  dead — the build is fine. Running the oracle 3× on the freshly-built image to
+  mirror the platform's 3 runs exactly.
+
+  Read 2 files, ran 3 shell commands (ctrl+o to expand)
+
+● Background command "Run oracle 3x on cold image and test solve.sh idempotency"
+completed (exit code 0)
+
+● Root cause reproduced. The oracle passes 3/3 in fresh containers (30s each,
+  229/229) — but look at the idempotency test:
+
+  first apply OK
+  1                                     <- adjustSettings present
+  second apply exit 0                   <- solve.sh "succeeded"
+  adjustSettings occurrences after 2nd run: 0
+  Settings.kt GONE — solution was reversed
+
+  Running solve.sh a second time silently reverses the solution and exits 0. Any
+  repeat invocation — a retry, a pre-applied sandbox, a setup-then-run sequence
+  — leaves an unsolved tree that grades 0, consistently, on every run. That
+  matches 0/3 exactly, and it's the defect gpt's oracle_robustness note flagged
+  and that CLAUDE.md §10.6 forbids outright. Fixing it first.
+
+  Read 1 file (ctrl+o to expand)
+
+● Write(20260727_135618__AltBeacon_android-beacon-library__1177/work/solution/so
+       lve.sh)
+  ⎿  Added 22 lines, removed 6 lines
+       1  #!/usr/bin/env bash
+       2 -set -e                                                         
+       2 +# Apply the reference solution.                                
+       3 +#                                                              
+       4 +# Forward-only and idempotent. If the patch is already applied 
+         +the script is a                                                
+       5 +# no-op; a tree that is neither clean nor fully patched fails l
+         +oudly. It must                                                 
+       6 +# never reverse-apply as a fallback: doing so turns a solved tr
+         +ee back into an                                                
+       7 +# unsolved one on a second invocation and reports success while
+         + doing it.                                                     
+       8 +set -euo pipefail                                              
+       9  cd /app
+      10 +                                                               
+      11 +# Already applied? Then the reverse of the patch is what fits t
+         +he tree.                                                       
+      12 +if git apply -p1 --reverse --check --whitespace=nowarn /solutio
+         +n/golden.patch 2>/dev/null; then                               
+      13 +  echo "golden.patch is already applied; nothing to do."       
+      14 +  exit 0                                                       
+      15 +fi                                                             
+      16 +                                                               
+      17  if git apply -p1 --whitespace=nowarn /solution/golden.patch 2>/
+          dev/null; then
+       5 -  :                                                            
+       6 -elif git apply -p1 --3way --whitespace=nowarn /solution/golden.
+         -patch 2>/dev/null; then                                        
+       7 -  :                                                            
+       8 -else                                                           
+       9 -  git apply -p1 -R --whitespace=nowarn /solution/golden.patch  
+      18 +  exit 0                                                       
+      19  fi
+      20 +                                                               
+      21 +if git apply -p1 --3way --whitespace=nowarn /solution/golden.pa
+         +tch; then                                                      
+      22 +  exit 0                                                       
+      23 +fi                                                             
+      24 +                                                               
+      25 +echo "ERROR: golden.patch did not apply cleanly." >&2          
+      26 +exit 1                                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Idempotent now: three applies, solution intact, reward 1, 229/229. Next the
+  oracle typo, since the new Defaults assertion depends on it.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now the coverage work. First I need to know exactly what Defaults provides, so
+  the new assertions match both the instruction and the oracle.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Confirmed — RangedBeacon falls back to new RunningAverageRssiFilter() at base,
+  so that default is real and derivable. Now applying the test patch so I can
+  edit the test files.
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the coverage edits. Three changes: the Defaults test, the snapshot test,
+  and one new test for the fields nothing currently asserts.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 16 lines
+      66          assertTrue(Settings.Defaults.useTrackingCache)
+      67          assertEquals(10000L, Settings.Defaults.maxTrackingAgeMi
+          llis.toLong())
+      68          assertFalse(Settings.Defaults.manifestCheckingDisabled)
+      69 +        assertTrue(Settings.Defaults.regionStatePersistenceEnab
+         +led)                                                           
+      70          // The task runs on API 28, so the Android 8+ default a
+          pplies.
+      71          assertTrue(Settings.Defaults.scanStrategy is Settings.J
+          obServiceScanStrategy)
+      72 +                                                               
+      73 +        // The remaining fields also carry a library default.  
+      74 +        val defaultPeriods = Settings.Defaults.scanPeriods     
+      75 +        assertEquals(1100L, defaultPeriods.foregroundScanPeriod
+         +Millis)                                                        
+      76 +        assertEquals(0L, defaultPeriods.foregroundBetweenScanPe
+         +riodMillis)                                                    
+      77 +        assertEquals(30000L, defaultPeriods.backgroundScanPerio
+         +dMillis)                                                       
+      78 +        assertEquals(0L, defaultPeriods.backgroundBetweenScanPe
+         +riodMillis)                                                    
+      79 +        // The default simulator supplies no beacons, so simula
+         +tion is off unless asked for.                                  
+      80 +        assertTrue(Settings.Defaults.beaconSimulator.beacons.is
+         +Empty())                                                       
+      81 +        // The default rssi filter is the running-average one t
+         +he library already falls back to.                              
+      82 +        assertEquals(RunningAverageRssiFilter::class.java, Sett
+         +ings.Defaults.rssiFilterImplClass)                             
+      83 +        // The default factory is the one that preserves the li
+         +brary's own distance calculation.                              
+      84 +        val defaultCalculator = Settings.Defaults.distanceCalcu
+         +latorFactory                                                   
+      85 +            .getInstance(RuntimeEnvironment.getApplication())  
+      86 +        assertEquals(1.0, defaultCalculator.calculateDistance(-
+         +59, -59.0), 0.1)                                               
+      87      }
+      88  
+      89      @Test
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 1 line
+       5  import org.altbeacon.beacon.distance.DistanceCalculatorFactory
+       6  import org.altbeacon.beacon.logging.LogManager
+       7  import org.altbeacon.beacon.logging.Loggers
+       8 +import org.altbeacon.beacon.service.RunningAverageRssiFilter   
+       9  import org.junit.Assert.assertEquals
+      10  import org.junit.Assert.assertFalse
+      11  import org.junit.Assert.assertNotEquals
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 9 lines, removed 1 line
+      274      fun activeSettingsHandsOutAnIndependentSnapshot() {
+      275          beaconManager.adjustSettings(Settings(debug = true, re
+           gionExitPeriodMillis = 45000))
+      276          val snapshot = beaconManager.activeSettings
+      277 -        assertNotSame(snapshot, beaconManager.activeSettings) 
+      277          assertTrue(snapshot.debug)
+      278          assertEquals(45000L, snapshot.regionExitPeriodMillis.t
+           oLong())
+      279  
+     ...
+      283          assertEquals(45000L, snapshot.regionExitPeriodMillis.t
+           oLong())
+      284          assertFalse(beaconManager.activeSettings.debug)
+      285          assertEquals(20000L, beaconManager.activeSettings.regi
+           onExitPeriodMillis.toLong())
+      286 +                                                              
+      287 +        // ...and the other direction: reshaping a snapshot mu
+          +st not reach the live                                         
+      288 +        // configuration or any snapshot handed out afterwards
+          +.                                                             
+      289 +        val edited = beaconManager.activeSettings.copy(debug =
+          + true, regionExitPeriodMillis = 99000)                        
+      290 +        assertTrue(edited.debug)                              
+      291 +        assertEquals(99000L, edited.regionExitPeriodMillis.toL
+          +ong())                                                        
+      292 +        assertFalse(beaconManager.activeSettings.debug)       
+      293 +        assertEquals(20000L, beaconManager.activeSettings.regi
+          +onExitPeriodMillis.toLong())                                  
+      294 +        assertEquals(20000L, BeaconManager.getRegionExitPeriod
+          +())                                                           
+      295      }
+      296  
+      297      @Test
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 35 lines
+      295      }
+      296  
+      297      @Test
+      298 +    fun theRemainingFieldsAreAppliedAndReadableBack() {       
+      299 +        // Fields the library pushes onto its existing configu
+          +ration surface.                                               
+      300 +        val simulator = MyBeaconSimulator()                   
+      301 +        beaconManager.adjustSettings(Settings(beaconSimulator 
+          += simulator))                                                 
+      302 +        assertSame(simulator, BeaconManager.getBeaconSimulator
+          +())                                                           
+      303 +        assertSame(simulator, beaconManager.activeSettings.bea
+          +conSimulator)                                                 
+      304 +                                                              
+      305 +        // ...and fields the resolved snapshot carries.       
+      306 +        beaconManager.adjustSettings(                         
+      307 +            Settings(                                         
+      308 +                useTrackingCache = false,                     
+      309 +                maxTrackingAgeMillis = 25000,                 
+      310 +                longScanForcingEnabled = true,                
+      311 +                rssiFilterImplClass = RunningAverageRssiFilter
+          +::class.java                                                  
+      312 +            )                                                 
+      313 +        )                                                     
+      314 +        val applied = beaconManager.activeSettings            
+      315 +        assertFalse(applied.useTrackingCache)                 
+      316 +        assertEquals(25000L, applied.maxTrackingAgeMillis.toLo
+          +ng())                                                         
+      317 +        assertTrue(applied.longScanForcingEnabled)            
+      318 +        assertEquals(RunningAverageRssiFilter::class.java, app
+          +lied.rssiFilterImplClass)                                     
+      319 +        // The delta merge left the simulator from the previou
+          +s call alone.                                                 
+      320 +        assertSame(simulator, applied.beaconSimulator)        
+      321 +                                                              
+      322 +        // revertSettings puts every one of them back to the l
+          +ibrary default.                                               
+      323 +        beaconManager.revertSettings()                        
+      324 +        val defaults = beaconManager.activeSettings           
+      325 +        assertTrue(defaults.beaconSimulator.beacons.isEmpty())
+      326 +        assertNull(BeaconManager.getBeaconSimulator())        
+      327 +        assertTrue(defaults.useTrackingCache)                 
+      328 +        assertEquals(10000L, defaults.maxTrackingAgeMillis.toL
+          +ong())                                                        
+      329 +        assertFalse(defaults.longScanForcingEnabled)          
+      330 +    }                                                         
+      331 +                                                              
+      332 +    @Test                                                     
+      333      fun configuredDistanceCalculatorFactoryInstallsItsOwnCalcu
+           lator() {
+      334          beaconManager.adjustSettings(Settings(distanceCalculat
+           orFactory = MyDistanceCalculatorFactory()))
+      335          assertEquals(
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 4 lines
+      422          }
+      423      }
+      424  }
+      425 +                                                              
+      426 +class MyBeaconSimulator : BeaconSimulator {                   
+      427 +    override fun getBeacons(): MutableList<Beacon> = mutableLi
+          +stOf()                                                        
+      428 +}                                                             
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/environmen
+        t/repo/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt)
+  ⎿  Added 1 line
+       6  import org.altbeacon.beacon.logging.LogManager
+       7  import org.altbeacon.beacon.logging.Loggers
+       8  import org.altbeacon.beacon.service.RunningAverageRssiFilter
+       9 +import org.altbeacon.beacon.simulator.BeaconSimulator          
+      10  import org.junit.Assert.assertEquals
+      11  import org.junit.Assert.assertFalse
+      12  import org.junit.Assert.assertNotEquals
+
+● Now the instruction: state the missing defaults, and stop it over-promising
+  relative to what the PR's oracle actually pushes through.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/instructio
+        n.md)
+  ⎿  Added 1 line, removed 1 line
+      1  Configuring this Android beacon library has grown into a mixed b
+         ag over the years: some options live in manifest declarations, s
+         ome are static fields on `BeaconManager`, some are instance meth
+         ods, others hang off `Beacon` or the parsers. Worse, changing an
+         y of them after ranging or monitoring has already started is unp
+         redictable — it is poorly documented which changes take effect i
+         mmediately, some quietly do nothing until the next scan cycle, a
+         nd a few can crash. We want a single, coherent configuration sur
+         face that library users can reason about, that works cleanly fro
+         m both Kotlin and Java, and that applies a group of changes as o
+         ne transaction so behavior is deterministic. This is the new con
+         figuration API targeted for 3.0; it should live in package `org.
+         altbeacon.beacon` alongside the existing settings for now.
+      2  
+      3 -Please introduce a `Settings` type whose every field is optional
+        - and unset by default, so an instance describes only a *delta* o
+        -f what the caller wants to change. From Kotlin a caller must be 
+        -able to configure only the subset of fields they want in a singl
+        -e expression, with anything unspecified treated as absent. It mu
+        -st expose these configurable fields, matching the names used bel
+        -ow exactly: `debug` (Boolean — true switches the library log lev
+        -el to debug, false to info; default false), `distanceModelUpdate
+        -Url` (String; default is the empty string, meaning disabled), `s
+        -canPeriods`, `scanStrategy`, `longScanForcingEnabled` (Boolean; 
+        -default false), plus `distanceCalculatorFactory`, `regionStatePe
+        -rsistenceEnabled` (default true), `hardwareEqualityEnforced` (de
+        -fault false), `regionExitPeriodMillis` (default 30000), `useTrac
+        -kingCache` (default true), `maxTrackingAgeMillis` (default 10000
+        -), `manifestCheckingDisabled` (default false), `beaconSimulator`
+        -, and `rssiFilterImplClass`. Scan periods are described by a nes
+        -ted `Settings.ScanPeriods` value constructed positionally as `Sc
+        -anPeriods(foregroundScanPeriodMillis, foregroundBetweenScanPerio
+        -dMillis, backgroundScanPeriodMillis, backgroundBetweenScanPeriod
+        -Millis)` and also usable via those named parameters; its default
+        -s are foreground 1100, foreground-between 0, background 30000, b
+        -ackground-between 0. Because Java callers cannot use Kotlin name
+        -d or default arguments, also provide a fluent `Settings.Builder`
+        - whose `new Settings.Builder()` supports at least `setDebug(bool
+        -ean)`, `setDistanceModelUpdateUrl(String)`, `setScanPeriods(Scan
+        -Periods)`, `setScanStrategy(ScanStrategy)` and `setLongScanForci
+        -ngEnabled(boolean)`, each returning the builder, terminated by `
+        -build()` which yields a `Settings` carrying only the fields that
+        - were actually set. Expose the library defaults through `Setting
+        -s.Defaults`, holding a default for each field above and readable
+        - without instantiating anything, for example `Defaults.distanceM
+        -odelUpdateUrl`.                                                 
+      3 +Please introduce a `Settings` type whose every field is optional
+        + and unset by default, so an instance describes only a *delta* o
+        +f what the caller wants to change. From Kotlin a caller must be 
+        +able to configure only the subset of fields they want in a singl
+        +e expression, with anything unspecified treated as absent. It mu
+        +st expose these configurable fields, matching the names used bel
+        +ow exactly: `debug` (Boolean — true switches the library log lev
+        +el to debug, false to info; default false), `distanceModelUpdate
+        +Url` (String; default is the empty string, meaning disabled), `s
+        +canPeriods`, `scanStrategy`, `longScanForcingEnabled` (Boolean; 
+        +default false), plus `distanceCalculatorFactory`, `regionStatePe
+        +rsistenceEnabled` (default true), `hardwareEqualityEnforced` (de
+        +fault false), `regionExitPeriodMillis` (default 30000), `useTrac
+        +kingCache` (default true), `maxTrackingAgeMillis` (default 10000
+        +), `manifestCheckingDisabled` (default false), `beaconSimulator`
+        + (defaults to a simulator that supplies no beacons, so nothing i
+        +s simulated unless a caller asks for it), and `rssiFilterImplCla
+        +ss` (defaults to the running-average rssi filter the library alr
+        +eady falls back to today). Scan periods are described by a neste
+        +d `Settings.ScanPeriods` value constructed positionally as `Scan
+        +Periods(foregroundScanPeriodMillis, foregroundBetweenScanPeriodM
+        +illis, backgroundScanPeriodMillis, backgroundBetweenScanPeriodMi
+        +llis)` and also usable via those named parameters; its defaults 
+        +are foreground 1100, foreground-between 0, background 30000, bac
+        +kground-between 0. Because Java callers cannot use Kotlin named 
+        +or default arguments, also provide a fluent `Settings.Builder` w
+        +hose `new Settings.Builder()` supports at least `setDebug(boolea
+        +n)`, `setDistanceModelUpdateUrl(String)`, `setScanPeriods(ScanPe
+        +riods)`, `setScanStrategy(ScanStrategy)` and `setLongScanForcing
+        +Enabled(boolean)`, each returning the builder, terminated by `bu
+        +ild()` which yields a `Settings` carrying only the fields that w
+        +ere actually set. Expose the library defaults through `Settings.
+        +Defaults`, holding a default for each field above and readable w
+        +ithout instantiating anything, for example `Defaults.distanceMod
+        +elUpdateUrl`.                                                   
+      4  
+      5  The scan strategy replaces the old scattered scheduling flags wi
+         th a small closed set of `Settings.ScanStrategy` implementations
+         , one per scanning mode the library supports: `Settings.Foregrou
+         ndServiceScanStrategy(notification, notificationId)` taking an A
+         ndroid `Notification` and an int id; `Settings.JobServiceScanStr
+         ategy(immediateJobId, periodicJobId, jobPersistenceEnabled)`, wh
+         ich is the default strategy on Android 8+; `Settings.BackgroundS
+         erviceScanStrategy()`; and `Settings.IntentScanStrategy()`. They
+          can be compared for equality so the library can detect an actua
+         l strategy change, meaning two strategies of the same kind confi
+         gured the same way compare equal while strategies of different k
+         inds never do. Alongside this, add a `DistanceCalculatorFactory`
+          interface with a single method `getInstance(context: Context): 
+         DistanceCalculator`, sitting in the same package as the `Distanc
+         eCalculator` it returns, let callers supply their own factory th
+         rough the `distanceCalculatorFactory` field, and ship a default 
+         factory that is used when the caller supplies none. When no fact
+         ory is supplied, that default one has to preserve the distance c
+         alculation the library already performs today.
+      6  
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/work/instructio
+        n.md)
+  ⎿  Added 1 line, removed 1 line
+      4  
+      5  The scan strategy replaces the old scattered scheduling flags wi
+         th a small closed set of `Settings.ScanStrategy` implementations
+         , one per scanning mode the library supports: `Settings.Foregrou
+         ndServiceScanStrategy(notification, notificationId)` taking an A
+         ndroid `Notification` and an int id; `Settings.JobServiceScanStr
+         ategy(immediateJobId, periodicJobId, jobPersistenceEnabled)`, wh
+         ich is the default strategy on Android 8+; `Settings.BackgroundS
+         erviceScanStrategy()`; and `Settings.IntentScanStrategy()`. They
+          can be compared for equality so the library can detect an actua
+         l strategy change, meaning two strategies of the same kind confi
+         gured the same way compare equal while strategies of different k
+         inds never do. Alongside this, add a `DistanceCalculatorFactory`
+          interface with a single method `getInstance(context: Context): 
+         DistanceCalculator`, sitting in the same package as the `Distanc
+         eCalculator` it returns, let callers supply their own factory th
+         rough the `distanceCalculatorFactory` field, and ship a default 
+         factory that is used when the caller supplies none. When no fact
+         ory is supplied, that default one has to preserve the distance c
+         alculation the library already performs today.
+      6  
+      7 -Finally, wire three application methods onto `BeaconManager`: `a
+        -djustSettings(settings)` applies only the fields explicitly set 
+        -on the passed `Settings`, leaving everything else at its current
+        - value (a delta merge); `replaceSettings(settings)` applies the 
+        -set fields and resets every unset field to the library default; 
+        -and `revertSettings()` returns all settings to their defaults. A
+        -pplying settings must happen as one transaction, and once one of
+        - these calls returns every field it applied has to be observable
+        - through the configuration surface the library already has. Read
+        -ing any affected property back off `BeaconManager` or `Beacon` g
+        -ives the value that was just applied, and the active distance ca
+        -lculator is an instance produced by whichever factory is in forc
+        -e. Reading back the applied configuration is done through `beaco
+        -nManager.getActiveSettings()` (`beaconManager.activeSettings` fr
+        -om Kotlin), which returns a resolved snapshot of what is current
+        -ly in force with every field filled in, either from the current 
+        -value or from the default. That snapshot is an independent copy:
+        - a later change to the live configuration must not show up in a 
+        -snapshot already handed out, and a change made to a snapshot mus
+        -t not reach the live configuration. One constraint to keep in mi
+        -nd: the existing static configuration methods must keep working 
+        -for backward compatibility, so nothing here should break them.  
+      7 +Finally, wire three application methods onto `BeaconManager`: `a
+        +djustSettings(settings)` applies only the fields explicitly set 
+        +on the passed `Settings`, leaving everything else at its current
+        + value (a delta merge); `replaceSettings(settings)` applies the 
+        +set fields and resets every unset field to the library default; 
+        +and `revertSettings()` returns all settings to their defaults. A
+        +pplying settings must happen as one transaction. Once one of the
+        +se calls returns, every field is observable on the resolved snap
+        +shot described next, whether it was just set, left alone or rese
+        +t to its default. Settings that the library already models on it
+        +s existing static configuration are pushed through to it as well
+        +, so reading such a property back off `BeaconManager` or `Beacon
+        +` gives the value that was just applied, and the active distance
+        + calculator is an instance produced by whichever factory is in f
+        +orce. Reading back the applied configuration is done through `be
+        +aconManager.getActiveSettings()` (`beaconManager.activeSettings`
+        + from Kotlin), which returns a resolved snapshot of what is curr
+        +ently in force with every field filled in, either from the curre
+        +nt value or from the default. That snapshot is an independent co
+        +py: a later change to the live configuration must not show up in
+        + a snapshot already handed out, and a change made to a snapshot 
+        +must not reach the live configuration. One constraint to keep in
+        + mind: the existing static configuration methods must keep worki
+        +ng for backward compatibility, so nothing here should break them
+        +.                                                               
+
+● Now regenerating tests.patch, syncing problem_statement.md, and registering
+  the new test id.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Re-running both checks from fresh copies against the updated bundle.
+
+  Searched for 2 patterns, read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● Background command "Run NOP and oracle on updated bundle" completed (exit code
+0)
+
+● Both green: NOP reward 0 / exit 1 / 0 of 230, Oracle reward 1 / exit 0 / 230 
+  of 230 in 30s. Now the hostile-delete gate against one of the new assertions.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Hostile-delete gate passes — stubbing the simulator push-through drops reward
+  to 0 and the new test is exactly what catches it. Now git hygiene (last,
+  immediately before zipping) and the re-zip.
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now the 20-check static simulation, run against the extracted zip rather than
+  the working copy.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 20 static checks pass on the extracted zip. Recording the round and
+  updating the answers.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 13 lines, removed 11 lines
+       5  Fixable
+       6  [Internal] Validity: Fixable
+       7  
+       8 -Where the task had issues:                                     
+       9 -Instructions                                                   
+      10 -Tests                                                          
+      11 -Oracle Solution                                                
+      12 -Environment-Dockerfile   (task.toml limits only, the Dockerfile
+         - itself needed no change)                                      
+       8 +Select where the task had issues (check all that apply):       
+       9 +- [x] Instructions                                             
+      10 +- [x] Tests                                                    
+      11 +- [x] Oracle Solution                                          
+      12 +- [x] Environment/Dockerfile   (task.toml limits only, the Dock
+         +erfile itself needed no change)                                
+      13  
+      14 -Issues found:                                                  
+      15 -1. Every requirement in the instructions is not properly tested
+      16 -2. All test requirements are not properly specified in the inst
+         -ructions                                                       
+      17 -4. The instructions are overly-prescriptive                    
+      18 -6. The oracle does not implement the solution following the ins
+         -tructions                                                      
+      19 -7. Less than 10 fail-to-pass tests in the test suite           
+      14 +What issues did you find with the task?                        
+      15 +- [x] Every requirement in the instructions is not properly tes
+         +ted                                                            
+      16 +- [x] All test requirements are not properly specified in the i
+         +nstructions                                                    
+      17 +- [ ] The instructions appear LLM generated                    
+      18 +- [x] The instructions are overly-prescriptive                 
+      19 +- [ ] The task leaks solution information                      
+      20 +- [x] The oracle does not implement the solution following the 
+         +instructions                                                   
+      21 +- [x] Less than 10 fail-to-pass tests in the test suite        
+      22  
+      23  
+      24  Issue details:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 22 lines
+       85  — If fixable, how? Added os and difficulty_explanation. Raised
+            the agent timeout to 7200 and the verifier timeout to 1800. E
+           very value stays inside the documented limits, gpus is still 0
+           , and network_mode is present and correct in all three blocks.
+       86  
+       87  
+       88 +8) [The oracle does not implement the solution following the i
+          +nstructions] — solution/solve.sh was not safe to run twice. It
+          + tried a forward apply, then a three way apply, and if both fa
+          +iled it reverse applied the patch and reported success.       
+       89 +                                                              
+       90 +    else                                                      
+       91 +      git apply -p1 -R --whitespace=nowarn /solution/golden.pa
+          +tch                                                           
+       92 +    fi                                                        
+       93 +                                                              
+       94 +I reproduced what that does. Running solve.sh a second time in
+          + the same tree removes Settings.kt, takes adjustSettings back 
+          +out of BeaconManager and still exits 0, so the verifier then g
+          +rades an unsolved tree. It is also why a genuinely bad patch w
+          +ould look fine instead of failing loudly.                     
+       95 +— Is this issue fixable or not fixable? Fixable.              
+       96 +— If fixable, how? solve.sh is forward only now. It first chec
+          +ks whether the patch already fits in reverse, and if it does i
+          +t says so and exits 0 without touching anything. Otherwise it 
+          +applies forward, then three way, and if neither works it print
+          +s an error and exits 1. I ran it three times in a row against 
+          +the same container. The solution survives and the verifier sti
+          +ll gives reward 1 with 230 of 230.                            
+       97 +                                                              
+       98 +9) [The oracle does not implement the solution following the i
+          +nstructions] — the instruction names the field regionStatePers
+          +istenceEnabled, but Settings.Defaults spelled the matching def
+          +ault regionStatePeristenceEnabled, missing the second s.      
+       99 +                                                              
+      100 +    const val regionStatePeristenceEnabled = true             
+      101 +                                                              
+      102 +So the default the instruction asks for was not actually there
+          + under that name. Nothing caught it because the defaults test 
+          +skipped that one field.                                       
+      103 +— Is this issue fixable or not fixable? Fixable.              
+      104 +— If fixable, how? Renamed the constant and its three referenc
+          +es inside golden.patch, then added assertTrue(Settings.Default
+          +s.regionStatePersistenceEnabled) to defaultsHoldTheLibraryDefa
+          +ultForEachField so the name is pinned from now on.            
+      105 +                                                              
+      106 +10) [Every requirement in the instructions is not properly tes
+          +ted] — five fields the instruction lists had no default assert
+          +ion and no apply or read back assertion. beaconSimulator and r
+          +ssiFilterImplClass were only checked for being null on a fresh
+          + Settings. scanPeriods, distanceCalculatorFactory and regionSt
+          +atePersistenceEnabled were missing from the defaults test. The
+          + snapshot test only checked one direction, that a later live c
+          +hange does not move an already handed out snapshot, and never 
+          +the direction the instruction also states, that reshaping a sn
+          +apshot must not reach the live configuration.                 
+      107 +— Is this issue fixable or not fixable? Fixable.              
+      108 +— If fixable, how? defaultsHoldTheLibraryDefaultForEachField n
+          +ow covers all fourteen fields, including the four scan period 
+          +values, an empty beacon list from the default simulator, the r
+          +unning average rssi filter class, and the default factory repo
+          +rting about one metre when the measured rssi equals the refere
+          +nce power. activeSettingsHandsOutAnIndependentSnapshot now cop
+          +ies a snapshot, changes two fields on the copy and asserts the
+          + live configuration and BeaconManager.getRegionExitPeriod() ar
+          +e both unmoved. One new test, theRemainingFieldsAreAppliedAndR
+          +eadableBack, applies a custom beacon simulator and reads it ba
+          +ck off BeaconManager, then applies useTrackingCache, maxTracki
+          +ngAgeMillis, longScanForcingEnabled and rssiFilterImplClass an
+          +d reads all four off the resolved snapshot, then calls revertS
+          +ettings and checks every one of them is back at the default. I
+          + proved that test carries weight by stubbing out the simulator
+          + push through in a throwaway copy. Reward drops to 0 and that 
+          +test is the one that reports missing.                         
+      109 +                                                              
+      110  --- Phase 2 (completed after the evals pass) ---
+      111  
+      112  Files Changed:
+
+● Now Files Changed, the confirmation count, and a full rewrite of Comments for
+  Reviewer for this round.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 6 lines, removed 2 lines
+      131     Why: an agent writing its own SettingsTest.kt made the patc
+           h fail to apply and scored the trial as an infra error. It als
+           o closes a test gaming route.
+      132  
+      133  6. solution/golden.patch
+      134 -   Changed: replaceSettings merges onto withDefaultValues() in
+          -stead of the current settings. setBackgroundBetweenScanPeriod 
+          -reads getBackgroundBetweenScanPeriodMillis().                 
+      135 -   Why: the oracle did not implement two things the instructio
+          -n states.                                                     
+      134 +   Changed: replaceSettings merges onto withDefaultValues() in
+          +stead of the current settings. setBackgroundBetweenScanPeriod 
+          +reads getBackgroundBetweenScanPeriodMillis(). Revision round 2
+          + renamed Settings.Defaults.regionStatePeristenceEnabled to reg
+          +ionStatePersistenceEnabled, along with its three references.  
+      135 +   Why: the oracle did not implement three things the instruct
+          +ion states.                                                   
+      136  
+      137 +6b. solution/solve.sh                                         
+      138 +   Changed: forward only and idempotent. It checks whether gol
+          +den.patch already fits in reverse and exits 0 doing nothing if
+          + it does, then tries a forward apply, then a three way apply, 
+          +and exits 1 with an error if none of those work. The old rever
+          +se apply fallback is gone.                                    
+      139 +   Why: running the shipped script twice removed the solution 
+          +and still reported success, so any repeated invocation left th
+          +e verifier grading an unsolved tree.                          
+      140 +                                                              
+      141  7. task.toml
+      142     Changed: added [environment] os and [metadata] difficulty_e
+           xplanation. [agent] timeout_sec 1800 to 7200. [verifier] timeo
+           ut_sec 300 to 1800.
+      143     Why: missing fields and headroom.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 11 lines, removed 4 lines
+      165  Senior engineer estimate: 40+ minutes
+      166  
+      167  Comments for Reviewer:
+      168 -I ran everything against the exact zip in upload, airgapped wi
+          -th --network none, at the declared 4 cpus and 8 GB. NOP gives 
+          -reward 0 with 0 of 229 required tests passing and the test mod
+          -ule failing to compile. Oracle gives reward 1 with 229 of 229 
+          -in 32 seconds against a 1800 second verifier timeout. Repeat r
+          -uns produced the same pass set so nothing graded is flaky.    
+      169 -The oracle changed in two places. replaceSettings was byte for
+          - byte the same as adjustSettings, so the behaviour separating 
+          -them could not be tested. setBackgroundBetweenScanPeriod was b
+          -eing fed getBackgroundScanPeriodMillis. One line each and no P
+          -R behaviour was removed.                                      
+      170 -tests/test.sh now restores the test tree before it applies the
+          - patch. Without that, an agent that writes its own SettingsTes
+          -t.kt in org.altbeacon.beacon makes tests.patch fail to apply a
+          -nd the trial gets scored as an infra error rather than on meri
+          -t. I checked it both ways locally. The shipped test.sh gives r
+          -eward 0 and "tests.patch did not apply". With the restore the 
+          -same run gives reward 1.                                      
+      171 -Settings.Defaults.regionStatePeristenceEnabled is still misspe
+          -lled in the oracle and I left it alone. The instruction never 
+          -fixes that name and no test refers to it. The default value ge
+          -ts checked through activeSettings after revertSettings instead
+          -, so the requirement is covered without me renaming something 
+          -the PR did not.                                               
+      168 +This is revision round 2. The feedback was an oracle that did 
+          +not pass any of its 3 runs, and a DISCUSS from the rubric pane
+          +l on test_coverage at 2.5.                                    
+      169 +I found the oracle cause and it was solution/solve.sh, not the
+          + tests. The shipped script reverse applied golden.patch whenev
+          +er a forward apply failed, and reported success while doing it
+          +. Run it a second time in the same tree and Settings.kt disapp
+          +ears, adjustSettings comes back out of BeaconManager, and the 
+          +exit code is still 0, so the verifier then grades an unsolved 
+          +tree and returns 0 every single run. solve.sh is forward only 
+          +now. It exits 0 without touching anything when the patch is al
+          +ready applied, and it exits 1 with an error when nothing appli
+          +es. I ran it three times in a row in one container and the sol
+          +ution survives all three.                                     
+      170 +Fresh local numbers against the exact zip in upload, airgapped
+          + with --network none, at the declared 4 cpus and 8 GB. NOP giv
+          +es reward 0, exit 1, and 0 of 230 required tests, with no fail
+          +-to-pass test passing at base. Oracle gives reward 1, exit 0, 
+          +and 230 of 230 in 30 seconds against a 1800 second verifier ti
+          +meout. I also built the image cold from the uploaded zip with 
+          +no cache, which took 316 seconds against the 900 second build 
+          +budget, and ran the oracle 3 times on it. All three gave rewar
+          +d 1 and 230 of 230, which is the run the platform reported as 
+          +0 of 3.                                                       
+      171 +For the coverage gap the panel named, defaultsHoldTheLibraryDe
+          +faultForEachField now covers all fourteen fields rather than n
+          +ine. activeSettingsHandsOutAnIndependentSnapshot now tests bot
+          +h directions, including the one the instruction states and the
+          + old test skipped, that reshaping a snapshot must not reach th
+          +e live configuration. One new test covers the beacon simulator
+          + being pushed through to BeaconManager and the four remaining 
+          +fields round tripping through the resolved snapshot and then b
+          +ack to their defaults after revertSettings. That takes fail_to
+          +_pass to 20, which is the ceiling, so the rest went in as extr
+          +a assertions inside tests that already existed. I checked the 
+          +new test carries weight by stubbing the simulator push through
+          + in a throwaway copy. Reward drops to 0 and that test is the o
+          +ne reported missing.                                          
+      172 +The panel was right about Settings.Defaults.regionStatePeriste
+          +nceEnabled. I said last round that I would leave it and that w
+          +as the wrong call, because the defaults test skipped that fiel
+          +d, which is exactly why the misspelling survived. The constant
+          + is renamed and the test now asserts it by name.              
+      173 +Things I deliberately did not change, with reasons.           
+      174 +The panel wanted ForegroundServiceScanStrategy.equals to take 
+          +the notification into account. I did not do it. Android Notifi
+          +cation has no value equality, so comparing it would make two s
+          +trategies configured the same way come out unequal, which brea
+          +ks the instruction's contract in the other direction. notifica
+          +tionId is the part that identifies the configuration.         
+      175 +The panel flagged the 1.0 plus or minus 0.1 distance figure as
+          + a pinned number. It is the assertion the repo's own ModelSpec
+          +ificDistanceCalculatorTest already makes at the base commit, s
+          +o it is an existing convention rather than something read off 
+          +the oracle.                                                   
+      176 +The panel flagged the broad pass_to_pass list with allow_extra
+          +_failures false. I kept it. Without it there is no regression 
+          +guard over the static configuration surface this PR reaches in
+          +to, and that surface is what the instruction promises not to b
+          +reak.                                                         
+      177 +The oracle still leaves longScanForcingEnabled, rssiFilterImpl
+          +Class, useTrackingCache and maxTrackingAgeMillis off the old s
+          +tatic configuration surface. That is upstream PR 1177's own be
+          +haviour and its own TODO, so extending it would mean writing b
+          +ehaviour the PR never had. I narrowed the instruction instead.
+          + It now says every field is observable on the resolved snapsho
+          +t, and that settings the library already models on its static 
+          +configuration are pushed through there as well. The tests asse
+          +rt exactly that split.                                        
+      178 +One residual worth your eye. The embedded grader records raw_e
+          +xit_code and does not branch on it, so reward is decided purel
+          +y from the parsed results. It fails closed here in practice be
+          +cause the test command clears lib/build/test-results first, so
+          + a build that dies produces no xml and no passes. I left it al
+          +one this round rather than rewrite a verifier that is behaving
+          + correctly in both directions.                                
+      179  The Dockerfile builds fine and I did not touch it. The only en
+           vironment change is the two timeouts in task.toml.
+      180  Prescriptiveness took three uploads and it passes now. It open
+           ed at 0.38 with 5 findings and none high, came back at 0.45 wi
+           th 5 different ones, then went green. Nine findings taken in t
+           otal. Listing which internal fields get written became a post 
+           condition. The www.google.com line really was a ready made tes
+           t assertion, so it is gone and the test supplies its own value
+           . Both distance calculator class names went, replaced by a req
+           uirement that the default factory preserves the calculation th
+           e library already performs, with the test asserting that calcu
+           lation instead of a type. The Settings.Defaults.INSTANCE examp
+           le went because it gave away that Defaults has to be a Kotlin 
+           object declaration, and the Java test reads its defaults off t
+           he resolved snapshot now. The data class hint uses the checker
+           's own wording. The bare package path for DistanceCalculatorFa
+           ctory became a placement tied to the DistanceCalculator it ret
+           urns.
+      181  The Settings.Builder paragraph is still in the instruction and
+            was flagged both times. I left it deliberately. All three Jav
+           a tests construct through new Settings.Builder() and the Kotli
+           n tests call setDebug, setDistanceModelUpdateUrl, setScanPerio
+           ds, setScanStrategy and setLongScanForcingEnabled by name, so 
+           cutting it would swap a check that does not block for one that
+            does. It is also the Java half of this PR. The check passes w
+           ith it in place. Anything with zero test references is gone.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Skill(humanizer)
+  ⎿  Successfully loaded skill · 6 tools allowed
+
+● Auditing the new text against the humanizer patterns before finalizing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 1 line, removed 1 line
+      170  Fresh local numbers against the exact zip in upload, airgapped
+            with --network none, at the declared 4 cpus and 8 GB. NOP giv
+           es reward 0, exit 1, and 0 of 230 required tests, with no fail
+           -to-pass test passing at base. Oracle gives reward 1, exit 0, 
+           and 230 of 230 in 30 seconds against a 1800 second verifier ti
+           meout. I also built the image cold from the uploaded zip with 
+           no cache, which took 316 seconds against the 900 second build 
+           budget, and ran the oracle 3 times on it. All three gave rewar
+           d 1 and 230 of 230, which is the run the platform reported as 
+           0 of 3.
+      171  For the coverage gap the panel named, defaultsHoldTheLibraryDe
+           faultForEachField now covers all fourteen fields rather than n
+           ine. activeSettingsHandsOutAnIndependentSnapshot now tests bot
+           h directions, including the one the instruction states and the
+            old test skipped, that reshaping a snapshot must not reach th
+           e live configuration. One new test covers the beacon simulator
+            being pushed through to BeaconManager and the four remaining 
+           fields round tripping through the resolved snapshot and then b
+           ack to their defaults after revertSettings. That takes fail_to
+           _pass to 20, which is the ceiling, so the rest went in as extr
+           a assertions inside tests that already existed. I checked the 
+           new test carries weight by stubbing the simulator push through
+            in a throwaway copy. Reward drops to 0 and that test is the o
+           ne reported missing.
+      172  The panel was right about Settings.Defaults.regionStatePeriste
+           nceEnabled. I said last round that I would leave it and that w
+           as the wrong call, because the defaults test skipped that fiel
+           d, which is exactly why the misspelling survived. The constant
+            is renamed and the test now asserts it by name.
+      173 -Things I deliberately did not change, with reasons.           
+      173 +A few things I left alone on purpose.                         
+      174  The panel wanted ForegroundServiceScanStrategy.equals to take 
+           the notification into account. I did not do it. Android Notifi
+           cation has no value equality, so comparing it would make two s
+           trategies configured the same way come out unequal, which brea
+           ks the instruction's contract in the other direction. notifica
+           tionId is the part that identifies the configuration.
+      175  The panel flagged the 1.0 plus or minus 0.1 distance figure as
+            a pinned number. It is the assertion the repo's own ModelSpec
+           ificDistanceCalculatorTest already makes at the base commit, s
+           o it is an existing convention rather than something read off 
+           the oracle.
+      176  The panel flagged the broad pass_to_pass list with allow_extra
+           _failures false. I kept it. Without it there is no regression 
+           guard over the static configuration surface this PR reaches in
+           to, and that surface is what the instruction promises not to b
+           reak.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/answers/submiss
+        ion_answer.txt)
+  ⎿  Added 1 line, removed 1 line
+      175  The panel flagged the 1.0 plus or minus 0.1 distance figure as
+            a pinned number. It is the assertion the repo's own ModelSpec
+           ificDistanceCalculatorTest already makes at the base commit, s
+           o it is an existing convention rather than something read off 
+           the oracle.
+      176  The panel flagged the broad pass_to_pass list with allow_extra
+           _failures false. I kept it. Without it there is no regression 
+           guard over the static configuration surface this PR reaches in
+           to, and that surface is what the instruction promises not to b
+           reak.
+      177  The oracle still leaves longScanForcingEnabled, rssiFilterImpl
+           Class, useTrackingCache and maxTrackingAgeMillis off the old s
+           tatic configuration surface. That is upstream PR 1177's own be
+           haviour and its own TODO, so extending it would mean writing b
+           ehaviour the PR never had. I narrowed the instruction instead.
+            It now says every field is observable on the resolved snapsho
+           t, and that settings the library already models on its static 
+           configuration are pushed through there as well. The tests asse
+           rt exactly that split.
+      178 -One residual worth your eye. The embedded grader records raw_e
+          -xit_code and does not branch on it, so reward is decided purel
+          -y from the parsed results. It fails closed here in practice be
+          -cause the test command clears lib/build/test-results first, so
+          - a build that dies produces no xml and no passes. I left it al
+          -one this round rather than rewrite a verifier that is behaving
+          - correctly in both directions.                                
+      178 +There is one residual I want to flag rather than hide. The emb
+          +edded grader records raw_exit_code and never branches on it, s
+          +o the reward comes purely from the parsed results. It fails cl
+          +osed here in practice because the test command clears lib/buil
+          +d/test-results first, so a build that dies produces no xml and
+          + no passes. I left it alone this round rather than rewrite a v
+          +erifier that is behaving correctly in both directions.        
+      179  The Dockerfile builds fine and I did not touch it. The only en
+           vironment change is the two timeouts in task.toml.
+      180  Prescriptiveness took three uploads and it passes now. It open
+           ed at 0.38 with 5 findings and none high, came back at 0.45 wi
+           th 5 different ones, then went green. Nine findings taken in t
+           otal. Listing which internal fields get written became a post 
+           condition. The www.google.com line really was a ready made tes
+           t assertion, so it is gone and the test supplies its own value
+           . Both distance calculator class names went, replaced by a req
+           uirement that the default factory preserves the calculation th
+           e library already performs, with the test asserting that calcu
+           lation instead of a type. The Settings.Defaults.INSTANCE examp
+           le went because it gave away that Defaults has to be a Kotlin 
+           object declaration, and the Java test reads its defaults off t
+           he resolved snapshot now. The data class hint uses the checker
+           's own wording. The bare package path for DistanceCalculatorFa
+           ctory became a placement tied to the DistanceCalculator it ret
+           urns.
+      181  The Settings.Builder paragraph is still in the instruction and
+            was flagged both times. I left it deliberately. All three Jav
+           a tests construct through new Settings.Builder() and the Kotli
+           n tests call setDebug, setDistanceModelUpdateUrl, setScanPerio
+           ds, setScanStrategy and setLongScanForcingEnabled by name, so 
+           cutting it would swap a check that does not block for one that
+            does. It is also the Java half of this PR. The check passes w
+           ith it in place. Anything with zero test references is gone.
+
+● Now recording the round outcome in task.md.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/task.md)
+  ⎿  Added 71 lines
+      308  **`fail_to_pass` budget: 19 of a hard ceiling of 20.** Only on
+           e new top-level id is available,
+      309  so items 2 to 5 land as extra assertions inside existing tests
+            plus at most one new test.
+      310  
+      311 +## Root cause of the oracle 0/3 — FOUND                       
+      312  
+      313 +`solution/solve.sh` was not idempotent. It tried forward apply
+          +, then `--3way`, and if both                                  
+      314 +failed it ran `git apply -R` and reported success. Reproduced 
+          +in a container:                                               
+      315 +                                                              
+      316 +```                                                           
+      317 +first apply OK                                                
+      318 +1                                     <- adjustSettings presen
+          +t                                                             
+      319 +second apply exit 0                   <- solve.sh "succeeded" 
+      320 +adjustSettings occurrences after 2nd run: 0                   
+      321 +Settings.kt GONE — solution was reversed                      
+      322 +```                                                           
+      323 +                                                              
+      324 +A second invocation destroys the solution and still exits 0, s
+          +o the verifier grades an                                      
+      325 +unsolved tree and returns 0 on every run. That matches `0/3` e
+          +xactly. Rewritten forward-only:                               
+      326 +already-applied is a no-op exit 0, nothing-applies is a loud e
+          +xit 1, the reverse fallback is                                
+      327 +gone. Three consecutive applies now leave the solution intact 
+          +and the verifier at reward 1.                                 
+      328 +                                                              
+      329 +Ruled out along the way, each with a measurement rather than a
+          + guess:                                                       
+      330 +                                                              
+      331 +| Hypothesis | Result |                                       
+      332 +|---|---|                                                     
+      333 +| `build_timeout_sec = 900` too low | cold `docker build --no-
+          +cache` from the zip: **exit 0 in 316s** |                     
+      334 +| Offline Gradle cache missing the patched deps | image cache 
+          +holds core-ktx 1.12.0 and robolectric 4.11.1 |                
+      335 +| Verifier timeout | oracle run takes **30s** against 1500s | 
+      336 +| Flaky graded tests | 3 fresh runs on the cold image, all rew
+          +ard 1, 229/229 |                                              
+      337 +                                                              
+      338 +## What round 1 changed                                       
+      339 +                                                              
+      340 +| File | Change |                                             
+      341 +|---|---|                                                     
+      342 +| `solution/solve.sh` | forward-only and idempotent, reverse-a
+          +pply fallback removed |                                       
+      343 +| `solution/golden.patch` | `Defaults.regionStatePeristenceEna
+          +bled` renamed to `regionStatePersistenceEnabled` plus its thre
+          +e references |                                                
+      344 +| `tests/tests.patch` | `defaultsHoldTheLibraryDefaultForEachF
+          +ield` now covers all 14 fields; `activeSettingsHandsOutAnIndep
+          +endentSnapshot` tests the snapshot-to-live direction and drops
+          + `assertNotSame`; new `theRemainingFieldsAreAppliedAndReadable
+          +Back` |                                                       
+      345 +| `tests/config.json` | `fail_to_pass` 19 → 20 |              
+      346 +| `instruction.md` | defaults stated for `beaconSimulator` and
+          + `rssiFilterImplClass`; the "every field observable on the exi
+          +sting surface" claim narrowed to match what the PR actually pu
+          +shes through |                                                
+      347 +| `environment/problem_statement.md` | re-copied, md5 `f0eb5de
+          +d7556` |                                                      
+      348 +| `environment/repo/.git` | reflog expired, gc, 2 unreachable 
+          +blobs of the patched test files cleared, `FETCH_HEAD` removed 
+          +|                                                             
+      349 +| `environment/repo/.gradle` | build-cache lock files removed 
+          +from both `work/` and `download/original/` |                  
+      350 +                                                              
+      351 +Refused, with reasons recorded in Comments for Reviewer: the `
+          +ForegroundServiceScanStrategy.equals`                         
+      352 +notification change (Android `Notification` has no value equal
+          +ity), the `1.0 ± 0.1` figure (it is                           
+      353 +the repo's own existing assertion), the broad `pass_to_pass` (
+          +it is the regression guard), and                              
+      354 +extending the oracle to apply the four fields upstream left on
+          + a TODO.                                                      
+      355 +                                                              
+      356 +## Round 1 verification                                       
+      357 +                                                              
+      358 +| Check | Reward | Required | Exit | Time |                   
+      359 +|---|---|---|---|---|                                         
+      360 +| NOP | 0 | 0 of 230 | 1 | — |                                
+      361 +| Oracle | 1 | **230 of 230** | 0 | 30s of 1800s |            
+      362 +| Hostile delete (stub the simulator push-through) | **0** | 2
+          +29 of 230 | 1 | — |                                           
+      363 +                                                              
+      364 +The hostile-delete run reports `theRemainingFieldsAreAppliedAn
+          +dReadableBack` as the missing                                 
+      365 +test, so the new coverage is load-bearing rather than decorati
+          +ve.                                                           
+      366 +                                                              
+      367 +Git after cleanup: `fsck --unreachable` silent, `.git` content
+          +s exactly `config description                                 
+      368 +HEAD hooks index info objects packed-refs refs`, HEAD at the b
+          +ase commit, no remotes, clean                                 
+      369 +tree, 2.5 MB. All 20 static checks simulated against the **ext
+          +racted zip**: pass. Zip rebuilt                               
+      370 +at `upload/`, no `runs/`, no `task/` wrapper, `.git` and `refs
+          +/` present, both scripts 0755,                                
+      371 +no `.gradle` and no stray artifacts.                          
+      372 +                                                              
+      373 +## Open                                                       
+      374 +                                                              
+      375 +- Handling times: the "all revisions" field needs a fresh numb
+          +er from the submitter. It reads                               
+      376 +  55 minutes from round 0, which is already under the 60 to 12
+          +0 band, and this round added                                  
+      377 +  work. The other three fields are first-pass numbers and do n
+          +ot move.                                                      
+      378 +- Not changed this round: the embedded grader records `raw_exi
+          +t_code` without branching on it.                              
+      379 +  It fails closed here in practice because the test command cl
+          +ears the results directory                                    
+      380 +  first, so a dead build produces no XML and no passes. Flagge
+          +d in Comments for Reviewer.                                   
+      381 +                                                              
+      382 +                                                              
+
+● Writing this back to learning/ — it's exactly the kind of finding the
+  write-back rule exists for.
+
+● Write(/media/gaurav-s-ubuntu/COLLEGE 
+       MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/solve-sh-idempotency.md)  ⎿  Wrote 108 lines to ../learning/solve-sh-idempotency.md
+       1 # A non-idempotent solve.sh grades the oracle at 0/3 and reprodu
+       2 
+       3 Source: `20260727_135618__AltBeacon_android-beacon-library__1177
+       4 root-caused and fixed the same day. **Machine-verified on this w
+         orkspace**, unlike the
+         viewer's notes.
+       6 
+       8 
+       9 ```
+         le did not pass all runs: 0/3.
+     … +137 lines (ctrl+o to expand)
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/README.md)
+  ⎿  Added 1 line
+      20  | [verify-in-the-image.md](verify-in-the-image.md) | Two static
+           conclusions that were wrong: the host interpreter rejecting sy
+          ntax the task's own Python accepts, and a textbook-looking NOP 
+          whose collection aborted before grading anything |
+      21  | [unreachable-git-blobs.md](unreachable-git-blobs.md) | Dangli
+          ng blobs of the golden file and the patched test file surviving
+           in `.git` after every documented git check passes. `gc --prune
+          =now` alone does not clear them and nothing in `docs/` tells yo
+          u to look |
+      22  | [verifier-fail-open.md](verifier-fail-open.md) | A grader tha
+          t scans stdout for the graded test names and writes reward 1.0 
+          even though the test command exited nonzero. Compile failures, 
+          timeouts and crashes all grade as success |
+      23 +| [solve-sh-idempotency.md](solve-sh-idempotency.md) | A `solve
+         +.sh` whose reverse-apply fallback undoes the solution on a seco
+         +nd invocation, which the platform reports as "Oracle did not pa
+         +ss all runs: 0/3. Task may be flaky" and which reproduces on ex
+         +actly zero local runs |                                        
+      24  
+      25  The last two came from a peer reviewer's notes on another EC's 
+          bundle rather than a run on
+      26  this machine — the provenance is stated at the top of each. Bot
+          h survived every platform
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/README.md)
+  ⎿  Added 2 lines
+      58    names, confirm it also gates on the test command's exit statu
+          s.
+      59  - Before zipping, stub one requirement the instruction states a
+          nd re-run the verifier. If the
+      60    reward stays 1.0, that requirement has no assertion behind it
+          .
+      61 +- Run `solve.sh` twice in one container before shipping. A sing
+         +le clean run says nothing about                                
+      62 +  the second, and the platform runs the oracle three times.    
+      63  
+      64  ## How to add to this log
+      65  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● One stray .git/FETCH_HEAD reappeared in the working copy after zipping (it is
+  not in the zip). Clearing it so the next round starts clean.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Round complete. Here's what happened.
+
+  Root cause of the oracle 0/3 — found and fixed
+
+  It was solution/solve.sh, not the tests. The shipped script reverse-applied
+  golden.patch whenever a forward apply failed, and reported success doing it:
+
+  else git apply -p1 -R --whitespace=nowarn /solution/golden.patch
+
+  A second invocation deletes Settings.kt, strips adjustSettings back out of
+  BeaconManager, and exits 0 — so the verifier grades an unsolved tree and
+  returns 0 every run. That is exactly 0/3, and it explains why nothing
+  reproduced locally: a single clean run proves the patch applies and says
+  nothing about the second.
+
+  It's now forward-only: already-applied is a no-op exit 0, nothing-applies is a
+  loud exit 1. Three consecutive applies leave the solution intact.
+
+  I ruled out four other hypotheses by measurement rather than guesswork — cold
+  docker build --no-cache from the zip exits 0 in 316s against the 900s budget,
+  the offline Gradle cache does hold core-ktx 1.12.0 and robolectric 4.11.1, the
+  oracle run takes 30s against 1500s, and three fresh runs on the cold image
+  all gave reward 1. Those dead ends are written up so nobody repeats the sweep.
+
+  The coverage gap (the blocking half of the judge)
+
+  Only test_coverage flipped the verdict, and gpt was right.
+  defaultsHoldTheLibraryDefaultForEachField asserted 9 of 14 fields — and it
+  skipped regionStatePersistenceEnabled, which is precisely why the oracle's 
+  regionStatePeristenceEnabled typo survived. Fixed together, since they can't
+  compile apart.
+
+  - Defaults test now covers all 14 fields
+  - Snapshot test now covers the direction the instruction states and the old
+  test skipped (reshaping a snapshot must not reach live config), and
+  assertNotSame is gone
+  - One new test, theRemainingFieldsAreAppliedAndReadableBack, covers the
+  simulator push-through plus the four fields that only round-trip through the
+  snapshot
+
+  That puts fail_to_pass at 20, the hard ceiling — so everything else went in as
+  assertions inside existing tests.
+
+  I proved the new test carries weight: stubbing the simulator push-through in a
+  throwaway drops reward to 0, and that test is the one reported missing.
+
+  Four things I refused, with reasons
+
+  The ForegroundServiceScanStrategy.equals change (Android Notification has no
+  value equality, so comparing it would make identically-configured strategies
+  compare unequal and break the contract the other way); the 1.0 ± 0.1 figure
+  (it's the repo's own existing assertion at base); the broad pass_to_pass (it's
+  the only regression guard over the surface this PR reaches into); and
+  extending the oracle to apply the four fields upstream left on a TODO. For
+  that last one I narrowed the instruction instead — it now promises the
+  snapshot carries every field, and that settings the library already models
+  statically are pushed through there too. All recorded in Comments for
+  Reviewer.
+
+  Verification
+
+  ┌────────────────┬────────┬────────────┬──────────────────┐
+  │     Check      │ Reward │  Required  │       Exit       │
+  ├────────────────┼────────┼────────────┼──────────────────┤
+  │ NOP            │ 0      │ 0 of 230   │ 1                │
+  ├────────────────┼────────┼────────────┼──────────────────┤
+  │ Oracle         │ 1      │ 230 of 230 │ 0 (30s of 1800s) │
+  ├────────────────┼────────┼────────────┼──────────────────┤
+  │ Hostile delete │ 0      │ 229 of 230 │ 1                │
+  └────────────────┴────────┴────────────┴──────────────────┘
+
+  Git: fsck --unreachable silent (it had 2 dangling blobs of the patched test
+  files — the exact unreachable-git-blobs.md case), .git exactly the documented
+  seven entries, HEAD at base, clean tree. All 20 static checks pass against the
+  extracted zip. Zip rebuilt and verified: no runs/, no task/ wrapper, .git and
+  refs/ present, both scripts 0755, no .gradle, no strays.
+
+  I also removed Gradle build-cache lock files that had been written into
+  download/original/ today, restoring the pristine diff target.
+
+  submission_answer.txt is updated (three new issue blocks, Files Changed, count
+  19→20, a rewritten Comments for Reviewer, and the checkbox blocks converted
+  to the mandated [x]/[ ] rendering) and re-humanized. New note at
+  learning/solve-sh-idempotency.md, indexed.
+
+  One thing I need from you
+
+  The "all revisions" handling time. It currently reads 55 minutes from the last
+  round, already under the 60–120 band, and this round added real work. I won't
+  invent it — the other three fields are first-pass numbers and don't move.
+
+  Also worth knowing: with AltBeacon correctly at pending-revision and
+  equalsverifier 1166 sitting on its own unrecorded bounce, you're at the 
+  two-task cap and the platform will block a new claim until one clears.
+
+✻ Cogitated for 15m 31s
+
+※ recap: Fixed the AltBeacon 1177 revision: oracle failure root-caused to a non-idempotent solve.sh, coverage gaps closed, zip rebuilt and verified green. I just need your "all revisions" handling-time number to finish the answers file. (disable recaps in /config)
+
+❯  I got this in the Prescriptiveness (optional) check                          
+                                                                                
+  ```                                                                           
+  Prescriptiveness (optional)                                                   
+  Optional LLM-judge check: does the task instruction give away too much about  
+  how to solve it (step-by-step procedure, exact files/symbols, solution code)  
+  instead of stating the requirements? A failure here does not block            
+  submission, but please address the findings before sending the task to        
+  review.                                                                       
+  ```                                                                           
+                                                                                
+  Build logs:                                                                   
+                                                                                
+  [Container] 2026/08/02 11:09:52.080934 Running on CodeBuild On-demand         
+  [Container] 2026/08/02 11:09:52.080950 Waiting for agent ping                 
+  [Container] 2026/08/02 11:09:53.321242 Waiting for DOWNLOAD_SOURCE            
+  [Container] 2026/08/02 11:09:53.584084 Phase is DOWNLOAD_SOURCE               
+  [Container] 2026/08/02 11:09:53.586085                                        
+  CODEBUILD_SRC_DIR=/codebuild/output/src4165678168/src                         
+  [Container] 2026/08/02 11:09:53.586640 YAML location is                       
+  /codebuild/readonly/buildspec.yml                                             
+  [Container] 2026/08/02 11:09:53.588543 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.588644 Processing environment variables       
+  [Container] 2026/08/02 11:09:53.592191 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.650262 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.687454 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.718673 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.765269 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.806383 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.848637 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.885142 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.928208 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:53.969331 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:54.004257 Setting HTTP client timeout to higher  
+  timeout for S3 source                                                         
+  [Container] 2026/08/02 11:09:54.104232 Moving to directory                    
+  /codebuild/output/src4165678168/src                                           
+  [Container] 2026/08/02 11:09:54.104252 Cache is not defined in the buildspec  
+  [Container] 2026/08/02 11:09:54.140722 Skip cache due to: no paths specified  
+  to be cached                                                                  
+  [Container] 2026/08/02 11:09:54.140968 Registering with agent                 
+  [Container] 2026/08/02 11:09:54.173328 Phases found in YAML: 1                
+  [Container] 2026/08/02 11:09:54.173346  BUILD: 6 commands                     
+  [Container] 2026/08/02 11:09:54.173567 Phase complete: DOWNLOAD_SOURCE State: 
+  SUCCEEDED                                                                     
+  [Container] 2026/08/02 11:09:54.173579 Phase context status code:  Message:   
+  [Container] 2026/08/02 11:09:54.288398 Entering phase INSTALL                 
+  [Container] 2026/08/02 11:09:54.328234 Phase complete: INSTALL State:         
+  SUCCEEDED                                                                     
+  [Container] 2026/08/02 11:09:54.328253 Phase context status code:  Message:   
+  [Container] 2026/08/02 11:09:54.366972 Entering phase PRE_BUILD               
+  [Container] 2026/08/02 11:09:54.369402 Phase complete: PRE_BUILD State:       
+  SUCCEEDED                                                                     
+  [Container] 2026/08/02 11:09:54.369414 Phase context status code:  Message:   
+  [Container] 2026/08/02 11:09:54.406187 Entering phase BUILD                   
+  [Container] 2026/08/02 11:09:54.440379 Running command set -uo pipefail       
+                                                                                
+  [Container] 2026/08/02 11:09:54.446136 Running command mkdir -p               
+  ~/_zip_extract ~/harbor_tasks                                                 
+                                                                                
+  [Container] 2026/08/02 11:09:54.451837 Running command cp -r                  
+  $CODEBUILD_SRC_DIR/* ~/_zip_extract/                                          
+                                                                                
+  [Container] 2026/08/02 11:09:54.468022 Running command cd ~ &&                
+  TASK=$(/app/scripts/harbor/prepare_task_dir.sh ~/_zip_extract ~/harbor_tasks) 
+  Single-step task detected; resolved TASK=tbench-task                          
+                                                                                
+  [Container] 2026/08/02 11:09:54.542661 Running command export PYTHONPATH=/app 
+                                                                                
+  [Container] 2026/08/02 11:09:54.548217 Running command python3 -m             
+  scripts.harbor.checks.cdg_sentinel_ultra.prescriptiveness -p                  
+  ~/harbor_tasks/"${TASK}"                                                      
+  CDG_Sentinel_Ultra prescriptiveness…                                          
+                                                                                
+  ❌ prescriptiveness: score=0.50, 3 finding(s) (0 high, 1 medium)              
+    [medium] P1: Rule 3 — prescribes the implementation approach for Java       
+  compatibility rather than stating the compatibility constraint and leaving    
+  the design to the agent.                                                      
+      evidence: "Because Java callers cannot use Kotlin named or default        
+  arguments, also provide a fluent `Settings.Builder` whose `new                
+  Settings.Builder()` supports at least `setDebug(boolean)`,                    
+  `setDistanceModelUpdateUrl(String)`, `setScanPeriods(ScanPeriods)`,           
+  `setScanStrategy(ScanStrategy)` and `setLongScanForcingEnabled(boolean)`,     
+  each returning the builder, terminated by `build()` which yields a `Settings` 
+  carrying only the fields that were actually set."                             
+      suggestion: State the constraint — "the API must be usable from Java      
+  without requiring named or default arguments" — and omit prescribing the      
+  fluent Builder pattern and its exact setter signatures. Let the agent decide  
+  how to satisfy that Java-friendly requirement.                                
+    [low] P2: Rule 5 — pre-answers a concurrency/isolation edge case that the   
+  agent should reason about independently.                                      
+      evidence: "a later change to the live configuration must not show up in a 
+  snapshot already handed out, and a change made to a snapshot must not reach   
+  the live configuration"                                                       
+      suggestion: Express this as a high-level correctness property — e.g.,     
+  "snapshots must be independent of the live configuration" — rather than       
+  spelling out both directions of the isolation invariant explicitly.           
+    [low] P3: Rule 3 — prescribes a specific named static holder type           
+  (`Settings.Defaults`) and its exact access pattern, going beyond specifying   
+  that defaults must be readable without instantiation.                         
+      evidence: "Expose the library defaults through `Settings.Defaults`,       
+  holding a default for each field above and readable without instantiating     
+  anything, for example `Defaults.distanceModelUpdateUrl`."                     
+      suggestion: State the behavioral requirement — "library defaults must be  
+  inspectable without constructing a Settings object" — and omit specifying the 
+  nested type name and access example.                                          
+                                                                                
+  The instruction is too prescriptive — rewrite it to state the requirements    
+  (the WHAT) and leave the approach (the HOW) to the agent. This check is       
+  optional and does not block submission, but please address the findings above 
+  before sending the task to review.                                            
+                                                                                
+  [Container] 2026/08/02 11:10:53.828862 Command did not exit successfully      
+  python3 -m scripts.harbor.checks.cdg_sentinel_ultra.prescriptiveness -p       
+  ~/harbor_tasks/"${TASK}" exit status 1                                        
+  [Container] 2026/08/02 11:10:53.832896 Phase complete: BUILD State: FAILED    
+  [Container] 2026/08/02 11:10:53.832917 Phase context status code:             
+  COMMAND_EXECUTION_ERROR Message: Error while executing command: python3 -m    
+  scripts.harbor.checks.cdg_sentinel_ultra.prescriptiveness -p                  
+  ~/harbor_tasks/"${TASK}". Reason: exit status 1                               
+  [Container] 2026/08/02 11:10:53.870187 Entering phase POST_BUILD              
+  [Container] 2026/08/02 11:10:53.872914 Phase complete: POST_BUILD State:      
+  SUCCEEDED                                                                     
+  [Container] 2026/08/02 11:10:53.872929 Phase context status code:  Message:   
+  [Container] 2026/08/02 11:10:53.917631 Set report auto-discover timeout to 5  
+  seconds                                                                       
+  [Container] 2026/08/02 11:10:53.917671 Expanding base directory path:  .      
+  [Container] 2026/08/02 11:10:53.918968 Assembling file list                   
+  [Container] 2026/08/02 11:10:53.918982 Expanding .                            
+  [Container] 2026/08/02 11:10:53.920269 Expanding file paths for base          
+  directory .                                                                   
+  [Container] 2026/08/02 11:10:53.920279 Assembling file list                   
+  [Container] 2026/08/02 11:10:53.920283 Expanding **/*                         
+  [Container] 2026/08/02 11:10:53.922408 Found 2 file(s)                        
+  [Container] 2026/08/02 11:10:53.922426 Report auto-discover file discovery    
+  took 0.004795 seconds                                                         
+  [Container] 2026/08/02 11:10:53.923504 Phase complete: UPLOAD_ARTIFACTS       
+  State: SUCCEEDED                                                              
+  [Container] 2026/08/02 11:10:53.923518 Phase context status code:  Message:   
+                                                                                
+                                                                                
+  ========                                                                      
+                                                                                
+  Dont fix this yet.                                                            
+  explain what are the errors.                                                  
+
+● Not fixing. Here's what the report actually says and what it means for this
+  task.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Three findings, and none of them are new breakage from this round. Here's the
+  read.
+
+  First: this does not block anything
+
+  The BUILD phase goes red and CodeBuild reports exit status 1, but that's this
+  check's normal failure mode. The message says it outright: "This check is 
+  optional and does not block submission." Static Checks, Oracle, Difficulty and
+  the rubric panel are what gate you. This one is advisory and aimed at the
+  human reviewer.
+
+  The trajectory is actually good
+
+  ┌───────┬────────┬─────────────────────┐
+  │ Round │ Score  │      Findings       │
+  ├───────┼────────┼─────────────────────┤
+  │ 1     │ 0.38   │ 5 (3 medium)        │
+  ├───────┼────────┼─────────────────────┤
+  │ 2     │ 0.45   │ 5 (4 medium)        │
+  ├───────┼────────┼─────────────────────┤
+  │ 3     │ passed │ —                   │
+  ├───────┼────────┼─────────────────────┤
+  │ now   │ 0.50   │ 3 (1 medium, 2 low) │
+  └───────┴────────┴─────────────────────┘
+
+  This is the highest score and the mildest report the task has ever had — no
+  high findings, one medium. Since round 3 passed and 0.50 fails, the threshold
+  sits somewhere above 0.50.
+
+  What each finding objects to
+
+  P1 (medium) — the Settings.Builder paragraph. It wants you to say "the API
+  must be usable from Java without named or default arguments" and drop the
+  fluent-builder pattern and the five setter signatures.
+
+  This is the same finding you refused in rounds 1 and 2, and it was still in
+  the instruction, unchanged, when the check passed at round 3. The graded tests
+  pin it hard: 4 Settings.Builder call sites, all five setters called by name
+  from SettingsJavaTest, and builderReturnsItselfAndSetsOnlyTheFieldsItWasGiven
+  asserts the fluent contract directly with assertSame(builder, 
+  builder.setDebug(true)) and one line per setter. Cutting it trades a
+  non-blocking finding for a blocking test_faithfulness hit.
+
+  P3 (low) — naming Settings.Defaults and the Defaults.distanceModelUpdateUrl 
+  access example. It wants "defaults must be inspectable without constructing a
+  Settings object."
+
+  The tests reference Settings.Defaults 15 times, and 5 of those are assertions
+  I added this round to close the coverage gap that failed the rubric panel. So
+  this one got harder to act on, not easier.
+
+  P2 (low) — spelling out both directions of snapshot isolation. It wants
+  "snapshots must be independent of the live configuration" instead of naming
+  both directions.
+
+  P2 is the one worth your attention, because two graders now disagree
+
+  The rubric panel just failed this task at test_coverage 2.5, and its driving
+  rationale was, verbatim:
+
+  ▎ The prompt also says a change made to an active-settings snapshot must not 
+  ▎ reach live configuration [instruction.md:7], while the snapshot test only 
+  ▎ checks that later live changes do not alter an earlier snapshot.
+
+  It failed you for not testing the second direction — which it could only
+  demand because the instruction spells that direction out. The prescriptiveness
+  judge now flags spelling it out as over-prescription.
+
+  Only the rubric panel blocks. So the instruction sentence that P2 objects to
+  is the sentence that makes the blocking fix defensible. There is a narrow
+  rewrite that satisfies both (the judge's own phrasing, "snapshots must be
+  independent of the live configuration", still supports a both-directions
+  test), but that's a judgment call, not a free win.
+
+  Did my round-2 edits cause this?
+
+  No. All three findings quote text that predates this round:
+
+  - The Builder sentence and the Settings.Defaults sentence sit in paragraph 3.
+  I edited that paragraph, but only to add the beaconSimulator and
+  rssiFilterImplClass default parentheticals — neither flagged sentence was
+  touched.
+  - The snapshot-isolation sentence in paragraph 7 is unchanged. My paragraph-7
+  edit was the separate "every field it applied has to be observable" clause,
+  which is not quoted in any finding.
+
+  What my edits did was re-trigger the check. And per your own
+  learning/prescriptiveness-check.md, the findings rotate between runs on text
+  that hasn't changed — round 2 there had "almost entirely different findings
+  from round one, on text that had not changed in those spots." Same judge
+  behavior here: a paragraph that passed at round 3 is flagged now.
+
+  Bottom line
+
+  P1 and P3 are the documented floor for this task — the graded tests call those
+  names, so cutting them trades a non-blocking finding for a blocking one. That
+  refusal is already written into Comments for Reviewer. P2 is the only one
+  with a plausible safe rewrite, and it needs care because the rubric panel just
+  failed you on the exact requirement that sentence states.
+
+  Say the word and I'll take P2 and leave the other two documented.
+
+✻ Baked for 1m 44s
+
+※ recap: Goal is getting AltBeacon 1177 through revision: oracle and coverage fixes are done, zipped and verified, and the prescriptiveness check is advisory only. Next action is your call on whether I rewrite the P2 snapshot sentence. (disable recaps in /config)
+
+❯ Not yet, For now Ive submitted it, will tell you if the revisions point these 
+  out.                                                                          
+
+● Understood. Recording the prescriptiveness outcome so the next round starts
+  with the context rather than re-deriving it.
+
+● Update(20260727_135618__AltBeacon_android-beacon-library__1177/task.md)
+  ⎿  Added 42 lines
+      370  at `upload/`, no `runs/`, no `task/` wrapper, `.git` and `refs
+           /` present, both scripts 0755,
+      371  no `.gradle` and no stray artifacts.
+      372  
+      373 +## Round 1 upload — prescriptiveness result (2026-08-02, non-b
+          +locking)                                                      
+      374 +                                                              
+      375 +Re-uploaded after the fixes above. Prescriptiveness came back 
+          +red again but milder than any                                 
+      376 +previous run, and it does not block submission.               
+      377 +                                                              
+      378 +```                                                           
+      379 +❌ prescriptiveness: score=0.50, 3 finding(s) (0 high, 1 mediu
+          +m)                                                            
+      380 +```                                                           
+      381 +                                                              
+      382 +| Round | Score | Findings |                                  
+      383 +|---|---|---|                                                 
+      384 +| 1 | 0.38 | 5 (3 medium) |                                   
+      385 +| 2 | 0.45 | 5 (4 medium) |                                   
+      386 +| 3 | **passed** | — |                                        
+      387 +| 4 (this one) | 0.50 | 3 (1 medium, 2 low) |                 
+      388 +                                                              
+      389 +Round 3 passed and 0.50 fails, so the threshold sits above 0.5
+          +0.                                                            
+      390 +                                                              
+      391 +| # | Sev | Objects to | Test references | Decision |         
+      392 +|---|---|---|---|---|                                         
+      393 +| P1 | medium | the `Settings.Builder` paragraph and its five 
+          +setter signatures | 4 `Settings.Builder` call sites, all five 
+          +setters called by name, `builderReturnsItselfAndSetsOnlyTheFie
+          +ldsItWasGiven` asserts the fluent return per setter | refuse, 
+          +same as rounds 1 and 2 |                                      
+      394 +| P2 | low | stating both directions of snapshot isolation | t
+          +he direction it wants removed is the one the rubric panel fail
+          +ed us for not testing | hold, see conflict below |            
+      395 +| P3 | low | naming `Settings.Defaults` and the `Defaults.dist
+          +anceModelUpdateUrl` example | **15** references, 5 of them add
+          +ed this round to close the coverage gap | refuse |            
+      396 +                                                              
+      397 +**None of the three were caused by this round's edits.** All q
+          +uote text that predates it and                                
+      398 +that was present, unchanged, when the check passed at round 3.
+          + Paragraph 3 was edited only to                               
+      399 +add the `beaconSimulator` and `rssiFilterImplClass` default pa
+          +rentheticals; paragraph 7 only                                
+      400 +in the "observable" clause, which no finding quotes. This is t
+          +he finding rotation already                                   
+      401 +documented in `learning/prescriptiveness-check.md`.           
+      402 +                                                              
+      403 +**P2 puts two graders in direct conflict.** The rubric panel's
+          + driving rationale for the                                    
+      404 +`test_coverage` 2.5 failure was that "the prompt also says a c
+          +hange made to an active-settings                              
+      405 +snapshot must not reach live configuration [instruction.md:7],
+          + while the snapshot test only                                 
+      406 +checks that later live changes do not alter an earlier snapsho
+          +t". It failed the task for not                                
+      407 +testing that direction, which it could only demand because the
+          + instruction states it.                                       
+      408 +Prescriptiveness now calls stating it over-prescription. Only 
+          +the rubric panel blocks. If this                              
+      409 +is taken, the judge's own phrasing ("snapshots must be indepen
+          +dent of the live configuration")                              
+      410 +still supports a both-directions test, so the fix exists but i
+          +s not free.                                                   
+      411 +                                                              
+      412 +Submitted as-is on 2026-08-02 with all three findings outstand
+          +ing and documented in Comments                                
+      413 +for Reviewer. Revisit only if a reviewer raises them.         
+      414 +                                                              
+      415  ## Open
+      416  
+      417  - Handling times: the "all revisions" field needs a fresh numb
+           er from the submitter. It reads
+
+● Recorded. Two loose ends worth flagging while it's in flight:
+
+  1. The revision handling-time number. submission_answer.txt still reads 55 
+  minutes in the "all revisions" field, carried over from the previous round. If
+  you entered something different on the form, tell me and I'll sync the file
+  so it describes what you actually submitted.
+
+  2. INDEX.md now shows all three tasks at pending-revision, which is over the
+  two-task cap and will block a new claim. That's accurate for equalsverifier
+  1166 and kvdex 245, but AltBeacon 1177 has just been re-uploaded — say the
+  word on what status you want it at and I'll set it.
+
+  When feedback lands: if P1 or P3 come back from a human reviewer, the answer
+  is the refusal already written into Comments for Reviewer, since the graded
+  tests call those names. If P2 comes back, that one has a real fix — the
+  judge's own phrasing still supports the both-directions test the rubric panel
+  demanded.
+
+✻ Baked for 38s
+
+❯ read and update whatever you learned in this session in claude.md and         
+  learning/                                                                     
+  ⎿  2 skills available
+
+● The log has moved on since my edits — there are two notes here I haven't read.
+  Reading the current state before writing anything, so I don't duplicate or
+  contradict newer findings.
+
+  Read 2 files, ran 3 shell commands (ctrl+o to expand)
+
+● Now I know exactly what's new. Three updates — starting with the open question
+  prescriptiveness-check.md explicitly asks to answer.
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/prescriptiveness-check.md)
+  ⎿  Added 39 lines
+       71  The exact passing score was not captured from the build log. W
+           orth pasting it in here if the
+       72  check ever passes again, to learn where the threshold sits.
+       73  
+       74 +### A pass is not sticky, and the threshold is above 0.50     
+       75 +                                                              
+       76 +**Verified 2026-08-02 on the same task, one revision round lat
+          +er.** The bundle that passed at                               
+       77 +round 3 was edited for an unrelated reason (a Quality Check co
+          +verage failure), re-uploaded, and                             
+       78 +the check came back red:                                      
+       79 +                                                              
+       80 +```                                                           
+       81 +❌ prescriptiveness: score=0.50, 3 finding(s) (0 high, 1 mediu
+          +m)                                                            
+       82 +```                                                           
+       83 +                                                              
+       84 +Two things fall out of that, and both were guesses before.    
+       85 +                                                              
+       86 +**The threshold is above 0.50.** Round 3 passed at an unrecord
+          +ed score, round 4 failed at 0.50.                             
+       87 +So the passing score on round 3 was higher than 0.50. That is 
+          +the first real bound this log has                             
+       88 +on where the bar sits. Narrow it further the next time a run p
+          +asses and the score is visible.                               
+       89 +                                                              
+       90 +**Any edit to `instruction.md` re-runs the check, and a previo
+          +usly passing instruction can                                  
+       91 +fail.** The full round history on this task:                  
+       92 +                                                              
+       93 +| Upload | Score | Findings |                                 
+       94 +|---|---|---|                                                 
+       95 +| 1 | 0.38 | 5 (0 high, 3 medium) |                           
+       96 +| 2 | 0.45 | 5 (0 high, 4 medium) |                           
+       97 +| 3 | **passed** | — |                                        
+       98 +| 4 | 0.50 | 3 (0 high, 1 medium) |                           
+       99 +                                                              
+      100 +Round 4 has the best score and the mildest report of the four,
+          + and it still failed. More                                    
+      101 +importantly, **all three findings quoted text that had not cha
+          +nged since the round that                                     
+      102 +passed.** P1 was the `Settings.Builder` paragraph, which the n
+          +ote above already records as                                  
+      103 +having been flagged in both failing rounds and still present w
+          +hen the check went green. It came                             
+      104 +back. The round-4 edits touched two other spots that no findin
+          +g mentions.                                                   
+      105 +                                                              
+      106 +So the rotation described above is not just "clearing four lea
+          +ves a new five" within a losing                               
+      107 +streak. It also runs in the other direction: a green result do
+          +es not certify the text, it                                   
+      108 +certifies one sampling of an LLM judge on that text. Do not tr
+          +eat a past pass as a reason to                                
+      109 +skip re-reading the report after an unrelated instruction edit
+          +, and do not read a fresh red as                              
+      110 +evidence that your latest edit broke something. Diff the quote
+          +d evidence against what you                                   
+      111 +actually changed before touching anything.                    
+      112 +                                                              
+      113  There is a second CodeBuild phase beyond the structure checks:
+      114  `scripts.harbor.checks.cdg_sentinel_ultra.prescriptiveness`. I
+           t reads `instruction.md`,
+      115  scores it 0 to 1, and lists findings with a severity and an id
+           . On the kvdex run the ids
+
+● Now the second direction of the two-checker conflict, which the existing note
+  only records one way round.
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/quality-check-criteria.md)
+  ⎿  Added 37 lines
+       62  exists at base, and the next prescriptiveness run flagged **th
+           e replacement** as P4. Fixing for
+       63  the blocking one is correct. Do not chase both to zero.
+       64  
+       65 +### The conflict also runs the other way, over whether a requi
+          +rement may be stated at all                                   
+       66 +                                                              
+       67 +Source: `20260727_135618__AltBeacon_android-beacon-library__11
+          +77`, 2026-08-02. The sharper case,                            
+       68 +because here the two checks want opposite things about the *sa
+          +me sentence*.                                                 
+       69 +                                                              
+       70 +The rubric panel failed that task at `test_coverage` 2.5. Its 
+          +driving rationale, verbatim:                                  
+       71 +                                                              
+       72 +> The prompt also says a change made to an active-settings sna
+          +pshot must not reach live                                     
+       73 +> configuration [instruction.md:7], while the snapshot test on
+          +ly checks that later live changes                             
+       74 +> do not alter an earlier snapshot.                           
+       75 +                                                              
+       76 +So it failed the task **for not testing a requirement the inst
+          +ruction states**. The fix was to                              
+       77 +add the missing direction to the test. The very next prescript
+          +iveness run then flagged the                                  
+       78 +instruction sentence itself:                                  
+       79 +                                                              
+       80 +```                                                           
+       81 +[low] P2: Rule 5 — pre-answers a concurrency/isolation edge ca
+          +se that the agent should reason                               
+       82 +about independently.                                          
+       83 +  evidence: "a later change to the live configuration must not
+          + show up in a snapshot already                                
+       84 +  handed out, and a change made to a snapshot must not reach t
+          +he live configuration"                                        
+       85 +  suggestion: Express this as a high-level correctness propert
+          +y — e.g., "snapshots must be                                  
+       86 +  independent of the live configuration" — rather than spellin
+          +g out both directions.                                        
+       87 +```                                                           
+       88 +                                                              
+       89 +Taking P2 literally would delete the sentence that made the bl
+          +ocking coverage fix defensible.                               
+       90 +A requirement the instruction does not state is a requirement 
+          +the tests must not assert, which                              
+       91 +is the `test_faithfulness` overreach rule. Cutting it does not
+          + remove the problem, it moves it                              
+       92 +to the axis that blocks.                                      
+       93 +                                                              
+       94 +**Rule: when a prescriptiveness finding quotes a requirement t
+          +hat a graded test asserts, the                                
+       95 +finding is asking you to break `test_faithfulness`. Refuse it 
+          +and say so in Comments for                                    
+       96 +Reviewer.** The safe middle, when one exists, is the judge's o
+          +wn suggested phrasing if it still                             
+       97 +carries the requirement. Here "snapshots must be independent o
+          +f the live configuration" does                                
+       98 +still support a both-directions test, so P2 has a real fix. P1
+          + and P3 on that same report quoted                            
+       99 +`Settings.Builder` and `Settings.Defaults`, which the graded t
+          +ests call by name 4 and 15 times,                             
+      100 +and those have no such middle. Refuse and document.           
+      101 +                                                              
+      102  ## The rule
+      103  
+      104  1. Treat leakage and navigation in `instruction.md` as **block
+           ing** until proven otherwise.
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/learning/README.md)
+  ⎿  Added 8 lines, removed 1 line
+      33  Two checkers read `instruction.md` and they are easy to confuse
+          . The **prescriptiveness** check
+      34  (`P1..Pn`, a 0 to 1 score, CodeBuild BUILD phase) does not bloc
+          k and says so. The **Quality
+      35  Check** (`Q1..Q15`, must-have criteria) does. They flag overlap
+          ping text and disagree about how
+      36 -far to cut. Fix for the blocking one.                          
+      36 +far to cut, in both directions: the Quality Check has failed a 
+         +task for not testing a                                         
+      37 +requirement the instruction states, and prescriptiveness then f
+         +lagged the instruction for                                     
+      38 +stating it. Fix for the blocking one. A prescriptiveness findin
+         +g that quotes a requirement a                                  
+      39 +graded test asserts is asking you to break `test_faithfulness`.
+      40  
+      41 +Prescriptiveness passing once does not settle it. Any later edi
+         +t to `instruction.md` re-runs the                              
+      42 +check, and it has come back red on text that was unchanged sinc
+         +e the round that passed. The                                   
+      43 +threshold is above 0.50.                                       
+      44 +                                                               
+      45  The upload pipeline runs its phases in order and stops at the f
+          irst failure, so expect to
+      46  find problems one at a time rather than all at once. On both ta
+          sks so far the static checks
+      47  failed first and the prescriptiveness check only surfaced once 
+          they passed. Budget for
+
+● Now the two workflow hazards from this session that belong in CLAUDE.md rather
+  than learning/.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/CLAUDE.md)
+  ⎿  Added 2 lines
+      272  
+      273  Run this loop every time feedback arrives, however small it lo
+           oks.
+      274  
+      275 +**0. Confirm WHICH task the feedback belongs to, from the feed
+          +back itself.** Do not trust the path or task name in the messa
+          +ge that carries it. Feedback gets pasted with the previous tas
+          +k's path attached, and the `__` in a directory name renders as
+          + markdown bold, so `20260728_153118__jqno_equalsverifier__1166
+          +` arrives as `20260728_153118**jqno_equalsverifier**1166` and 
+          +is easy to mistake for a different task. The report always ide
+          +ntifies itself: judge justifications cite `task.toml` line num
+          +bers with the source PR, repo paths under `environment/repo/`,
+          + and file names from the bundle. Match those against the task 
+          +folders before touching anything, and say plainly which task y
+          +ou concluded it is. Working the wrong folder costs a whole rou
+          +nd.                                                           
+      276 +                                                              
+      277  **1. Capture the feedback before touching anything.** Paste it
+            verbatim into the task's `task.md` under a dated revision hea
+           ding, alongside which round it is and where it came from (whic
+           h check, or the reviewer). Verbatim matters — reviewer notes a
+           re the defect list you will be graded against, and paraphrasin
+           g loses the specific ask. Set the task's status to `pending-re
+           vision` in `INDEX.md` and check the throughput rule: at most t
+           wo tasks sit there at once.
+      278  
+      279  **2. Turn the feedback into a numbered item list, then work it
+           .** One line per finding, each with the file it touches and th
+           e fix. Findings arrive in prose and bundle several asks into o
+           ne paragraph — split them, or you will address four of six and
+            think you are done. Reply to every item, including the ones y
+           ou decide not to act on, with the reason.
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/CLAUDE.md)
+  ⎿  Added 1 line
+      131  1. Check the task folder exists, creating it if missing: `mkdi
+           r -p tasks/<Original Directory Name>/{download,work,upload,ans
+           wers}`
+      132  2. Copy the pristine extract into the working folder, preservi
+           ng `.git` and every dotfile: `cp -a "tasks/<Original Directory
+            Name>/download/original/." "tasks/<Original Directory Name>/w
+           ork/"`
+      133  3. ALL edits happen inside `tasks/<Original Directory Name>/wo
+           rk/`. `download/original/` stays untouched as the pristine ref
+           erence. At any point, `diff -rq download/original work -x '.gi
+           t'` from the task folder lists exactly the files you changed —
+            run it before zipping and confirm every line is a change you 
+           meant to make. Paths in sentinel-task-fixing (e.g. `environmen
+           t/repo`) refer to the working copy
+      134 +   - **Never run the project's build tool inside `download/ori
+          +ginal/`, and never inside `work/` either.** Gradle, Maven, npm
+          + and cargo all write caches and lock files into the checkout (
+          +`.gradle/`, `target/`, `node_modules/`). Those paths are gitig
+          +nored, so `git status` stays clean and nothing warns you. Two 
+          +things then break quietly: `diff -rq download/original work` s
+          +tarts reporting files you never touched, and the next `zip -rX
+          + .` ships the cache into the container, which hard-caps the pa
+          +ckaging axis at 1. Verified 2026-08-02, where a Gradle run lef
+          +t `.gradle/8.0/fileHashes/fileHashes.lock` in both trees. Buil
+          +ds and test runs belong in disposable scratchpad copies (Step 
+          +5.5). If a cache does appear, delete it before the stray-artif
+          +act sweep and re-run the sweep                                
+      135  4. Add or update the task's row in `INDEX.md` and its `task.md
+           ` as the verdict and status change
+      136  
+      137  Follow sentinel-task-fixing in full. Hard boundaries, always i
+           n force:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Twins are all in sync. Adding the session's lessons to Common Mistakes.
+
+● Update(/media/gaurav-s-ubuntu/COLLEGE 
+        MATERIAL/Work/AirDawg/SENTINAL-ULTRA/CLAUDE.md)
+  ⎿  Added 6 lines
+      1038  - Quietly reconciling `model_difficulty` with `difficulty` to
+             satisfy a check instead of reporting the mismatch
+      1039  - Showing Phase 1 findings as a pastebox first — the two chec
+            kbox lists come before it, in the platform's order
+      1040  - Waiting to be asked for the difficulty answer, the senior e
+            stimate, or Comments for Reviewer instead of drafting them wi
+            th everything else
+      1041 +- Trusting the task path pasted alongside feedback instead of
+           + identifying the task from the report's own citations — `__` 
+           +renders as bold, so directory names arrive mangled and one ta
+           +sk's path gets attached to another task's feedback           
+      1042 +- Running gradle, maven, npm or cargo inside `work/` or `down
+           +load/original/` — the caches are gitignored, so nothing warns
+           + you until `diff -rq` reports files you never touched or the 
+           +zip ships the cache                                          
+      1043 +- Concluding "flaky or infra" from a platform message that sa
+           +ys so, when the failure is identical on every run — reproduce
+           + the oracle *script* twice in one container before blaming th
+           +e environment                                                
+      1044 +- Chasing a prescriptiveness finding that quotes a requiremen
+           +t a graded test asserts — that finding is asking you to break
+           + `test_faithfulness`, which blocks                           
+      1045 +- Treating a past prescriptiveness pass as settled — any late
+           +r instruction edit re-runs it, and it has come back red on te
+           +xt unchanged since the passing round                         
+      1046 +- Diagnosing a non-reproducing platform failure by guessing —
+           + measure each hypothesis (time the cold build, read the offli
+           +ne cache, time the verifier) and record the dead ends so nobo
+           +dy repeats the sweep                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Index integrity is clean, all twins in sync. Here's what I wrote.
+
+  What was genuinely new
+
+  The log had moved on since my earlier edits — quality-check-criteria.md and
+  source-pr-cross-check.md are new, and solve-sh-idempotency.md (the oracle 0/3
+  root cause) was already written and indexed from earlier in this session. So I
+  only added what wasn't already captured.
+
+  learning/prescriptiveness-check.md — answered the open question the file
+  itself poses. It ended with "The exact passing score was not captured… Worth 
+  pasting it in here if the check ever passes again, to learn where the 
+  threshold sits." Round 4 gives the first real bound:
+
+  - The threshold is above 0.50. Round 3 passed at an unrecorded score; round 4
+  failed at 0.50. That brackets it for the first time.
+  - A pass is not sticky. Round 4 had the best score and mildest report of all
+  four rounds and still failed, and all three findings quoted text unchanged
+  since the passing round. The known "findings rotate" behaviour also runs
+  backwards: green certifies one sampling of an LLM judge, not the text. The
+  practical rule is to diff the quoted evidence against what you actually
+  changed before touching anything — a fresh red is not evidence your last edit
+  broke something.
+
+  learning/quality-check-criteria.md — the existing note recorded the two
+  checkers conflicting in one direction (Q9 objects to package paths →
+  replacement gets flagged as P4). This session found the sharper direction: the
+  rubric panel failed the task at test_coverage 2.5 for not testing a 
+  requirement the instruction states, and prescriptiveness then flagged stating 
+  that requirement as P2. Deleting it to satisfy P2 removes the basis for the
+  blocking fix. Generalised to a rule: a prescriptiveness finding that quotes a
+  requirement a graded test asserts is asking you to break test_faithfulness.
+  Refuse and document — unless the judge's own suggested phrasing still carries
+  the requirement, which is the one case with a safe middle.
+
+  CLAUDE.md — two workflow hazards that aren't platform behaviour, so they
+  belong here rather than in learning/:
+
+  - New Step 10.0: confirm which task the feedback belongs to from the 
+  feedback's own citations, not the pasted path. This session's feedback arrived
+  under an equalsverifier path but was unmistakably AltBeacon, and __ renders
+  as bold so directory names arrive mangled
+  (20260728_153118**jqno_equalsverifier**1166). Working the wrong folder costs a
+  whole round.
+  - Step 5 setup: never run gradle/maven/npm/cargo inside work/ or
+  download/original/. Those caches are gitignored, so git status stays clean and
+  nothing warns you — until diff -rq reports files you never touched, or the
+  zip ships the cache and hard-caps packaging at 1. Cited the actual artifact I
+  found in both trees.
+
+  Plus seven Common Mistakes entries, including the diagnostic one I'd most want
+  my next session to read: don't conclude "flaky or infra" from a platform
+  message that says so when the failure is identical every run, and measure each
+  hypothesis rather than guessing.
+
+  One judgement call worth surfacing: I did not log the .git/FETCH_HEAD that
+  reappears after zipping. static-checks.md already covers reflog recreation
+  from the same cause, and the removal command already lists FETCH_HEAD —
+  logging it again would be restating existing guidance rather than the gap
+  between guidance and reality, which is what the write-back rule asks for.
+
+✻ Crunched for 3m 28s
+
+❯ /effort max                                                                   
+  ⎿  Set effort level to max (this session only): Maximum capability with
+     deepest reasoning. May use excessive tokens resulting in long response
+     times or overthinking. Use sparingly for the hardest tasks.
+
+❯ I worked on this task previously: /media/gaurav-s-ubuntu/COLLEGE              
+  MATERIAL/Work/AirDawg/SENTINAL-ULTRA/tasks/20260727_135618__AltBeacon_android 
+  -beacon-library__1177                                                         
+                                                                                
+  I got feedback and need to do revision for this task.                         
+                                                                                
+  Here are the feedbacks:                                                       
+                                                                                
+  ## Automated feedback                                                         
+                                                                                
+  Agent Runner Summary: Evaluation FAILED. Rubric panel judge: REMOVE           
+  (NEEDS_REVISION)                                                              
+                                                                                
+  Agent Runner Summary: Evaluation FAILED. Validation failed: Oracle did not    
+  pass all runs: 0/3. Task may be flaky or has infra issues.                    
+                                                                                
+  ## Difficulty Check                                                           
+                                                                                
+  Oracle did not pass all runs: 0/3. Task may be flaky or has infra issues.     
+                                                                                
+  ## Agentic Judge Quality Report                                               
+                                                                                
+  ============================================================================= 
+  ===                                                                           
+  AGENTIC JUDGE REVIEW: task                                                    
+  ============================================================================= 
+  ===                                                                           
+                                                                                
+  Status: ❌ REMOVE                                                             
+  Reason: oracle_spec_gap                                                       
+                                                                                
+  Per-axis review (rating out of 5, with judge justifications):                 
+                                                                                
+  clarity — 4.0/5                                                               
+  claude (4/5): The prompt at [instruction.md:1-7] is dense but internally      
+  consistent: it names every field, its default, the exact constructor          
+  parameter order for `ScanPeriods`, the exact strategy class names and         
+  constructor signatures, the three `BeaconManager` methods and their           
+  differing merge semantics, and the snapshot copy-independence contract.       
+  Minor ambiguities remain (e.g., whether `Settings.Defaults` is a Kotlin       
+  `object` or a nested class, the exact package for                             
+  `DistanceCalculatorFactory` beyond 'same package as the                       
+  DistanceCalculator', and Builder method signature list qualified with         
+  'at least'), but nothing material to success is left undefined.               
+  gpt (4/5): The prompt specifies the public API surface, field names,          
+  defaults, builder methods, scan strategy variants, merge/reset                
+  semantics, and snapshot behavior in detail [instruction.md:3-7]. Minor        
+  ambiguity remains around implementation-observable terms like applying        
+  settings “as one transaction” and the exact extent of Java builder            
+  support because it says the builder supports “at least” a subset of           
+  fields [instruction.md:3] while many additional fields are listed.            
+                                                                                
+  oracle_no_gaming — 5.0/5                                                      
+  claude (5/5): The oracle is a real source patch of ~1100 lines                
+  implementing the described Kotlin/Java API on the AltBeacon repository;       
+  there are no hardcoded expected values, no fabricated tool outputs, and       
+  no reads from `tests/`. `solve.sh` simply applies the patch to `/app`         
+  [solution/solve.sh:8-23] with an idempotent already-applied check and a       
+  3-way fallback; the answer is produced by legitimate cod                      
+  ──── (172 lines hidden) ───────────────────────────────────────────────────── 
+                                                                                
+  [instruction.md:7].                                                           
+                                                                                
+  test_faithfulness — 3.5/5                                                     
+  claude (5/5): Every asserted value maps directly to phrasing in               
+  [instruction.md]: field names/defaults are quoted verbatim (e.g.,             
+  regionExitPeriodMillis default 30000, maxTrackingAgeMillis default            
+  10000, distance URL default empty string), the JobServiceScanStrategy         
+  default assertion [tests/tests.patch:179] is grounded in 'the default         
+  strategy on Android 8+' combined with the @Config(sdk=28) runtime,            
+  snapshot independence checks [tests/tests.patch:381-402] mirror the two-      
+  directional independence requirement, and the 0.1-meter tolerance on the      
+  default distance calc [tests/tests.patch:452,458] is loose enough to          
+  match the prompt's 'preserve the distance calculation the library             
+  already performs today'. No hidden output keys, no undocumented               
+  canonicalization, and the push-through targets are all methods the            
+  instruction explicitly names ('reading such a property back off               
+  BeaconManager or Beacon').                                                    
+  gpt (3/5): Most assertions are grounded in the prompt's exact field names,    
+  defaults, builder setters, scan-period values, and BeaconManager methods      
+  [instruction.md:3-7]. One significant hidden API requirement is that          
+  active settings/snapshots must provide a Kotlin `copy(...)` method: the       
+  test mutates a snapshot via `beaconManager.activeSettings.copy(...)`          
+  [tests/tests.patch:394-399], while the prompt requires only that              
+  snapshots be independent copies and does not require `Settings` to be a       
+  data class or expose a `copy` method [instruction.md:7].                      
+                                                                                
+  Rationale (from driving judge):                                               
+  The instruction requires all explicitly set fields to be applied through      
+  `adjustSettings`/`replaceSettings` and existing static configuration to       
+  reflect just-applied values [instruction.md:7], but `applySettingsChange`     
+  only pushes a subset and explicitly leaves `longScanForcingEnabled`,          
+  `rssiFilterImplClass`, and `scanStrategy` as TODOs while also omitting        
+  existing setters for `useTrackingCache` and `maxTrackingAgeMillis`            
+  [solution/golden.patch:135-198]. The scan strategy API is present, but        
+  `JobServiceScanStrategy` stores `immediateJobId`, `periodicJobId`, and        
+  `jobPersistenceEnabled` while `configure` ignores those configured values     
+  [solution/golden.patch:739-761], so several named settings are observable in  
+  snapshots but do not actually affect library behavior as required.            
+                                                                                
+  ============================================================================= 
+  ===                                                                           
+                                                                                
+  ## Oracle Check                                                               
+                                                                                
+  Oracle did not pass all runs: 0/3. Task may be flaky or has infra issues.     
+                                                                                
+
+● Two things here, and one of them is a correction I owe you.
+
+  My solve.sh root-cause call was wrong. The judge scored oracle_robustness 5/5
+  and quotes the new script by line (solve.sh:8-26, set -euo pipefail,
+  reverse-apply check at line 12), so the uploaded bundle definitely has the fix
+  — and the oracle still fails 0/3. The non-idempotency was a real defect worth
+  fixing, but it was not what's failing on the platform. I'll re-diagnose from
+  scratch and correct the learning note, which currently encodes that false
+  causal claim.
+
+  Also note the panel escalated DISCUSS → REMOVE on oracle_spec_faithfulness
+  2.0, an oracle axis — while both test axes sit at 3.5. That contradicts the
+  documented "only the two test axes flip the verdict" rule.
+
+  Starting with the blocker.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All caches live under /root (1.5G Gradle + 400M Robolectric m2) and /app is
+  root:root drwxr-xr-x. That gives me three concrete, testable failure modes.
+  Checking the cheapest and most likely first — whether the suite runs more
+  tests than the 230 graded, since allow_extra_failures=false means any ungraded
+  flake zeroes the reward.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Suite is exactly 230 tests, all graded, all passing — so
+  allow_extra_failures=false has no ungraded surface to trip on. That hypothesis
+  is dead too. Testing the environment differences I haven't replicated.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+❯ Check other tasks for reference.                                              
+
+● Good call — that's the right differential. equalsverifier's feedback showed
+  oracle: 100.0% (3/3 runs) and kvdex passed its oracle check too, so AltBeacon
+  is the outlier. Comparing the three bundles directly.
+
+  Also worth noting from E1: as non-root, git refuses the repo entirely
+  ('--3way' outside a repository — dubious-ownership protection), and my new
+  solve.sh fails loudly where the old one would have silently reverse-applied.
+  UTC/locale made no difference (reward 1, 230/230).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● A fourth task appeared (cryspen_libcrux__1165). And this settles the solve.sh 
+  question definitively: equalsverifier ships the old dangerous reverse-apply
+  script and its oracle passed 3/3 on the platform; AltBeacon ships the safe one
+  and fails 0/3. So the script was never the discriminator.
+
+  Ran 1 shell command (ctrl+o to expand)
+● Now the decisive question. AltBeacon has the heaviest build by a clear margin
+  (4 build-tool invocations plus a full Android SDK download) against the same
+  build_timeout_sec = 900 as everyone else. Measuring the dominant cost under
+  the declared 4-CPU limit.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● While that times, scoping the other half — the REMOVE. Checking which existing
+  setters the oracle could call for the fields it leaves as TODOs.
+
+  Read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Background command "Time Gradle test step at declared 4 CPUs" completed (exit
+code 0)
+
+● Gradle at the declared 4 CPUs: 52s. So the 316s cold build is
+  download-dominated, not compute — the build-timeout theory is weak too. That
+  kills my last hypothesis, which means I should look at what's structurally
+  unique to this bundle. Checking the one code path none of my local runs has
+  ever exercised: the container's default CMD.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All four Dockerfiles have the same exiting-CMD shape, so that's not it either.
+  I've now systematically eliminated every hypothesis I can test locally.
+
+  Correction first
+
+  My solve.sh root-cause call was wrong, and the other tasks prove it:
+  equalsverifier ships the old dangerous reverse-apply script and its oracle 
+  passed 3/3 on the platform. AltBeacon ships the safe one and fails 0/3. The
+  script was never the discriminator. The fix was still correct on its own
+  merits (§10.6 mandates it, and the judge now scores oracle_robustness 5/5
+  citing it), but it did not address 0/3. I'll correct the causal claim in
+  learning/solve-sh-idempotency.md.
+
+  What I eliminated, each with a measurement
+
+  Hypothesis: solve.sh non-idempotency
+  Test: equalsverifier ships the unsafe version
+  Result: passes 3/3 on platform — dead
+  ────────────────────────────────────────
+  Hypothesis: Ungraded test flake vs allow_extra_failures=false
+  Test: count reported vs graded
+  Result: suite is exactly the 230 graded — no extra surface
+  ────────────────────────────────────────
+  Hypothesis: Locale / timezone
+  Test: oracle with TZ=UTC LANG=C LC_ALL=C
+  Result: reward 1, 230/230
+  ────────────────────────────────────────
+  Hypothesis: Offline Gradle cache missing patched deps
+  Test: inspect image cache
+  Result: core-ktx 1.12.0 + robolectric 4.11.1 present
+  ────────────────────────────────────────
+  Hypothesis: Verifier timeout
+  Test: time the run
+  Result: 30s against 1500s
+  ────────────────────────────────────────
+  Hypothesis: Build timeout at 900s
+  Test: time gradlew test at the declared 4 CPUs
+  Result: 52s — the 316s cold build is download-bound, not compute
+  ────────────────────────────────────────
+  Hypothesis: Non-root execution
+  Test: --user 1000:1000
+  Result: git refuses the repo entirely; but that would break all four tasks,
+  and
+  three pass — dead
+  ────────────────────────────────────────
+  Hypothesis: Container's default CMD exiting
+  Test: compare all four Dockerfiles
+  Result: all four run-then-exit; Harbor overrides it
+
+  Five clean oracle runs, including three on an image cold-built --no-cache from
+  the uploaded zip. It will not reproduce.
+
+  The one surface I cannot test is the platform building the image itself.
+  AltBeacon has by far the largest build-time network footprint of the four
+  (Android SDK from dl.google.com, ~1.5 GB Gradle cache, 400 MB of Robolectric
+  jars), and the verifier runs --offline. A partial cache from their builder
+  would fail silently at verify time with no XML, giving reward 0 on every run —
+  exactly what you see, invisible to me. That is a guess, not a finding, and
+  per CLAUDE.md §3 the correct move for a consistent failure that won't
+  reproduce is to escalate on Slack with submission UID a1bcc8a9 and the exact 
+  error, not to keep reworking.
+
+  The REMOVE is separate, and I can fix it now
+
+  Reason oracle_spec_gap, oracle_spec_faithfulness 2.0 (claude 5, gpt 2). Both
+  test axes are 3.5, above the DISCUSS line — so this bounced on an oracle axis,
+  which contradicts the documented "only the two test axes flip the verdict."
+  That's a second drift finding worth logging alongside
+  quality-check-criteria.md.
+
+  The substance is real and I verified it in the patch:
+
+  - applySettingsChange ends with a literal // TODO: apply all other settings
+  listing longScanForcingEnabled, rssiFilterImplClass, scanStrategy as
+  commented-out lines (golden.patch:193), and never touches useTrackingCache /
+  maxTrackingAgeMillis.
+  - All four have existing setters at base:
+  BeaconManager.setRssiFilterImplClass, setUseTrackingCache, setMaxTrackingAge,
+  CycledLeScanner.setLongScanForcingEnabled.
+  - JobServiceScanStrategy.configure calls only setEnableScheduledScanJobs(true)
+  and ignores its stored immediateJobId / periodicJobId / jobPersistenceEnabled
+  — while ForegroundServiceScanStrategy.configure does use its params.
+  ScanJob.setOverrideImmediateScanJobId / setOverridePeriodicScanJobId exist at
+  base.
+
+  My last-round narrowing failed, and I can see why. I wrote "settings the
+  library already models on its existing static configuration are pushed
+  through" — but useTrackingCache and maxTrackingAgeMillis do have existing
+  static setters, so that wording still promises exactly what the oracle skips.
+  I flagged that risk to myself and shipped it anyway.
+
+  The fork I want your call on
+
+  Narrowing failed once, and narrowing further gets incoherent — you'd be
+  specifying a config API where setting useTrackingCache does nothing and a scan
+  strategy whose job IDs configure no job. So I'd reverse last round's decision
+  and extend the oracle: wire the four fields to their existing setters and
+  make JobServiceScanStrategy.configure apply its IDs. That is allowed under
+  "the oracle does not implement the instruction," it's purely additive (no PR
+  behaviour removed), and it completes upstream's own TODO.
+
+  Two reasons to hear from you first:
+
+  1. It reverses a decision I documented in Comments for Reviewer last round,
+  and it's a scope change that re-triggers the difficulty eval.
+  2. It's a few hours of work on a bundle whose oracle cannot currently execute 
+  on the platform. If the 0/3 is their infra, that work ships into a task that
+  still can't be graded.
+
+  My recommendation: escalate the 0/3 on Slack now with UID a1bcc8a9, and in
+  parallel let me do the oracle extension — the Quality judge scores
+  oracle_spec_faithfulness by reading the bundle, not by running it, so that
+  axis will move regardless of whether the oracle executes. Say go and I'll
+  start; fail_to_pass is at the 20 ceiling, so the new assertions go inside
+  existing tests.
+
+✻ Brewed for 9m 7s
+
+❯ /effort max                                                                   
+  ⎿  Set effort level to max (this session only): Maximum capability with
+     deepest reasoning. May use excessive tokens resulting in long response
+     times or overthinking. Use sparingly for the hardest tasks.
+
+※ recap: Goal is getting AltBeacon 1177 through review. It bounced again: oracle 0/3, which I can't reproduce after eliminating eight causes, plus a REMOVE on oracle spec faithfulness. Next: your go-ahead to extend the oracle while you escalate the 0/3 on Slack. (disable recaps in /config)

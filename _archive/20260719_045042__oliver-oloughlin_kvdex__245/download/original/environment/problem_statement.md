@@ -1,0 +1,30 @@
+**Summary.** The kvdex data-mapping layer for Deno KV binds its value serialization strategy to a fixed set of string flags on each collection. On-disk serialization is configured through the `serialize: "json" | "v8" | "json-uncompressed" | "v8-uncompressed"` option, with the underlying serialize/deserialize/compress helpers residing inline in `src/utils.ts`. This design is inflexible: users cannot supply their own serializer or compressor, cannot mix a JSON serializer with a custom compression backend, and cannot import the serialization primitives as a standalone, documented module. A pluggable **encoder** model would address these limitations, with serialization living in a dedicated `src/ext/encoding` module tree.
+
+**Source state.** Collections accept a `serialize` string flag. The functions `jsonSerialize`, `jsonDeserialize`, `v8Serialize`, `v8Deserialize` (and the brotli-based `compress`/`decompress`) are defined in and exported from `src/utils.ts`. No user-facing mechanism exists for injecting a serializer or compressor object.
+
+**Target state.** Introduce a first-class `Encoder` abstraction and route all collection serialization through it. An `Encoder` is an object of the shape `{ serializer: Serializer; compressor?: Compressor }`, where a `Serializer` is `{ serialize, deserialize }` (a `serialize` function returning a `Uint8Array` — synchronously or as a `Promise<Uint8Array>` — and a matching `deserialize` function that reconstructs the original value from a `Uint8Array`), and a `Compressor` is `{ compress, decompress }`, both operating on `Uint8Array` payloads. Collection options must replace the old `serialize` flag with an optional `encoder?: Encoder` field. When an `encoder` is provided, the collection stores values by first serializing then (if a compressor is present) compressing, and reads them back by decompressing then deserializing, such that every value round-trips unchanged.
+
+**Database factory signature.** As part of this migration, the `kvdex()` factory takes a single options object instead of two positional arguments. Replace `kvdex(kv, schemaDefinition)` with `kvdex({ kv, schema })`, where the options object holds the `DenoKv` instance under `kv` and the schema definition under an optional `schema` field. Introduce and export a `KvdexOptions` type of this shape, and update `kvdex()` to read `options.kv` and `options.schema` (defaulting to an empty schema when `schema` is omitted). The returned instance type is unchanged aside from being derived from `options.schema`.
+
+A new module tree exists under `src/ext/encoding` with three sub-encoders, each in its own directory with a `mod.ts` barrel, alongside a top-level `src/ext/encoding/mod.ts` that re-exports all of them.
+
+1. **JSON** — a factory `jsonEncoder(options?)` returning an `Encoder` whose serializer is `{ serialize: jsonSerialize, deserialize: jsonDeserialize }` and whose optional `compressor` is taken from `options.compressor`. The functions `jsonSerialize` (value → `Uint8Array`) and `jsonDeserialize` (`Uint8Array` → value) must be exported and must round-trip every supported Deno KV value type, including `bigint`, `Date`, `Map`, `Set`, `RegExp`, `Uint8Array` and other typed data, and deeply nested objects/arrays.
+2. **V8** — a factory `v8Encoder(options?)` returning an `Encoder` whose serializer is `{ serialize: v8Serialize, deserialize: v8Deserialize }`, again accepting an optional `options.compressor`. `v8Serialize` and `v8Deserialize` build on the `node:v8` built-in, produce a `Uint8Array`, and must round-trip the same full range of KV value types.
+3. **Brotli** — a factory `brotliCompressor(options?)` returning a `Compressor` backed by the `node:zlib` brotli functions. It accepts an optional `quality` level (default `1`); `compress` returns a `Uint8Array` and `decompress` inverts it exactly.
+
+Both `jsonSerialize`/`jsonDeserialize` and `v8Serialize`/`v8Deserialize` must return `Uint8Array` instances from serialization, and deserialization must yield a value deep-equal to the original input for the entire set of KV value types the library supports.
+
+**Import surface (available verbatim at these paths).** The following imports resolve exactly as written:
+
+- `jsonEncoder`, `jsonSerialize`, `jsonDeserialize`, `v8Serialize`, and `v8Deserialize` are available from `src/ext/encoding/mod.ts`.
+- `brotliCompressor` is available from `src/ext/encoding/brotli/brotli_compressor.ts` and is also re-exported through `src/ext/encoding/mod.ts`.
+
+Add the corresponding public export map entries so the package exposes `./encoding`, `./encoding/json`, `./encoding/v8`, and `./encoding/brotli`.
+
+**Observable behavior required.** Collections configured with `encoder: jsonEncoder()` or `encoder: jsonEncoder({ compressor: brotliCompressor() })` must support the full set of operations exercised by an uncompressed collection: adding one or many documents, finding one or many by id, retrieving many, counting, mapping over documents, updating one/many/by-id, deleting many, and — for indexable collections — the same operations plus secondary-index and secondary-order variants (e.g. retrieving many entries in secondary order). In every case the values read back must equal the values written, whether or not a compressor is attached. A JSON encoder combined with a brotli compressor is the standard end-to-end configuration and must produce correct round-trips for all stored document shapes.
+
+**Constraints.**
+
+- The primitives previously importable from `src/utils.ts` are moving; the new module paths above are the supported locations.
+- Test files must not be modified; the implementation must satisfy them as written.
+- Serialization functions must return `Uint8Array` (not `ArrayBuffer`, `Buffer`, or a string), and deserialization must reconstruct values that are deep-equal to the originals.

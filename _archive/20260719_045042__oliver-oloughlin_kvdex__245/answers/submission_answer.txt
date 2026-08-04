@@ -1,0 +1,193 @@
+Submitter Answers - Fixable
+Task: 20260719_045042__oliver-oloughlin_kvdex__245
+
+What is your analysis of the Sentinel task? (both occurrences)
+Fixable
+[Internal] Validity: Fixable
+
+Select where the task had issues (check all that apply):
+- [x] Instructions
+- [x] Tests
+- [x] Oracle Solution
+- [x] Environment/Dockerfile
+
+What issues did you find with the task?
+- [x] Every requirement in the instructions is not properly tested
+- [x] All test requirements are not properly specified in the instructions
+- [x] The instructions appear LLM generated
+- [x] The instructions are overly-prescriptive
+- [ ] The task leaks solution information
+- [ ] The oracle does not implement the solution following the instructions
+- [ ] Less than 10 fail-to-pass tests in the test suite
+
+Issue details:
+
+1) All test requirements are not properly specified in the instructions - the shipped tests/tests.patch deleted tests/test.deps.ts and moved 117 test files onto bare specifiers. Every one of them went from
+
+    import { assert } from "../test.deps.ts";
+
+to
+
+    import { assert } from "@std/assert";
+
+A bare specifier only resolves if deno.json carries an imports map, and the only place that map shows up is solution/golden.patch. instruction.md never asks for it. To be sure, I applied golden.patch so the full encoder was in place, deleted only the imports block from deno.json, and ran the suite. It died at load time before a single test ran.
+
+    error: Relative import path "@std/assert" not prefixed with / or ./ or ../
+    and not in import map from "file:///app/tests/ext/encoder.test.ts"
+
+So an engineer who built the encoder exactly as the instruction describes still scored 0 out of 16. The versions were not guessable either. The verifier runs airgapped under deno test --cached-only, so the map had to pin the same versions that environment/Dockerfile warms on lines 44 to 53.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I regenerated tests/tests.patch so the test tree keeps tests/test.deps.ts and its original imports. No test depends on a deno.json change now. The same rewrite dropped modified pre-existing test files from 157 to 40 and shrank the patch from 158 files to 45.
+
+2) Every requirement in the instructions is not properly tested - a handful of stated requirements had nothing behind them. v8Encoder was the worst case, with zero references anywhere in the test tree, so an agent could skip that factory outright and still score 1.0. The brotli quality option, its documented default of 1, the KvdexOptions type, the four export map entries and the three per-directory mod.ts barrels went untested as well. Grading made it worse. tests/config.json shipped
+
+    "pass_to_pass": [],
+    "allow_extra_failures": true
+
+which left 16 of the 148 tests gating the reward. An agent could break the other 132 and still pass.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I added four new top-level tests to the new file tests/ext/encoder.test.ts. They cover jsonEncoder and v8Encoder, brotliCompressor with its default proven to be 1, the three barrels together with the export map both resolved and imported, and a custom encoder built on an async serializer with its own compressor. That custom compressor reverses bytes, which is its own inverse, so a collection that skips decompress before deserialize cannot read the value back. I also filled pass_to_pass with 112 deterministic tests and held back the 20 timing-sensitive ones covering watch, listenQueue, enqueue, setInterval and loop. Fail-to-pass went from 16 to 20 and graded tests from 16 to 132.
+
+3) The instructions appear LLM generated - the old text was assembled from bolded spec labels like Summary., Source state., Target state. and Observable behavior required. It matched none of the accepted personas and read like generated documentation rather than something a maintainer would write. Line 9 even says "A new module tree exists under src/ext/encoding" in the present tense, about something that does not exist yet. The premise was wrong on the facts too. Lines 1 and 3 claim "users cannot supply their own serializer or compressor" and "No user-facing mechanism exists for injecting a serializer or compressor object". The base repo already supports exactly that. src/collection.ts line 263 closes its serializer resolution with
+
+    } else {
+      this._serializer = {
+        serialize: jsonSerialize,
+        ...
+        ...opts?.serialize,
+      };
+    }
+
+src/types.ts line 413 gives SerializeOptions a Partial<Serializer> arm, and README.md line 309 documents passing serialize, deserialize, compress and decompress straight in.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I rewrote instruction.md as a maintainer memo about the 3.0 release and fixed the description of the current API so it says what the repo actually does today.
+
+4) The instructions are overly-prescriptive - line 1 points at the files to edit by noting the helpers sit inline in src/utils.ts. Lines 17 to 20 hand over an "Import surface (available verbatim at these paths)" and promise the imports "resolve exactly as written", including src/ext/encoding/brotli/brotli_compressor.ts. That internal path only appears there because tests/utils.ts imports that exact file. Line 29 then adds "Test files must not be modified; the implementation must satisfy them as written", which explains verifier mechanics and is also misleading. The tests the agent can actually see target the old API and cannot pass once the migration lands. The graded ones arrive later from tests.patch.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I dropped the verifier note and the file location hints, then restated the module paths as the public API contract. The platform prescriptiveness check flagged two more things on the first upload, so I took out the node built-ins the instruction named for the V8 and brotli work, and the internal brotli filename, leaving the agent to pick its own modules and file layout. The tests moved with it. tests/utils.ts now imports brotliCompressor from the top-level encoding barrel instead of the implementation file, so nothing the tests need is missing from the instruction.
+
+5) Environment and metadata - a full oracle run took 272 seconds under the declared cpus 4 and memory_mb 8192, against a 300 second [verifier] timeout_sec. That is 91 percent of the budget and a real timeout risk on slower hardware. task.toml was also missing difficulty_explanation and [environment] os, and the shipped repo still carried a dangling .git/refs/remotes/origin/HEAD pointing at refs/remotes/origin/main, which no longer exists.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I raised [verifier] timeout_sec to 900, added os = "linux" and a difficulty_explanation, and deleted the dangling ref. The final oracle run finishes in 136 seconds, or 15 percent of the new budget.
+
+6) Harness could not survive a real agent - this one only showed up in the platform difficulty run, where 13 of 16 agent trials were scored invalid with
+
+    error: patch failed: tests/collection/enqueue.test.ts:16
+    error: tests/collection/enqueue.test.ts: patch does not apply
+
+Every local check was green at the time, with the oracle at 3 of 3 and the NOP at 0 of 1, because the fault only exists once an agent has been in the repo. tests.patch rewrites kvdex(kv, {...}) into kvdex({ kv, schema }) across 40 existing test files, and any agent doing the migration edits those same call sites, since the visible suite stops compiling otherwise. git apply then conflicts and the trial is thrown away rather than scored.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? This took three attempts and only the third one held. The first restored the test tree with git checkout -- tests/ followed by git clean. The second deleted the tree and checked it back out from the pinned base commit. Both passed every local scenario I could build and neither moved the platform result, which went 13 of 16 invalid, then 16 of 16, then 15 of 16. The agent session logs in the difficulty artifact are what settled it. They show .git present in the agent workspace, and across twelve transcripts not one agent ran git add or git commit, so neither of the two mechanisms I had fixed could have been deciding those trials. Removing .git before the verifier runs does reproduce the platform error byte for byte, so the restore is failing for a reason I cannot observe from here. The fix is to stop depending on git. tests/test.sh now deletes the tests directory and unpacks an archive of the tests exactly as they are at the base commit. The archive is embedded in test.sh itself as base64 and decoded at run time, because the static checker allows only config.json, grade.py, test.sh and tests.patch under tests/ and rejected my first attempt at shipping it as tests/files/tests_base.tar.gz. test.sh is itself read from /tests, so /tests is guaranteed mounted or nothing runs at all, which makes a restore sourced from there as reliable as the verifier entrypoint. It cannot be defeated by staging, by commits, by a missing .git, or by an agent creating a file where tests.patch adds one, because the directory is deleted first. Verified across four runs. NOP reward 0. Oracle on a clean tree reward 1 at 132 of 132. An agent that edited the tests with .git removed, which is the case that reproduced the platform failure, reward 1 at 132 of 132. An agent that committed and wrote its own tests/ext/encoder.test.ts with .git removed, reward 1 at 132 of 132. I also raised [agent] timeout_sec from 1800 to the 7200 maximum, because 3 of 8 opus trials hit the old ceiling and a timed-out trial gives no difficulty signal.
+
+7) Two test-quality gaps the judges caught - test_coverage and test_faithfulness both came back at 3.5, and both criticisms were fair. The custom-compressor test proved nothing, because a byte-reversing compressor round-trips fine even if the collection ignores compress and decompress entirely. Separately tests/db/atomic.test.ts required atomic overwrite behaviour and a throw on indexable overwrite, neither of which the instruction describes, and that test id was in the graded set, so a perfect encoder migration would still have failed it.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The custom compressor now counts calls and the test asserts both compress and decompress ran. I also added the two unasserted requirements that were named, so KvdexOptions is now used as a type and there is a check that the serialization helpers are no longer exported from mod.ts. For the atomic file I removed the two overwrite steps, which leaves only its kvdex({...}) migration change, the part the instruction actually describes.
+
+8) The instruction asked for behaviour the source PR does not ship - the quality panel scored test_coverage at 3.0 and named two things the tests do not enforce. The instruction told the agent the JSON helpers handle every value type Deno KV supports including the other typed arrays, and it asked indexable collections for the secondary index and secondary order variants of every operation. Neither is true of PR 245. I pulled all 198 changed files of the PR and checked. The PR disables Float16Array itself with TODO markers in src/ext/encoding/json/utils.ts, src/ext/zod/schemas.ts, src/types.ts, src/utils.ts and tests/values.ts. updateManyBySecondaryOrder is already a Deno.test.ignore at the base commit and the TODO comment above it is the PR's own line, so the runner reports it as ignored and it is in neither grading list. The third thing the judge named is that config.json still allowed extra failures, so tests outside the graded lists could break for free.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Not by changing the oracle, because re-adding Float16Array would mean reducing and replacing what the PR does, which is not allowed. The instruction is the thing that was wrong. The JSON paragraph now asks for the value types the library stores today and says existing gaps carry over rather than being closed here, and the indexable sentence now asks for the secondary index and secondary order operations the library ships working today. Both requirements the judge scored against are gone as requirements, with no change to PR scope and no graded assertion weakened. I set allow_extra_failures to false as well, and the oracle run reports 152 pass and 0 fail with 0 unexpected failures, so nothing outside the graded lists is failing.
+
+9) The verifier could award reward 1 on a run that failed - I found this reading my own test.sh rather than from the report. The embedded grader records the test command exit status and then decides success purely from the parsed per-test lines. On top of that the configured command is a pipeline and the generated script runs in a child shell that does not inherit pipefail, so the status being recorded was the result parser's, not the test runner's. The NOP run showed it plainly, reporting raw_exit_code 0 with no test having run at all. A run that printed every graded name and then died, from a crash, an out of memory kill or the verifier timeout, would have been graded as a pass. docs/guidelines.md states the rule directly, that the exit code should match the reward it writes.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? tests/test.sh now runs the generated command under bash -o pipefail so the status reaching the grader is the test runner's rather than the parser's, and the grader's success expression carries the exit status as a term, success = not missing_required and not unexpected and args.raw_exit_code == 0. I measured a green graded tree first and the command exits 0 there, so the gate cannot fire on a correct solution. Gating inside the grader rather than bailing out early matters, because an early exit would write an infrastructure_error and the difficulty harness reads that as an invalid trial rather than a failed one, which would poison the difficulty verdict the same way a broken tests.patch does. The NOP now records raw_exit_code 1 where it used to record 0, with infrastructure_error still None, so it is reward 0 for the right reason and still a valid trial. The oracle is unaffected at reward 1 and 132 of 132.
+
+10) The oracle script reverted itself on a second run - both judges scored oracle_robustness at 4 of 5 for this. solution/solve.sh applied golden.patch, and if the forward apply failed it reverse-applied the patch instead. On an already-patched tree that turns a re-run into a revert of the solution, and it also hides a patch that genuinely did not apply.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? solve.sh is forward-only and idempotent now. It applies the patch, treats an already-patched tree as a no-op with a message, and fails with a nonzero exit on anything else. The golden patch content is untouched, so the PR scope is unchanged. Both scripts also shipped as mode 644 and are now 755.
+
+--- Phase 2 (completed after the evals pass) ---
+
+Files Changed:
+
+1. instruction.md
+   Changed: Rewrote it as a maintainer memo about the 3.0 release. Corrected the description of the current serialize option, cut the src/utils.ts location hint, cut the "available verbatim at these paths" framing, and removed the "Test files must not be modified" line. A later pass also removed the two node built-ins it named and the internal brotli filename. Kept every name and module path the tests need.
+   Why: Resolves issues 3 and 4. The old text was templated, wrong about the base repo, and handed over both the file locations and the verifier mechanics. In the latest round I also narrowed two claims that promised more than PR 245 delivers. The JSON paragraph said the helpers handle every value type Deno KV supports including the other typed arrays, and the indexable paragraph asked for the secondary index and secondary order variants. The PR itself disables Float16Array with TODO markers in five files, and updateManyBySecondaryOrder is already an ignored test at the base commit, so both sentences were asking for behaviour the source PR deliberately does not ship. They now describe what the migration actually delivers and say that existing gaps carry over.
+
+2. environment/problem_statement.md
+   Changed: Re-copied it from instruction.md. Byte identical, md5 831ced9511d5.
+   Why: The guide requires this file to be an exact copy of the instruction.
+
+3. tests/tests.patch
+   Changed: Regenerated it against the base commit. Restored tests/test.deps.ts, reverted 150 files to their original imports, and added four new top-level tests in tests/ext/encoder.test.ts. The patch went from 158 files to 45, and modified pre-existing test files from 157 to 40. A later pass repointed brotliCompressor from the internal implementation file to the public encoding barrel so it stays derivable from the instruction. After the difficulty bounce I also removed the two atomic-overwrite steps from tests/db/atomic.test.ts and strengthened the custom-compressor test to count invocations.
+   Why: Resolves issue 1 and part of issue 2. It removes the undocumented deno.json imports map requirement and closes the untested requirements.
+
+4. tests/config.json
+   Changed: fail_to_pass from 16 to 20 with the four new encoder ids. pass_to_pass from an empty list to 112 deterministic tests. allow_extra_failures from true to false.
+   Why: Resolves the rest of issue 2. There was no regression guard at all, so 132 of the 148 tests could fail without touching the reward. Extra failures were still tolerated on top of that, which meant a test outside the graded lists could break without costing anything. The oracle run reports 152 pass and 0 fail, so disallowing them is safe.
+
+5. task.toml
+   Changed: [verifier] timeout_sec from 300 to 900. [agent] timeout_sec from 1800 to 7200. Added [environment] os = "linux". Added [metadata] difficulty_explanation.
+   Why: Resolves issues 4 and 5. The measured oracle run left only 28 seconds of headroom, two documented fields were missing, and 3 of 8 opus trials hit the old agent ceiling.
+
+6. tests/test.sh
+   Changed: Three things. First, the test tree restore no longer uses git at all. It deletes the tests directory and unpacks a base64 archive of the base test tree that is embedded in test.sh itself. Second, the generated test command runs under bash -o pipefail so the grader sees the test runner's exit status rather than the result parser's. Third, the grader's success expression now carries that status as a term rather than the reward being downgraded after the fact, which keeps a failing run classified as an ordinary grading failure instead of an invalid trial. Mode 644 to 755.
+   Why: Two git based restores shipped and neither moved the platform result across three rounds, at 13 of 16 invalid, then 16 of 16, then 15 of 16. The agent logs show .git present and no agent staging or committing, so neither mechanism I had fixed was deciding those trials. An archive that ships in /tests removes the dependency entirely, and /tests is guaranteed mounted because test.sh is read from it. The pipefail and reward changes close a separate hole. The configured command is a pipeline and the child shell does not inherit pipefail, so the status the grader recorded was the parser's, not the runner's. On the NOP run it read 0 with no test having run at all. A run that printed every graded name and then died would have graded as a pass.
+
+7. solution/solve.sh
+   Changed: Forward-only and idempotent. It applies the patch, treats an already-patched tree as a no-op, and fails on anything else. The old script reverse-applied the patch when the forward apply failed. Mode 644 to 755.
+   Why: A second run on an already-patched tree used to revert the solution rather than do nothing, which also hides a patch that genuinely did not apply. The golden patch content is untouched, so PR scope is unchanged.
+
+8. environment/repo/.git/
+   Changed: Removed the dangling refs/remotes/origin/HEAD, expired the reflog, ran git gc, and deleted ORIG_HEAD and FETCH_HEAD.
+   Why: Git hygiene. I did not touch a single tracked source file. git status --porcelain is empty and HEAD still equals the declared base commit.
+
+PR additions:
+NA
+
+Post-fix confirmation (each verified after fixes):
+[x] Every requirement in the instructions is properly tested
+[x] All test requirements are properly specified in the instructions
+[x] The instructions do not sound like an LLM generated them
+[x] The instructions are not overly-prescriptive
+[x] The task does not leak solution information
+[x] The oracle implements the solution following the instructions
+[x] The PR was not modified in any way beyond what is allowed by the guidelines
+[x] More than 10 fail-to-pass tests (counted 20)
+
+What makes this task difficult?
+Almost the whole migration has to land before anything passes. The agent settles the Encoder, Serializer and Compressor shapes, builds three encoder directories that each need their own barrel plus a top level one, then rewrites every serializer call site in src/collection.ts so writes serialize before they compress and reads decompress before they deserialize. The kvdex factory moves to a single options object in the same pass, so every spot that builds a database changes with it. Values also have to come back exactly right for bigint, Date, Map, Set, RegExp and every typed array, and the brotli path has to survive large documents that kvdex splits across several KV entries. Reverse the compress order or miss one value type and the suite stays red.
+
+Senior engineer estimate: 40+ minutes
+
+Comments for Reviewer:
+This is revision 4. The last round came back with the difficulty run incomplete again, 15 of 16 trials invalid on tests.patch not applying, the same error and the same line as the two rounds before it.
+
+I want to be straight about this one, because I got it wrong twice. Two restore steps shipped before this. The first put the test files back with git checkout -- tests/ and the second deleted the tree and checked it back out from the pinned base commit. Both were built on a mechanism I had reproduced locally, both passed every scenario I could construct, and neither moved the platform result, which went 13 of 16 invalid, then 16 of 16, then 15 of 16.
+
+What settled it was the agent session logs in the difficulty artifact rather than more theorising. They show .git present in the agent workspace, and across twelve transcripts not one agent ran git add or git commit. So neither of the two mechanisms I had fixed could have been deciding those trials. Removing .git before the verifier runs does reproduce the platform error byte for byte, and an orphan branch with a pruned object store does not, but I cannot see the platform workspace and I was not going to ship a third guess about it.
+
+Since I built this round I got that confirmed from another of my tasks on this platform. My report here came back saying Task Instruction Sufficiency was not applicable, so I never got a per trial analysis for this one. The jqno equalsverifier 1166 report did include one. Four of its codex trial analyses say outright that the workspace is not a git repository and that the verifier could therefore not reset the test files to their base state before applying the patch. That is a Java and Maven repo against this Deno one. It runs on the same platform and the same harness and it fails with the same patch does not apply error. Nothing in this bundle changes because the fix already assumes the worst case. I would still call that strong support rather than proof, since those are judge readings of trial logs and only the codex trials mention it.
+
+So the restore no longer uses git. tests/test.sh deletes the tests directory and unpacks an archive of the tests exactly as they are at the base commit. The reason this is reliable where git was not is that test.sh is itself read from /tests, so /tests is guaranteed to be mounted or nothing runs at all. That makes a restore sourced from there as dependable as the verifier entrypoint. It cannot be defeated by staging, by commits, by a missing or pruned .git, or by an agent creating a file where tests.patch adds one, since the directory is deleted first. The archive holds the same tests the agent already has in its own checkout, so it leaks nothing.
+
+On where the archive lives, I got that wrong once too. I first shipped it as tests/files/tests_base.tar.gz and the static check rejected the upload, because tests/ accepts only config.json, grade.py, test.sh and tests.patch and no subdirectories. That contradicts the documented task structure, which lists tests/files/ as optional test files copied into the repo. So the archive is now embedded in test.sh as base64 and decoded to /tmp at run time. 158 files and 904 KB of tests compress to 52 KB, which is 70 KB of base64 and a 93 KB test.sh. I decoded it back out of the built zip and confirmed it is still byte identical to the base test tree.
+
+One alternative I considered and rejected, in case you would have reached for it. Regenerating tests.patch so every graded file is a create rather than a diff removes the context lines the patch can conflict on, and it needs no archive at all. It does not work here. 102 of the 132 graded ids live in files tests.patch never touches, because pass_to_pass is 112 regression guards spread across the suite while only 45 files are patched. A create only patch would leave those 102 running the agent's own copies of the tests, which is the gaming route an earlier round of yours asked me to close.
+
+I also moved the fail closed gate. Last round it downgraded the reward after grading and wrote an infrastructure_error. That reads as an invalid trial to the difficulty harness rather than a failed one, which is the same thing that has been wrecking this task's difficulty runs. It now sits in the grader's success expression instead, so a failing run stays an ordinary grading failure. The NOP shows reward 0 with raw_exit_code 1 and infrastructure_error None, which is reward 0 for the right reason.
+
+Local results against the exact bundle in the zip, airgapped at the declared 4 cpus and 8 GB. NOP reward 0, 0 of 132. Oracle on a clean tree reward 1, 132 of 132, whole suite green at 152 pass and 0 fail. An agent that edited the tests with .git removed, which is the case that reproduces the platform failure, reward 1 at 132 of 132. An agent that committed and also wrote its own tests/ext/encoder.test.ts with .git removed, reward 1 at 132 of 132. Stubbing the brotli quality default of 1 drops the reward to 0 with ext - brotliCompressor failing, so that requirement is enforced rather than assumed.
+
+Things I deliberately left alone. environment/repo/.vscode/settings.json is on the stray artifact list, but git ls-files shows it tracked upstream at the base commit, so removing it means editing tracked repo files and shipping a dirty tree. model_difficulty says medium while difficulty says hard and I touched neither, per the FAQ rule against hand editing difficulty metadata. Three prescriptiveness findings also stay because the graded tests call them by name, namely KvdexOptions used as a type, the brotli quality default asserted by byte comparison against an explicit quality of 1, and the three per-encoder barrels imported directly. Cutting those would trade an advisory score for a blocking faithfulness one.
+
+The coverage findings from the round before this one were addressed by narrowing two instruction sentences rather than by touching the oracle. I checked all 198 changed files of PR 245 first. The PR disables Float16Array itself with TODO markers in five files, updateManyBySecondaryOrder is already an ignored test at the base commit with the PR's own TODO comment above it, and the RegExp source only handling is pre-existing at src/utils.ts line 917. The oracle is faithful and the instruction was the thing over promising.
+
+One note on the times. The review figure of 90 minutes is real and it puts the total at 260, a little over the usual band. The analysis on this task was unusually long because the original bundle had a hidden requirement in it, a deno.json imports map that only existed in the golden patch, and proving that took a full container run rather than a read.
+
+Forty pre-existing test files are still modified. On a breaking API migration any test that builds a database has to change, which is what upstream PR 245 does too. The archive restore now removes the risk that carried.
+
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+90 minutes
+
+How long did it take you to complete the initial task rewrite only?
+150 minutes
+
+How long did it take you to complete the additional questions on the form?
+20 minutes
+
+Total submission time excluding revisions: 260 minutes
+
+How long did it take you to complete all revisions?
+195 minutes

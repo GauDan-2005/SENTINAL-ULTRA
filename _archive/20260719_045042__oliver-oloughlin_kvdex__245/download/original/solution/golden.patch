@@ -1,0 +1,3793 @@
+diff --git a/benchmarks/db/kvdex.bench.ts b/benchmarks/db/kvdex.bench.ts
+index dc346c6..f0557cc 100644
+--- a/benchmarks/db/kvdex.bench.ts
++++ b/benchmarks/db/kvdex.bench.ts
+@@ -5,17 +5,20 @@ Deno.bench("db - kvdex (10 collections)", async (b) => {
+   await useKv((kv) => {
+     b.start();
+ 
+-    kvdex(kv, {
+-      1: collection(model<string>()),
+-      2: collection(model<string>()),
+-      3: collection(model<string>()),
+-      4: collection(model<string>()),
+-      5: collection(model<string>()),
+-      6: collection(model<string>()),
+-      7: collection(model<string>()),
+-      8: collection(model<string>()),
+-      9: collection(model<string>()),
+-      10: collection(model<string>()),
++    kvdex({
++      kv,
++      schema: {
++        1: collection(model<string>()),
++        2: collection(model<string>()),
++        3: collection(model<string>()),
++        4: collection(model<string>()),
++        5: collection(model<string>()),
++        6: collection(model<string>()),
++        7: collection(model<string>()),
++        8: collection(model<string>()),
++        9: collection(model<string>()),
++        10: collection(model<string>()),
++      },
+     });
+ 
+     b.end();
+@@ -26,107 +29,110 @@ Deno.bench("db - kvdex (100 collections)", async (b) => {
+   await useKv((kv) => {
+     b.start();
+ 
+-    kvdex(kv, {
+-      1: collection(model<string>()),
+-      2: collection(model<string>()),
+-      3: collection(model<string>()),
+-      4: collection(model<string>()),
+-      5: collection(model<string>()),
+-      6: collection(model<string>()),
+-      7: collection(model<string>()),
+-      8: collection(model<string>()),
+-      9: collection(model<string>()),
+-      10: collection(model<string>()),
+-      11: collection(model<string>()),
+-      12: collection(model<string>()),
+-      13: collection(model<string>()),
+-      14: collection(model<string>()),
+-      15: collection(model<string>()),
+-      16: collection(model<string>()),
+-      17: collection(model<string>()),
+-      18: collection(model<string>()),
+-      19: collection(model<string>()),
+-      20: collection(model<string>()),
+-      21: collection(model<string>()),
+-      22: collection(model<string>()),
+-      23: collection(model<string>()),
+-      24: collection(model<string>()),
+-      25: collection(model<string>()),
+-      26: collection(model<string>()),
+-      27: collection(model<string>()),
+-      28: collection(model<string>()),
+-      29: collection(model<string>()),
+-      30: collection(model<string>()),
+-      31: collection(model<string>()),
+-      32: collection(model<string>()),
+-      33: collection(model<string>()),
+-      34: collection(model<string>()),
+-      35: collection(model<string>()),
+-      36: collection(model<string>()),
+-      37: collection(model<string>()),
+-      38: collection(model<string>()),
+-      39: collection(model<string>()),
+-      40: collection(model<string>()),
+-      41: collection(model<string>()),
+-      42: collection(model<string>()),
+-      43: collection(model<string>()),
+-      44: collection(model<string>()),
+-      45: collection(model<string>()),
+-      46: collection(model<string>()),
+-      47: collection(model<string>()),
+-      48: collection(model<string>()),
+-      49: collection(model<string>()),
+-      50: collection(model<string>()),
+-      51: collection(model<string>()),
+-      52: collection(model<string>()),
+-      53: collection(model<string>()),
+-      54: collection(model<string>()),
+-      55: collection(model<string>()),
+-      56: collection(model<string>()),
+-      57: collection(model<string>()),
+-      58: collection(model<string>()),
+-      59: collection(model<string>()),
+-      60: collection(model<string>()),
+-      61: collection(model<string>()),
+-      62: collection(model<string>()),
+-      63: collection(model<string>()),
+-      64: collection(model<string>()),
+-      65: collection(model<string>()),
+-      66: collection(model<string>()),
+-      67: collection(model<string>()),
+-      68: collection(model<string>()),
+-      69: collection(model<string>()),
+-      70: collection(model<string>()),
+-      71: collection(model<string>()),
+-      72: collection(model<string>()),
+-      73: collection(model<string>()),
+-      74: collection(model<string>()),
+-      75: collection(model<string>()),
+-      76: collection(model<string>()),
+-      77: collection(model<string>()),
+-      78: collection(model<string>()),
+-      79: collection(model<string>()),
+-      80: collection(model<string>()),
+-      81: collection(model<string>()),
+-      82: collection(model<string>()),
+-      83: collection(model<string>()),
+-      84: collection(model<string>()),
+-      85: collection(model<string>()),
+-      86: collection(model<string>()),
+-      87: collection(model<string>()),
+-      88: collection(model<string>()),
+-      89: collection(model<string>()),
+-      90: collection(model<string>()),
+-      91: collection(model<string>()),
+-      92: collection(model<string>()),
+-      93: collection(model<string>()),
+-      94: collection(model<string>()),
+-      95: collection(model<string>()),
+-      96: collection(model<string>()),
+-      97: collection(model<string>()),
+-      98: collection(model<string>()),
+-      99: collection(model<string>()),
+-      100: collection(model<string>()),
++    kvdex({
++      kv,
++      schema: {
++        1: collection(model<string>()),
++        2: collection(model<string>()),
++        3: collection(model<string>()),
++        4: collection(model<string>()),
++        5: collection(model<string>()),
++        6: collection(model<string>()),
++        7: collection(model<string>()),
++        8: collection(model<string>()),
++        9: collection(model<string>()),
++        10: collection(model<string>()),
++        11: collection(model<string>()),
++        12: collection(model<string>()),
++        13: collection(model<string>()),
++        14: collection(model<string>()),
++        15: collection(model<string>()),
++        16: collection(model<string>()),
++        17: collection(model<string>()),
++        18: collection(model<string>()),
++        19: collection(model<string>()),
++        20: collection(model<string>()),
++        21: collection(model<string>()),
++        22: collection(model<string>()),
++        23: collection(model<string>()),
++        24: collection(model<string>()),
++        25: collection(model<string>()),
++        26: collection(model<string>()),
++        27: collection(model<string>()),
++        28: collection(model<string>()),
++        29: collection(model<string>()),
++        30: collection(model<string>()),
++        31: collection(model<string>()),
++        32: collection(model<string>()),
++        33: collection(model<string>()),
++        34: collection(model<string>()),
++        35: collection(model<string>()),
++        36: collection(model<string>()),
++        37: collection(model<string>()),
++        38: collection(model<string>()),
++        39: collection(model<string>()),
++        40: collection(model<string>()),
++        41: collection(model<string>()),
++        42: collection(model<string>()),
++        43: collection(model<string>()),
++        44: collection(model<string>()),
++        45: collection(model<string>()),
++        46: collection(model<string>()),
++        47: collection(model<string>()),
++        48: collection(model<string>()),
++        49: collection(model<string>()),
++        50: collection(model<string>()),
++        51: collection(model<string>()),
++        52: collection(model<string>()),
++        53: collection(model<string>()),
++        54: collection(model<string>()),
++        55: collection(model<string>()),
++        56: collection(model<string>()),
++        57: collection(model<string>()),
++        58: collection(model<string>()),
++        59: collection(model<string>()),
++        60: collection(model<string>()),
++        61: collection(model<string>()),
++        62: collection(model<string>()),
++        63: collection(model<string>()),
++        64: collection(model<string>()),
++        65: collection(model<string>()),
++        66: collection(model<string>()),
++        67: collection(model<string>()),
++        68: collection(model<string>()),
++        69: collection(model<string>()),
++        70: collection(model<string>()),
++        71: collection(model<string>()),
++        72: collection(model<string>()),
++        73: collection(model<string>()),
++        74: collection(model<string>()),
++        75: collection(model<string>()),
++        76: collection(model<string>()),
++        77: collection(model<string>()),
++        78: collection(model<string>()),
++        79: collection(model<string>()),
++        80: collection(model<string>()),
++        81: collection(model<string>()),
++        82: collection(model<string>()),
++        83: collection(model<string>()),
++        84: collection(model<string>()),
++        85: collection(model<string>()),
++        86: collection(model<string>()),
++        87: collection(model<string>()),
++        88: collection(model<string>()),
++        89: collection(model<string>()),
++        90: collection(model<string>()),
++        91: collection(model<string>()),
++        92: collection(model<string>()),
++        93: collection(model<string>()),
++        94: collection(model<string>()),
++        95: collection(model<string>()),
++        96: collection(model<string>()),
++        97: collection(model<string>()),
++        98: collection(model<string>()),
++        99: collection(model<string>()),
++        100: collection(model<string>()),
++      },
+     });
+ 
+     b.end();
+diff --git a/benchmarks/utils/deserialize.bench.ts b/benchmarks/utils/deserialize.bench.ts
+index 6795fe1..c4f011c 100644
+--- a/benchmarks/utils/deserialize.bench.ts
++++ b/benchmarks/utils/deserialize.bench.ts
+@@ -1,10 +1,10 @@
+-import { obj } from "./_object.ts";
+ import {
+   jsonDeserialize,
+   jsonSerialize,
+   v8Deserialize,
+   v8Serialize,
+-} from "../../src/utils.ts";
++} from "../../src/ext/encoding/mod.ts";
++import { obj } from "./_object.ts";
+ 
+ const js = jsonSerialize(obj);
+ const ds = v8Serialize(obj);
+diff --git a/benchmarks/utils/serialize.bench.ts b/benchmarks/utils/serialize.bench.ts
+index dba55ed..0ecf1a2 100644
+--- a/benchmarks/utils/serialize.bench.ts
++++ b/benchmarks/utils/serialize.bench.ts
+@@ -1,5 +1,5 @@
++import { jsonSerialize, v8Serialize } from "../../src/ext/encoding/mod.ts";
+ import { obj } from "./_object.ts";
+-import { jsonSerialize, v8Serialize } from "../../src/utils.ts";
+ 
+ Deno.bench("utils - jsonSerialize", () => {
+   jsonSerialize(obj);
+diff --git a/deno.json b/deno.json
+index 8c60fdf..0924a30 100644
+--- a/deno.json
++++ b/deno.json
+@@ -1,11 +1,15 @@
+ {
+   "name": "@olli/kvdex",
+-  "version": "2.1.2",
++  "version": "3.0.0",
+   "exports": {
+     ".": "./mod.ts",
+     "./zod": "./src/ext/zod/mod.ts",
+     "./migrate": "./src/ext/migrate/mod.ts",
+-    "./kv": "./src/ext/kv/mod.ts"
++    "./kv": "./src/ext/kv/mod.ts",
++    "./encoding": "./src/ext/encoding/mod.ts",
++    "./encoding/json": "./src/ext/encoding/json/mod.ts",
++    "./encoding/v8": "./src/ext/encoding/v8/mod.ts",
++    "./encoding/brotli": "./src/ext/encoding/brotli/mod.ts"
+   },
+   "tasks": {
+     "check": "deno check **/*.ts",
+@@ -25,5 +29,14 @@
+   },
+   "bench": {
+     "include": ["./benchmarks"]
++  },
++  "imports": {
++    "@deno/kv": "npm:@deno/kv@^0.8.4",
++    "@std/assert": "jsr:@std/assert@1.0.7",
++    "@std/bytes": "jsr:@std/bytes@^1.0.4",
++    "@std/cli": "jsr:@std/cli@^1.0.6",
++    "@std/collections": "jsr:@std/collections@^1.0.9",
++    "@std/ulid": "jsr:@std/ulid@^1.0.0",
++    "zod": "npm:zod@^3.23.8"
+   }
+ }
+diff --git a/deno.lock b/deno.lock
+index f85a8b2..0f777f8 100644
+--- a/deno.lock
++++ b/deno.lock
+@@ -1,100 +1,147 @@
+ {
+-  "version": "3",
+-  "packages": {
+-    "specifiers": {
+-      "jsr:@std/assert@^0.217": "jsr:@std/assert@0.217.0",
+-      "jsr:@std/assert@^0.217.0": "jsr:@std/assert@0.217.0",
+-      "jsr:@std/assert@^0.220.1": "jsr:@std/assert@0.220.1",
+-      "jsr:@std/bytes@^1.0.1": "jsr:@std/bytes@1.0.2",
+-      "jsr:@std/cli@^0.217": "jsr:@std/cli@0.217.0",
+-      "jsr:@std/cli@^0.220": "jsr:@std/cli@0.220.1",
+-      "jsr:@std/collections@^1.0.2": "jsr:@std/collections@1.0.5",
+-      "jsr:@std/fmt@^0.217.0": "jsr:@std/fmt@0.217.0",
+-      "jsr:@std/ulid@^0.224.1": "jsr:@std/ulid@0.224.1",
+-      "jsr:@std/ulid@^1.0.0": "jsr:@std/ulid@1.0.0",
+-      "npm:@deno/kv": "npm:@deno/kv@0.7.0",
+-      "npm:@types/node": "npm:@types/node@18.16.19",
+-      "npm:zod@^3.22": "npm:zod@3.23.8"
+-    },
+-    "jsr": {
+-      "@std/assert@0.217.0": {
+-        "integrity": "c98e279362ca6982d5285c3b89517b757c1e3477ee9f14eb2fdf80a45aaa9642",
+-        "dependencies": [
+-          "jsr:@std/fmt@^0.217.0"
+-        ]
+-      },
+-      "@std/assert@0.220.1": {
+-        "integrity": "88710d54f3afdd7a5761e7805abba1f56cd14e4b212feffeb3e73a9f77482425"
+-      },
+-      "@std/bytes@1.0.1": {
+-        "integrity": "e57c9b243932b95a4c3672f8a038cdadea7492efeeb6b8a774844fee70426815"
+-      },
+-      "@std/bytes@1.0.2": {
+-        "integrity": "fbdee322bbd8c599a6af186a1603b3355e59a5fb1baa139f8f4c3c9a1b3e3d57"
+-      },
+-      "@std/cli@0.217.0": {
+-        "integrity": "5c25bd040cd0bbc11707ecaa7ce9c41314d02ce46f45709822bbd0f92c35fee8",
+-        "dependencies": [
+-          "jsr:@std/assert@^0.217.0"
+-        ]
+-      },
+-      "@std/cli@0.220.1": {
+-        "integrity": "6c38388efc899c9d98811d38a46effe01e0d91138068483f1e6ae834caad5e82",
+-        "dependencies": [
+-          "jsr:@std/assert@^0.220.1"
+-        ]
+-      },
+-      "@std/collections@1.0.2": {
+-        "integrity": "cb1834be534f967e86495f6c64fa06f6b3debdaab5b860c2d3194db59cd30157"
+-      },
+-      "@std/collections@1.0.5": {
+-        "integrity": "ab9eac23b57a0c0b89ba45134e61561f69f3d001f37235a248ed40be260c0c10"
+-      },
+-      "@std/fmt@0.217.0": {
+-        "integrity": "cb99f82500b8da20202fedfa8bb94dd0222e81f0494ed9087de20ee3d8a39a8d"
+-      },
+-      "@std/ulid@0.224.1": {
+-        "integrity": "4de06fdb030ff3990b1b0344e330373c11ce6051ac449fc435667a485a6723fa"
+-      },
+-      "@std/ulid@1.0.0": {
+-        "integrity": "d41c3d27a907714413649fee864b7cde8d42ee68437d22b79d5de4f81d808780"
+-      }
+-    },
+-    "npm": {
+-      "@deno/kv-darwin-arm64@0.7.0": {
+-        "integrity": "sha512-PaTriht31Rb08TwWdAkmODrLNnGnl9l8nlF/0aae/v7dzJ5FeaoX+0RgxTD+m90quG3ynsdLsY8iCa+st+MkiA==",
+-        "dependencies": {}
+-      },
+-      "@deno/kv-darwin-x64@0.7.0": {
+-        "integrity": "sha512-Yw4Gmn6opUJ6ZVuztNaGS4yt11KyJI/juTAyzNiY5H3VhHD7xVm+peG4SGkr6Hq/vXVGcQM3Lldw5b3aJJQYSg==",
+-        "dependencies": {}
+-      },
+-      "@deno/kv-linux-x64-gnu@0.7.0": {
+-        "integrity": "sha512-D6xJcx4HSUbgomxGV2lGUgKrRmwHNMmCbu8XRxBjIgpsKrFK1W6w+KitI92wMCgEIOAFAnfeyrYxtMzh2ZdYTw==",
+-        "dependencies": {}
+-      },
+-      "@deno/kv-win32-x64-msvc@0.7.0": {
+-        "integrity": "sha512-0UWf6a+T7e/1uOcUgUKTrMupIQSnCI02856ecu9JwutajSvvbSgoi+jpmaUnYW6QqcXjY8ECI/28CQi1DvYYhw==",
+-        "dependencies": {}
+-      },
+-      "@deno/kv@0.7.0": {
+-        "integrity": "sha512-+vYCIWDQq+03RKwh85WDBVplwT7gimcLyLezj6C3OuMwaTWfPy9NVmA5y4Mwpoht0+H4CjknEUE7LrfZJAcQ7w==",
+-        "dependencies": {
+-          "@deno/kv-darwin-arm64": "@deno/kv-darwin-arm64@0.7.0",
+-          "@deno/kv-darwin-x64": "@deno/kv-darwin-x64@0.7.0",
+-          "@deno/kv-linux-x64-gnu": "@deno/kv-linux-x64-gnu@0.7.0",
+-          "@deno/kv-win32-x64-msvc": "@deno/kv-win32-x64-msvc@0.7.0"
+-        }
+-      },
+-      "@types/node@18.16.19": {
+-        "integrity": "sha512-IXl7o+R9iti9eBW4Wg2hx1xQDig183jj7YLn8F7udNceyfkbn1ZxmzZXuak20gR40D7pIkIY1kYGx5VIGbaHKA==",
+-        "dependencies": {}
+-      },
+-      "zod@3.23.8": {
+-        "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==",
+-        "dependencies": {}
+-      }
++  "version": "4",
++  "specifiers": {
++    "jsr:@std/assert@0.217": "0.217.0",
++    "jsr:@std/assert@1.0.7": "1.0.7",
++    "jsr:@std/assert@~0.220.1": "0.220.1",
++    "jsr:@std/bytes@^1.0.1": "1.0.2",
++    "jsr:@std/bytes@^1.0.4": "1.0.4",
++    "jsr:@std/cli@0.217": "0.217.0",
++    "jsr:@std/cli@0.220": "0.220.1",
++    "jsr:@std/cli@^1.0.6": "1.0.6",
++    "jsr:@std/collections@^1.0.2": "1.0.5",
++    "jsr:@std/collections@^1.0.9": "1.0.9",
++    "jsr:@std/fmt@0.217": "0.217.0",
++    "jsr:@std/internal@^1.0.5": "1.0.5",
++    "jsr:@std/ulid@1": "1.0.0",
++    "jsr:@std/ulid@~0.224.1": "0.224.1",
++    "npm:@deno/kv@*": "0.7.0",
++    "npm:@deno/kv@~0.8.4": "0.8.4",
++    "npm:@types/node@*": "18.16.19",
++    "npm:zod@^3.22.0": "3.23.8",
++    "npm:zod@^3.23.8": "3.23.8"
++  },
++  "jsr": {
++    "@std/assert@0.217.0": {
++      "integrity": "c98e279362ca6982d5285c3b89517b757c1e3477ee9f14eb2fdf80a45aaa9642",
++      "dependencies": [
++        "jsr:@std/fmt"
++      ]
++    },
++    "@std/assert@0.220.1": {
++      "integrity": "88710d54f3afdd7a5761e7805abba1f56cd14e4b212feffeb3e73a9f77482425"
++    },
++    "@std/assert@1.0.7": {
++      "integrity": "64ce9fac879e0b9f3042a89b3c3f8ccfc9c984391af19e2087513a79d73e28c3",
++      "dependencies": [
++        "jsr:@std/internal"
++      ]
++    },
++    "@std/bytes@1.0.1": {
++      "integrity": "e57c9b243932b95a4c3672f8a038cdadea7492efeeb6b8a774844fee70426815"
++    },
++    "@std/bytes@1.0.2": {
++      "integrity": "fbdee322bbd8c599a6af186a1603b3355e59a5fb1baa139f8f4c3c9a1b3e3d57"
++    },
++    "@std/bytes@1.0.4": {
++      "integrity": "11a0debe522707c95c7b7ef89b478c13fb1583a7cfb9a85674cd2cc2e3a28abc"
++    },
++    "@std/cli@0.217.0": {
++      "integrity": "5c25bd040cd0bbc11707ecaa7ce9c41314d02ce46f45709822bbd0f92c35fee8",
++      "dependencies": [
++        "jsr:@std/assert@0.217"
++      ]
++    },
++    "@std/cli@0.220.1": {
++      "integrity": "6c38388efc899c9d98811d38a46effe01e0d91138068483f1e6ae834caad5e82",
++      "dependencies": [
++        "jsr:@std/assert@~0.220.1"
++      ]
++    },
++    "@std/cli@1.0.6": {
++      "integrity": "d22d8b38c66c666d7ad1f2a66c5b122da1704f985d3c47f01129f05abb6c5d3d"
++    },
++    "@std/collections@1.0.2": {
++      "integrity": "cb1834be534f967e86495f6c64fa06f6b3debdaab5b860c2d3194db59cd30157"
++    },
++    "@std/collections@1.0.5": {
++      "integrity": "ab9eac23b57a0c0b89ba45134e61561f69f3d001f37235a248ed40be260c0c10"
++    },
++    "@std/collections@1.0.9": {
++      "integrity": "4f58104ead08a04a2199374247f07befe50ba01d9cca8cbb23ab9a0419921e71"
++    },
++    "@std/fmt@0.217.0": {
++      "integrity": "cb99f82500b8da20202fedfa8bb94dd0222e81f0494ed9087de20ee3d8a39a8d"
++    },
++    "@std/internal@1.0.5": {
++      "integrity": "54a546004f769c1ac9e025abd15a76b6671ddc9687e2313b67376125650dc7ba"
++    },
++    "@std/ulid@0.224.1": {
++      "integrity": "4de06fdb030ff3990b1b0344e330373c11ce6051ac449fc435667a485a6723fa"
++    },
++    "@std/ulid@1.0.0": {
++      "integrity": "d41c3d27a907714413649fee864b7cde8d42ee68437d22b79d5de4f81d808780"
++    }
++  },
++  "npm": {
++    "@deno/kv-darwin-arm64@0.7.0": {
++      "integrity": "sha512-PaTriht31Rb08TwWdAkmODrLNnGnl9l8nlF/0aae/v7dzJ5FeaoX+0RgxTD+m90quG3ynsdLsY8iCa+st+MkiA=="
++    },
++    "@deno/kv-darwin-arm64@0.8.4": {
++      "integrity": "sha512-j86nnE1QdLw20OrUs/6Iw6ZYzC8pmfU1+K4hNSVHO9K0bfy3VBd4JSHkHLmYCiHDkgIm+wTxct33thl6HxXz0Q=="
++    },
++    "@deno/kv-darwin-x64@0.7.0": {
++      "integrity": "sha512-Yw4Gmn6opUJ6ZVuztNaGS4yt11KyJI/juTAyzNiY5H3VhHD7xVm+peG4SGkr6Hq/vXVGcQM3Lldw5b3aJJQYSg=="
++    },
++    "@deno/kv-darwin-x64@0.8.4": {
++      "integrity": "sha512-qdczxcqkN2fbDX/nIzUetI6i8usNu8kpN3sDV0rXcSWlg9E5huWWjGp6PbOS4w1xarUWbqFAZvy4VSmGTVN1Zw=="
++    },
++    "@deno/kv-linux-x64-gnu@0.7.0": {
++      "integrity": "sha512-D6xJcx4HSUbgomxGV2lGUgKrRmwHNMmCbu8XRxBjIgpsKrFK1W6w+KitI92wMCgEIOAFAnfeyrYxtMzh2ZdYTw=="
++    },
++    "@deno/kv-linux-x64-gnu@0.8.4": {
++      "integrity": "sha512-xv2rM6wrVHVOM4Nswl8iyfdZZiEp5r85jwLajj0NGTiLMAQLBtDsBE/kpH4Ap3K6yiqJX3nTb44Z8AJ+IyzO4Q=="
++    },
++    "@deno/kv-win32-x64-msvc@0.7.0": {
++      "integrity": "sha512-0UWf6a+T7e/1uOcUgUKTrMupIQSnCI02856ecu9JwutajSvvbSgoi+jpmaUnYW6QqcXjY8ECI/28CQi1DvYYhw=="
++    },
++    "@deno/kv-win32-x64-msvc@0.8.4": {
++      "integrity": "sha512-xTEByTpC1DWw4A1F9isD8B16v1+CQFHFvi/Mm2bqlO9iD5HfIGgalWJbL3EvgYeybQ9yA27KGqaGnKxXdaX5Rg=="
++    },
++    "@deno/kv@0.7.0": {
++      "integrity": "sha512-+vYCIWDQq+03RKwh85WDBVplwT7gimcLyLezj6C3OuMwaTWfPy9NVmA5y4Mwpoht0+H4CjknEUE7LrfZJAcQ7w==",
++      "dependencies": [
++        "@deno/kv-darwin-arm64@0.7.0",
++        "@deno/kv-darwin-x64@0.7.0",
++        "@deno/kv-linux-x64-gnu@0.7.0",
++        "@deno/kv-win32-x64-msvc@0.7.0"
++      ]
++    },
++    "@deno/kv@0.8.4": {
++      "integrity": "sha512-5q2izU1tp6wv8rDIwMb6GXe/B+aO/sjAjRAOIigEtX+qOiTLsPE++ibJbfafVb0LmjEdlA18Kpfo23fln73OtQ==",
++      "dependencies": [
++        "@deno/kv-darwin-arm64@0.8.4",
++        "@deno/kv-darwin-x64@0.8.4",
++        "@deno/kv-linux-x64-gnu@0.8.4",
++        "@deno/kv-win32-x64-msvc@0.8.4"
++      ]
++    },
++    "@types/node@18.16.19": {
++      "integrity": "sha512-IXl7o+R9iti9eBW4Wg2hx1xQDig183jj7YLn8F7udNceyfkbn1ZxmzZXuak20gR40D7pIkIY1kYGx5VIGbaHKA=="
++    },
++    "zod@3.23.8": {
++      "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g=="
+     }
+   },
+-  "remote": {}
++  "workspace": {
++    "dependencies": [
++      "jsr:@std/assert@1.0.7",
++      "jsr:@std/bytes@^1.0.4",
++      "jsr:@std/cli@^1.0.6",
++      "jsr:@std/collections@^1.0.9",
++      "jsr:@std/ulid@1",
++      "npm:@deno/kv@~0.8.4",
++      "npm:zod@^3.23.8"
++    ]
++  }
+ }
+diff --git a/mod.ts b/mod.ts
+index ccbcfaa..bd31968 100644
+--- a/mod.ts
++++ b/mod.ts
+@@ -5,14 +5,6 @@ export { Collection, collection } from "./src/collection.ts";
+ export { AtomicBuilder } from "./src/atomic_builder.ts";
+ export { Document } from "./src/document.ts";
+ 
+-// Expose reusable utilities
+-export {
+-  jsonDeserialize,
+-  jsonParse,
+-  jsonSerialize,
+-  jsonStringify,
+-} from "./src/utils.ts";
+-
+ // Expose errors
+ export * from "./src/errors.ts";
+ 
+diff --git a/src/atomic_builder.ts b/src/atomic_builder.ts
+index 28e3585..4f08818 100644
+--- a/src/atomic_builder.ts
++++ b/src/atomic_builder.ts
+@@ -1,5 +1,5 @@
+ import type { Collection } from "./collection.ts";
+-import { ulid } from "./deps.ts";
++import { ulid } from "@std/ulid";
+ import { InvalidCollectionError } from "./errors.ts";
+ import type {
+   AtomicCheck,
+@@ -12,6 +12,7 @@ import type {
+   DenoKvCommitError,
+   DenoKvCommitResult,
+   DenoKvU64,
++  EmptyObject,
+   EnqueueOptions,
+   HistoryEntry,
+   KvObject,
+@@ -70,7 +71,7 @@ export class AtomicBuilder<
+     operations?: Operations,
+   ) {
+     // Check for large collection
+-    if (collection._isSerialized) {
++    if (collection._encoder) {
+       throw new InvalidCollectionError(
+         "Atomic operations are not supported for serialized collections",
+       );
+@@ -139,7 +140,7 @@ export class AtomicBuilder<
+    */
+   add(
+     value: TInput,
+-    options?: AtomicSetOptions,
++    options?: AtomicSetOptions<TOptions>,
+   ): this {
+     return this.setDocument(null, value, options);
+   }
+@@ -165,7 +166,7 @@ export class AtomicBuilder<
+   set(
+     id: ParseId<TOptions>,
+     value: TInput,
+-    options?: AtomicSetOptions,
++    options?: AtomicSetOptions<TOptions>,
+   ): this {
+     return this.setDocument(id, value, options);
+   }
+@@ -511,8 +512,17 @@ export class AtomicBuilder<
+   private setDocument(
+     id: ParseId<TOptions> | null,
+     value: TInput,
+-    options?: AtomicSetOptions,
++    options?: AtomicSetOptions<TOptions>,
+   ) {
++    const overwrite = !!(options as AtomicSetOptions<EmptyObject> | undefined)
++      ?.overwrite;
++
++    if (this.collection._isIndexable && overwrite) {
++      throw new InvalidCollectionError(
++        "The overwrite property is not supported for indexable collections",
++      );
++    }
++
+     this.operations.asyncMutations.push(async () => {
+       // Create id key from collection id key and id
+       const collection = this.collection;
+@@ -524,9 +534,10 @@ export class AtomicBuilder<
+       const idKey = extendKey(collection._keys.id, docId);
+ 
+       // Add set operation
+-      this.operations.atomic
+-        .check({ key: idKey, versionstamp: null })
+-        .set(idKey, parsed, options);
++      this.operations.atomic.set(idKey, parsed, options);
++      if (!overwrite) {
++        this.operations.atomic.check({ key: idKey, versionstamp: null });
++      }
+ 
+       if (collection._isIndexable) {
+         // Add collection id key for collision detection
+diff --git a/src/atomic_pool.ts b/src/atomic_pool.ts
+index 88832df..079af6e 100644
+--- a/src/atomic_pool.ts
++++ b/src/atomic_pool.ts
+@@ -1,9 +1,9 @@
+ import type {
+-  AtomicSetOptions,
+   DenoAtomicCheck,
+   DenoAtomicOperation,
+   DenoKvCommitError,
+   DenoKvCommitResult,
++  DenoKvSetOptions,
+   DenoKvStrictKey,
+ } from "./types.ts";
+ 
+@@ -15,7 +15,7 @@ export class AtomicPool implements DenoAtomicOperation {
+     this.pool = [];
+   }
+ 
+-  set(key: DenoKvStrictKey, value: unknown, options?: AtomicSetOptions) {
++  set(key: DenoKvStrictKey, value: unknown, options?: DenoKvSetOptions) {
+     this.pool.push((op) => op.set(key, value, options));
+     return this;
+   }
+diff --git a/src/atomic_wrapper.ts b/src/atomic_wrapper.ts
+index 7d1fc82..9e51dc0 100644
+--- a/src/atomic_wrapper.ts
++++ b/src/atomic_wrapper.ts
+@@ -5,12 +5,12 @@ import {
+   ATOMIC_OPERTION_CHECK_LIMIT,
+ } from "./constants.ts";
+ import type {
+-  AtomicSetOptions,
+   DenoAtomicCheck,
+   DenoAtomicOperation,
+   DenoKv,
+   DenoKvCommitError,
+   DenoKvCommitResult,
++  DenoKvSetOptions,
+   DenoKvStrictKey,
+ } from "./types.ts";
+ 
+@@ -37,7 +37,7 @@ export class AtomicWrapper implements DenoAtomicOperation {
+     this.currentKeySize = 0;
+   }
+ 
+-  set(key: DenoKvStrictKey, value: unknown, options?: AtomicSetOptions) {
++  set(key: DenoKvStrictKey, value: unknown, options?: DenoKvSetOptions) {
+     this.addMutation((op) => op.set(key, value, options), 67, 2, false);
+     return this;
+   }
+diff --git a/src/collection.ts b/src/collection.ts
+index 00f68ca..9f6e34b 100644
+--- a/src/collection.ts
++++ b/src/collection.ts
+@@ -9,6 +9,8 @@ import type {
+   DenoKvCommitResult,
+   DenoKvEntryMaybe,
+   DenoKvStrictKey,
++  EncodedEntry,
++  Encoder,
+   EnqueueOptions,
+   FindManyOptions,
+   FindOptions,
+@@ -35,33 +37,30 @@ import type {
+   QueueListenerOptions,
+   QueueMessageHandler,
+   SecondaryIndexKeys,
+-  SerializedEntry,
+-  Serializer,
+   SetOptions,
+   UpdateData,
+   UpdateManyOptions,
+   UpdateOneOptions,
+   UpdateOptions,
+   UpdateStrategy,
++  WatchManager,
+   WatchOptions,
+ } from "./types.ts";
+ import {
+   allFulfilled,
+   checkIndices,
+-  compress,
+   createHandlerId,
+   createListOptions,
+   createListSelector,
+   createSecondaryIndexKeyPrefix,
+   createWatcher,
+-  decompress,
++  decodeData,
+   deleteIndices,
++  encodeData,
+   extendKey,
+   generateId,
+   getDocumentId,
+   isKvObject,
+-  jsonDeserialize,
+-  jsonSerialize,
+   kvGetMany,
+   prepareEnqueue,
+   selectsAll,
+@@ -82,32 +81,38 @@ import { AtomicWrapper } from "./atomic_wrapper.ts";
+ import { AtomicPool } from "./atomic_pool.ts";
+ import { Document } from "./document.ts";
+ import { model as m } from "./model.ts";
+-import { concat, deepMerge, ulid } from "./deps.ts";
+-import { v8Serialize } from "./utils.ts";
+-import { v8Deserialize } from "./utils.ts";
++import { deepMerge } from "@std/collections/deep-merge";
++import { concat } from "@std/bytes/concat";
++import { ulid } from "@std/ulid";
+ 
+ /**
+  * Create a new collection within a database context.
+  *
+  * @example
+  * ```ts
+- * import { model, collection, kvdex } from "jsr:@olli/kvdex"
++ * import { model, collection, kvdex } from "@olli/kvdex"
++ * import { jsonEncoder } from "@olli/kvdex/encoding/json"
+  *
+  * type User = {
+  *   username: string
+  *   age: number
+  * }
+  *
+- * const db = kvdex(kv, {
+- *   numbers: collection(model<number>()),
+- *   users: collection(model<User>(), {
+- *     idGenerator: () => crypto.randomUUID(),
+- *     serialize: "json",
+- *     indices: {
+- *       username: "primary",
+- *       age: "secondary"
+- *     }
+- *   })
++ * const kv = await Deno.openKv()
++ *
++ * const db = kvdex({
++ *   kv: kv,
++ *   schema: {
++ *     numbers: collection(model<number>()),
++ *     users: collection(model<User>(), {
++ *       idGenerator: () => crypto.randomUUID(),
++ *       encoder: jsonEncoder(),
++ *       indices: {
++ *         username: "primary",
++ *         age: "secondary"
++ *       }
++ *     })
++ *   }
+  * })
+  * ```
+  *
+@@ -154,9 +159,8 @@ export class Collection<
+   readonly _secondaryIndexList: string[];
+   readonly _keys: CollectionKeys;
+   readonly _idGenerator: IdGenerator<TOutput, ParseId<TOptions>>;
+-  readonly _serializer: Serializer;
++  readonly _encoder?: Encoder;
+   readonly _isIndexable: boolean;
+-  readonly _isSerialized: boolean;
+   readonly _keepsHistory: boolean;
+ 
+   constructor(
+@@ -173,6 +177,7 @@ export class Collection<
+     this.idempotentListener = idempotentListener;
+     this._model = model;
+     this._idGenerator = options?.idGenerator ?? generateId as any;
++    this._encoder = options?.encoder;
+ 
+     // Set keys
+     this._keys = {
+@@ -230,47 +235,6 @@ export class Collection<
+       }
+     });
+ 
+-    // Set serialization
+-    this._isSerialized = !!opts?.serialize;
+-
+-    if (opts?.serialize === "v8") {
+-      this._serializer = {
+-        serialize: v8Serialize,
+-        deserialize: v8Deserialize,
+-        compress,
+-        decompress,
+-      };
+-    } else if (opts?.serialize === "v8-uncompressed") {
+-      this._serializer = {
+-        serialize: v8Serialize,
+-        deserialize: v8Deserialize,
+-        compress: (v) => v,
+-        decompress: (v) => v,
+-      };
+-    } else if (opts?.serialize === "json") {
+-      this._serializer = {
+-        serialize: jsonSerialize,
+-        deserialize: jsonDeserialize,
+-        compress,
+-        decompress,
+-      };
+-    } else if (opts?.serialize === "json-uncompressed") {
+-      this._serializer = {
+-        serialize: jsonSerialize,
+-        deserialize: jsonDeserialize,
+-        compress: (v) => v,
+-        decompress: (v) => v,
+-      };
+-    } else {
+-      this._serializer = {
+-        serialize: jsonSerialize,
+-        deserialize: jsonDeserialize,
+-        compress,
+-        decompress,
+-        ...opts?.serialize,
+-      };
+-    }
+-
+     // Set isIndexable flag
+     this._isIndexable = this._primaryIndexList.length > 0 ||
+       this._secondaryIndexList.length > 0;
+@@ -333,14 +297,13 @@ export class Collection<
+     options?: FindOptions,
+   ): Promise<Document<TOutput, ParseId<TOptions>> | null> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create the index key
+     const key = extendKey(
+       this._keys.primaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Get index entry
+@@ -382,14 +345,13 @@ export class Collection<
+     >,
+   ): Promise<PaginationResult<Document<TOutput, ParseId<TOptions>>>> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create prefix key
+     const prefixKey = extendKey(
+       this._keys.secondaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Add documents to result list by secondary index
+@@ -494,8 +456,8 @@ export class Collection<
+       let historyEntry = value as HistoryEntry<TOutput>;
+ 
+       // Handle serialized entries
+-      if (historyEntry.type === "write" && this._isSerialized) {
+-        const { ids } = historyEntry.value as SerializedEntry;
++      if (historyEntry.type === "write" && this._encoder) {
++        const { ids } = historyEntry.value as EncodedEntry;
+         const timeId = getDocumentId(key as DenoKvStrictKey)!;
+ 
+         const keys = ids.map((segmentId) =>
+@@ -508,15 +470,12 @@ export class Collection<
+         const data = concat(entries.map((entry) => entry.value as Uint8Array));
+ 
+         // Decompress and deserialize
+-        const serialized = await this._serializer.decompress(data);
+-        const deserialized = await this._serializer.deserialize<TOutput>(
+-          serialized,
+-        );
++        const decoded = await decodeData(data, this._encoder);
+ 
+         // Set history entry
+         historyEntry = {
+           ...historyEntry,
+-          value: this._model.parse?.(deserialized),
++          value: this._model.parse?.(decoded),
+         };
+       } else if (historyEntry.type === "write") {
+         // Set history entry
+@@ -627,14 +586,13 @@ export class Collection<
+     options?: FindOptions,
+   ): Promise<void> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create index key
+     const key = extendKey(
+       this._keys.primaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Get index entry
+@@ -684,14 +642,13 @@ export class Collection<
+     >,
+   ): Promise<Pagination> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create prefix key
+     const prefixKey = extendKey(
+       this._keys.secondaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Delete documents by secondary index, return iterator cursor
+@@ -847,14 +804,13 @@ export class Collection<
+     >
+   > {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create prefix key
+     const prefixKey = extendKey(
+       this._keys.secondaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Update each document by secondary index, add commit result to result list
+@@ -1792,14 +1748,13 @@ export class Collection<
+     >,
+   ): Promise<PaginationResult<Awaited<T>>> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create prefix key
+     const prefixKey = extendKey(
+       this._keys.secondaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Execute callback function for each document entry, return result and cursor
+@@ -1919,14 +1874,13 @@ export class Collection<
+     >,
+   ): Promise<number> {
+     // Serialize and compress index value
+-    const serialized = await this._serializer.serialize(value);
+-    const compressed = await this._serializer.compress(serialized);
++    const encoded = await encodeData(value, this._encoder);
+ 
+     // Create prefix key
+     const prefixKey = extendKey(
+       this._keys.secondaryIndex,
+       index as KvId,
+-      compressed,
++      encoded,
+     );
+ 
+     // Initialize count result
+@@ -2186,10 +2140,7 @@ export class Collection<
+     id: ParseId<TOptions>,
+     fn: (doc: Document<TOutput, ParseId<TOptions>> | null) => unknown,
+     options?: WatchOptions,
+-  ): {
+-    promise: Promise<void>;
+-    cancel: () => Promise<void>;
+-  } {
++  ): WatchManager {
+     const key = extendKey(this._keys.id, id);
+ 
+     return createWatcher(this.kv, options, [key], async (entries) => {
+@@ -2247,10 +2198,7 @@ export class Collection<
+     ids: ParseId<TOptions>[],
+     fn: (doc: (Document<TOutput, ParseId<TOptions>> | null)[]) => unknown,
+     options?: WatchOptions,
+-  ): {
+-    promise: Promise<void>;
+-    cancel: () => Promise<void>;
+-  } {
++  ): WatchManager {
+     const keys = ids.map((id) => extendKey(this._keys.id, id));
+ 
+     return createWatcher(this.kv, options, keys, async (entries) => {
+@@ -2326,16 +2274,15 @@ export class Collection<
+     }
+ 
+     // Serialize if enabled
+-    if (this._isSerialized) {
+-      const serialized = isUint8Array
+-        ? value
+-        : await this._serializer.serialize(value);
+-      const compressed = await this._serializer.compress(serialized);
++    if (this._encoder) {
++      const encoded = isUint8Array
++        ? await this._encoder.compressor?.compress(value) ?? value
++        : await encodeData(value, this._encoder);
+ 
+       // Set segmented entries
+       let index = 0;
+-      for (let i = 0; i < compressed.length; i += UINT8ARRAY_LENGTH_LIMIT) {
+-        const part = compressed.subarray(i, i + UINT8ARRAY_LENGTH_LIMIT);
++      for (let i = 0; i < encoded.length; i += UINT8ARRAY_LENGTH_LIMIT) {
++        const part = encoded.subarray(i, i + UINT8ARRAY_LENGTH_LIMIT);
+         const key = extendKey(this._keys.segment, docId, index);
+         ids.push(index);
+ 
+@@ -2357,7 +2304,7 @@ export class Collection<
+       }
+ 
+       // Set serialized document value
+-      const serializedEntry: SerializedEntry = {
++      const serializedEntry: EncodedEntry = {
+         ids,
+         isUint8Array,
+       };
+@@ -2430,8 +2377,8 @@ export class Collection<
+           failedAtomic.delete(historyKey);
+         }
+ 
+-        if (this._isSerialized) {
+-          const { ids } = docValue as SerializedEntry;
++        if (this._encoder) {
++          const { ids } = docValue as EncodedEntry;
+           ids.forEach((id) =>
+             failedAtomic.delete(extendKey(this._keys.segment, docId, id))
+           );
+@@ -2514,7 +2461,7 @@ export class Collection<
+     }
+ 
+     // If serialized, delete existing segment entries
+-    if (this._isSerialized) {
++    if (this._encoder) {
+       const atomic = new AtomicWrapper(this.kv);
+       const keyPrefix = extendKey(this._keys.segment, id);
+       const iter = this.kv.list({ prefix: keyPrefix });
+@@ -2576,9 +2523,9 @@ export class Collection<
+       return null;
+     }
+ 
+-    if (this._isSerialized) {
++    if (this._encoder) {
+       // Get document parts
+-      const { ids, isUint8Array } = value as SerializedEntry;
++      const { ids, isUint8Array } = value as EncodedEntry;
+ 
+       const keys = ids.map((segId) =>
+         extendKey(this._keys.segment, docId, segId)
+@@ -2590,15 +2537,14 @@ export class Collection<
+       const data = concat(docEntries.map((entry) => entry.value as Uint8Array));
+ 
+       // Decompress and deserialize
+-      const serialized = await this._serializer.decompress(data);
+-      const deserialized = isUint8Array
+-        ? serialized as TOutput
+-        : await this._serializer.deserialize<TOutput>(serialized);
++      const decoded = isUint8Array
++        ? (await this._encoder?.compressor?.decompress(data) ?? data) as TOutput
++        : await decodeData<TOutput>(data, this._encoder);
+ 
+       // Return parsed document
+       return new Document<TOutput, ParseId<TOptions>>(this._model, {
+         id: docId as ParseId<TOptions>,
+-        value: deserialized,
++        value: decoded,
+         versionstamp,
+       });
+     }
+@@ -2725,7 +2671,7 @@ export class Collection<
+       });
+     }
+ 
+-    if (this._isIndexable && this._isSerialized) {
++    if (this._isIndexable && this._encoder) {
+       // Run delete operations for each id
+       await allFulfilled(ids.map(async (id) => {
+         // Create document id key, get entry and construct document
+@@ -2737,7 +2683,7 @@ export class Collection<
+         atomic.delete(idKey);
+ 
+         if (entry.value) {
+-          const keys = (entry.value as SerializedEntry).ids.map((segId) =>
++          const keys = (entry.value as EncodedEntry).ids.map((segId) =>
+             extendKey(this._keys.segment, id, segId)
+           );
+ 
+@@ -2776,7 +2722,7 @@ export class Collection<
+       return;
+     }
+ 
+-    if (this._isSerialized) {
++    if (this._encoder) {
+       // Perform delete for each id
+       await allFulfilled(ids.map(async (id) => {
+         // Create document id key, get document value
+@@ -2791,7 +2737,7 @@ export class Collection<
+         // Delete document entries
+         atomic.delete(idKey);
+ 
+-        const keys = (value as SerializedEntry).ids.map((segId) =>
++        const keys = (value as EncodedEntry).ids.map((segId) =>
+           extendKey(this._keys.segment, id, segId)
+         );
+ 
+diff --git a/src/constants.ts b/src/constants.ts
+index a39186b..f08ed5b 100644
+--- a/src/constants.ts
++++ b/src/constants.ts
+@@ -36,8 +36,6 @@ export const DEFAULT_LOOP_RETRY = 10;
+ export const DEFAULT_UPDATE_STRATEGY: UpdateStrategy = "merge";
+ 
+ // Misc
+-export const COMPRESSION_QUALITY_LEVEL = 1;
+-
+ export const MIN_INTERVAL_START_DELAY = 1_000;
+ 
+ export const MIN_LOOP_START_DELAY = 1_000;
+diff --git a/src/deps.ts b/src/deps.ts
+deleted file mode 100644
+index df330e6..0000000
+--- a/src/deps.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-export { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
+-export { ulid } from "jsr:@std/ulid@^1.0.0";
+-export { concat } from "jsr:@std/bytes@^1.0.1/concat";
+-export {
+-  deepMerge,
+-  type DeepMergeOptions,
+-} from "jsr:@std/collections@^1.0.2/deep-merge";
+-export { deserialize, serialize } from "node:v8";
+diff --git a/src/ext/encoding/brotli/brotli_compressor.ts b/src/ext/encoding/brotli/brotli_compressor.ts
+new file mode 100644
+index 0000000..3850703
+--- /dev/null
++++ b/src/ext/encoding/brotli/brotli_compressor.ts
+@@ -0,0 +1,41 @@
++import type { Compressor } from "../../../types.ts";
++import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
++import type { BrotliCompressorOptions } from "./types.ts";
++
++/**
++ * Brotli compressor.
++ *
++ * Used for compressing and compressing data represented as a Uint8Array.
++ *
++ * @param options - Brolti compression options.
++ * @returns - A Compressor object.
++ */
++export function brotliCompressor(
++  options?: BrotliCompressorOptions,
++): Compressor {
++  return new BrotliCompressor(options?.quality);
++}
++
++class BrotliCompressor implements Compressor {
++  private quality;
++
++  constructor(quality: number = 1) {
++    this.quality = quality;
++  }
++
++  compress(data: Uint8Array) {
++    const buffer = brotliCompressSync(data, {
++      params: { [constants.BROTLI_PARAM_QUALITY]: this.quality },
++    });
++
++    return new Uint8Array(buffer);
++  }
++
++  decompress(data: Uint8Array) {
++    const buffer = brotliDecompressSync(data, {
++      params: { [constants.BROTLI_PARAM_QUALITY]: this.quality },
++    });
++
++    return new Uint8Array(buffer);
++  }
++}
+diff --git a/src/ext/encoding/brotli/mod.ts b/src/ext/encoding/brotli/mod.ts
+new file mode 100644
+index 0000000..2b60940
+--- /dev/null
++++ b/src/ext/encoding/brotli/mod.ts
+@@ -0,0 +1,21 @@
++/**
++ * @module # Brotli
++ *
++ * Easy to configure brotli compression for use with the `encoder` option for collections.
++ *
++ * Relies on the `node:zlib` built-in.
++ *
++ * @example
++ * ```ts
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // With default options
++ * const compressor = brotliCompressor()
++ *
++ * // Explicitly set quality level (default is 1)
++ * const compressor = brotliCompressor({ quality: 2 })
++ * ```
++ */
++
++export { brotliCompressor } from "./brotli_compressor.ts";
++export type * from "./types.ts";
+diff --git a/src/ext/encoding/brotli/types.ts b/src/ext/encoding/brotli/types.ts
+new file mode 100644
+index 0000000..c5a664e
+--- /dev/null
++++ b/src/ext/encoding/brotli/types.ts
+@@ -0,0 +1,9 @@
++/** Options for brotli compression. */
++export type BrotliCompressorOptions = {
++  /**
++   * Brolti compression quality.
++   *
++   * @default 1
++   */
++  quality?: number;
++};
+diff --git a/src/ext/encoding/json/json_encoder.ts b/src/ext/encoding/json/json_encoder.ts
+new file mode 100644
+index 0000000..887b396
+--- /dev/null
++++ b/src/ext/encoding/json/json_encoder.ts
+@@ -0,0 +1,21 @@
++import type { Encoder } from "../../../types.ts";
++import type { JsonEncoderOptions } from "./types.ts";
++import { jsonDeserialize, jsonSerialize } from "./utils.ts";
++
++/**
++ * JSON-encoder.
++ *
++ * Used for serializing and deserializing data as Uint8Array.
++ *
++ * @param options - JSON encoding options.
++ * @returns - An Encoder object.
++ */
++export function jsonEncoder(options?: JsonEncoderOptions): Encoder {
++  return {
++    serializer: {
++      serialize: jsonSerialize,
++      deserialize: jsonDeserialize,
++    },
++    compressor: options?.compressor,
++  };
++}
+diff --git a/src/ext/encoding/json/mod.ts b/src/ext/encoding/json/mod.ts
+new file mode 100644
+index 0000000..7866ae2
+--- /dev/null
++++ b/src/ext/encoding/json/mod.ts
+@@ -0,0 +1,59 @@
++/**
++ * @module # JSON
++ *
++ * JSON-encoder and utilities for stringifying and serializing data.
++ *
++ * @example
++ * ```ts
++ * import { jsonEncoder } from "@olli/kvdex/encoding/json"
++ *
++ * // With default options (no compression)
++ * const encoder = jsonEncoder()
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonEncoder } from "@olli/kvdex/encoding/json"
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // With brotli compression
++ * const encoder = jsonEncoder({ compressor: brotliCompressor() })
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonStringify, jsonParse } from "@olli/kvdex/encoding/json"
++ *
++ * // Stringify value
++ * const json = jsonStringify({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Parse value
++ * const value = jsonParse(json)
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonSerialize, jsonDeserialize } from "@olli/kvdex/encoding/json"
++ *
++ * // Serialize value as Uint8Array
++ * const serialized = jsonSerialize({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Deserialize value from Uint8Array
++ * const value = jsonDeserialize(serialized)
++ * ```
++ */
++
++export { jsonEncoder } from "./json_encoder.ts";
++export {
++  jsonDeserialize,
++  jsonParse,
++  jsonSerialize,
++  jsonStringify,
++} from "./utils.ts";
++export type * from "./types.ts";
+diff --git a/src/ext/encoding/json/types.ts b/src/ext/encoding/json/types.ts
+new file mode 100644
+index 0000000..46ee497
+--- /dev/null
++++ b/src/ext/encoding/json/types.ts
+@@ -0,0 +1,7 @@
++import type { Compressor } from "../../../types.ts";
++
++/** Options for JSON encoding. */
++export type JsonEncoderOptions = {
++  /** Optional compressor object. */
++  compressor?: Compressor;
++};
+diff --git a/src/ext/encoding/json/utils.ts b/src/ext/encoding/json/utils.ts
+new file mode 100644
+index 0000000..1810bb5
+--- /dev/null
++++ b/src/ext/encoding/json/utils.ts
+@@ -0,0 +1,569 @@
++import type { KvObject, KvValue } from "../../../types.ts";
++import { isKvObject } from "../../../utils.ts";
++
++const TEXT_ENCODER = new TextEncoder();
++const TEXT_DECODER = new TextDecoder();
++
++/**
++ * Serialize a JSON-like value to a Uint8Array.
++ *
++ * @example
++ * ```ts
++ * import { jsonSerialize } from "@olli/kvdex"
++ *
++ * const serialized = jsonSerialize({
++ *   foo: "foo",
++ *   bar: "bar",
++ *   bigint: 10n
++ * })
++ * ```
++ *
++ * @param value - Value to be serialized.
++ * @returns Serialized value.
++ */
++export function jsonSerialize(value: unknown): Uint8Array {
++  const str = jsonStringify(value);
++  return TEXT_ENCODER.encode(str);
++}
++
++/**
++ * Deserialize a value that was serialized using `jsonSerialize()`.
++ *
++ * @example
++ * ```ts
++ * import { jsonSerialize, jsonDeserialize } from "@olli/kvdex"
++ *
++ * const serialized = jsonSerialize({
++ *   foo: "foo",
++ *   bar: "bar",
++ *   bigint: 10n
++ * })
++ *
++ * const value = jsonDeserialize(serialized)
++ * ```
++ *
++ * @param value - Value to be deserialize.
++ * @returns Deserialized value.
++ */
++export function jsonDeserialize<T>(value: Uint8Array): T {
++  const str = TEXT_DECODER.decode(value);
++  return jsonParse<T>(str);
++}
++
++/**
++ * Stringify a JSON-like value.
++ *
++ * @example
++ * ```ts
++ * import { jsonStringify } from "@olli/kvdex"
++ *
++ * const str = jsonStringify({
++ *   foo: "foo",
++ *   bar: "bar",
++ *   bigint: 10n
++ * })
++ * ```
++ *
++ * @param value
++ * @param space
++ * @returns
++ */
++export function jsonStringify(value: unknown, space?: number | string): string {
++  return JSON.stringify(_replacer(value), replacer, space);
++}
++
++/**
++ * Parse a value that was stringified using `jsonStringify()`
++ *
++ * @example
++ * ```ts
++ * import { jsonStringify, jsonParse } from "@olli/kvdex"
++ *
++ * const str = jsonStringify({
++ *   foo: "foo",
++ *   bar: "bar",
++ *   bigint: 10n
++ * })
++ *
++ * const value = jsonParse(str)
++ * ```
++ *
++ * @param value
++ * @returns
++ */
++export function jsonParse<T>(value: string): T {
++  return postReviver(JSON.parse(value, reviver)) as T;
++}
++
++/**
++ * Outer replacer function.
++ *
++ * @param _key
++ * @param value
++ * @returns
++ */
++function replacer(_key: string, value: unknown) {
++  return _replacer(value);
++}
++
++type JSONError = {
++  message: string;
++  name: string;
++  cause?: string;
++  stack?: string;
++};
++
++enum TypeKey {
++  Undefined = "__undefined__",
++  BigInt = "__bigint__",
++  KvU64 = "__kvu64__",
++  Int8Array = "__int8array__",
++  Int16Array = "__int16array__",
++  Int32Array = "__int32array__",
++  BigInt64Array = "__bigint64array__",
++  Uint8Array = "__uint8array__",
++  Uint16Array = "__uint16array__",
++  Uint32Array = "__uint32array__",
++  BigUint64Array = "__biguint64array__",
++  Uint8ClampedArray = "__uint8clampedarray__",
++  // TODO: Float16Array = "__float16array__",
++  Float32Array = "__float32array__",
++  Float64Array = "__float64array__",
++  ArrayBuffer = "__arraybuffer__",
++  Date = "__date__",
++  Set = "__set__",
++  Map = "__map__",
++  RegExp = "__regexp__",
++  DataView = "__dataview__",
++  Error = "__error__",
++  NaN = "__nan__",
++  Infinity = "__infinity__",
++}
++
++/**
++ * Inner replacer function.
++ *
++ * @param value
++ * @returns
++ */
++function _replacer(value: unknown): unknown {
++  // undefined
++  if (value === undefined) {
++    return {
++      [TypeKey.Undefined]: false,
++    };
++  }
++
++  // NaN
++  if (Number.isNaN(value)) {
++    return {
++      [TypeKey.NaN]: false,
++    };
++  }
++
++  // Infinity
++  if (value === Infinity) {
++    return {
++      [TypeKey.Infinity]: false,
++    };
++  }
++
++  // bigint
++  if (typeof value === "bigint") {
++    return {
++      [TypeKey.BigInt]: value.toString(),
++    };
++  }
++
++  // Date
++  if (value instanceof Date) {
++    return {
++      [TypeKey.Date]: value.toISOString(),
++    };
++  }
++
++  // Array
++  if (Array.isArray(value)) {
++    return value.map(_replacer);
++  }
++
++  // Set
++  if (value instanceof Set) {
++    return {
++      [TypeKey.Set]: Array.from(value.values()).map(_replacer),
++    };
++  }
++
++  // Map
++  if (value instanceof Map) {
++    return {
++      [TypeKey.Map]: Array.from(value.entries()).map((
++        [k, v],
++      ) => [k, _replacer(v)]),
++    };
++  }
++
++  // RegExp
++  if (value instanceof RegExp) {
++    return {
++      [TypeKey.RegExp]: value.source,
++    };
++  }
++
++  // Error
++  if (value instanceof Error) {
++    const jsonError: JSONError = {
++      message: value.message,
++      name: value.name,
++      stack: value.stack,
++      cause: jsonStringify(value.cause),
++    };
++    return {
++      [TypeKey.Error]: jsonError,
++    };
++  }
++
++  // Int8Array
++  if (value instanceof Int8Array) {
++    return {
++      [TypeKey.Int8Array]: Array.from(value),
++    };
++  }
++
++  // Int16Array
++  if (value instanceof Int16Array) {
++    return {
++      [TypeKey.Int16Array]: Array.from(value),
++    };
++  }
++
++  // Int32Array
++  if (value instanceof Int32Array) {
++    return {
++      [TypeKey.Int32Array]: Array.from(value),
++    };
++  }
++
++  // BigInt64Array
++  if (value instanceof BigInt64Array) {
++    return {
++      [TypeKey.BigInt64Array]: Array.from(value),
++    };
++  }
++
++  // Uint8Array
++  if (value instanceof Uint8Array) {
++    return {
++      [TypeKey.Uint8Array]: Array.from(value),
++    };
++  }
++
++  // Uint16Array
++  if (value instanceof Uint16Array) {
++    return {
++      [TypeKey.Uint16Array]: Array.from(value),
++    };
++  }
++
++  // Uint32Array
++  if (value instanceof Uint32Array) {
++    return {
++      [TypeKey.Uint32Array]: Array.from(value),
++    };
++  }
++
++  // BigUint64Array
++  if (value instanceof BigUint64Array) {
++    return {
++      [TypeKey.BigUint64Array]: Array.from(value),
++    };
++  }
++
++  // Uint8ClampedArray
++  if (value instanceof Uint8ClampedArray) {
++    return {
++      [TypeKey.Uint8ClampedArray]: Array.from(value),
++    };
++  }
++
++  // TODO:
++  /*
++  // Float16Array
++  if (value instanceof Float16Array) {
++    return {
++      [TypeKey.Float16Array]: Array.from(value),
++    };
++  }*/
++
++  // Float32Array
++  if (value instanceof Float32Array) {
++    return {
++      [TypeKey.Float32Array]: Array.from(value),
++    };
++  }
++
++  // Float64Array
++  if (value instanceof Float64Array) {
++    return {
++      [TypeKey.Float64Array]: Array.from(value),
++    };
++  }
++
++  // ArrayBuffer
++  if (value instanceof ArrayBuffer) {
++    return {
++      [TypeKey.ArrayBuffer]: Array.from(new Uint8Array(value)),
++    };
++  }
++
++  // DataView
++  if (value instanceof DataView) {
++    return {
++      [TypeKey.DataView]: Array.from(new Uint8Array(value.buffer)),
++    };
++  }
++
++  // KvObject
++  if (isKvObject(value)) {
++    return Object.fromEntries(
++      Object.entries(value as KvObject).map((
++        [k, v],
++      ) => [k, _replacer(v)]),
++    );
++  }
++
++  return value;
++}
++
++/**
++ * Outer reviver function.
++ *
++ * @param _key
++ * @param value
++ * @returns
++ */
++function reviver(_key: string, value: unknown) {
++  return _reviver(value);
++}
++
++/**
++ * Inner reviver function.
++ *
++ * @param value
++ * @returns
++ */
++function _reviver(value: unknown): unknown {
++  // Return if nullish or not an object
++  if (
++    value === null ||
++    value === undefined ||
++    typeof value !== "object"
++  ) {
++    return value;
++  }
++
++  // bigint
++  if (TypeKey.BigInt in value) {
++    return BigInt(mapValue(TypeKey.BigInt, value));
++  }
++
++  // Date
++  if (TypeKey.Date in value) {
++    return new Date(mapValue<string>(TypeKey.Date, value));
++  }
++
++  // NaN
++  if (TypeKey.NaN in value) {
++    return NaN;
++  }
++
++  // Infnity
++  if (TypeKey.Infinity in value) {
++    return Infinity;
++  }
++
++  // RegExp
++  if (TypeKey.RegExp in value) {
++    return new RegExp(mapValue(TypeKey.RegExp, value));
++  }
++
++  // Error
++  if (TypeKey.Error in value) {
++    const { message, stack, cause, ...rest } = mapValue<JSONError>(
++      TypeKey.Error,
++      value,
++    );
++
++    const error = new Error(message, {
++      cause: cause ? jsonParse(cause) : undefined,
++      ...rest,
++    });
++
++    error.stack = stack;
++    return error;
++  }
++
++  // Int8Array
++  if (TypeKey.Int8Array in value) {
++    return Int8Array.from(mapValue(TypeKey.Int8Array, value));
++  }
++
++  // Int16Array
++  if (TypeKey.Int16Array in value) {
++    return Int16Array.from(mapValue(TypeKey.Int16Array, value));
++  }
++
++  // Int32Array
++  if (TypeKey.Int32Array in value) {
++    return Int32Array.from(mapValue(TypeKey.Int32Array, value));
++  }
++
++  // BigInt64Array
++  if (TypeKey.BigInt64Array in value) {
++    return BigInt64Array.from(mapValue(TypeKey.BigInt64Array, value));
++  }
++
++  // Uint8Array
++  if (TypeKey.Uint8Array in value) {
++    return Uint8Array.from(mapValue(TypeKey.Uint8Array, value));
++  }
++
++  // Uint16Array
++  if (TypeKey.Uint16Array in value) {
++    return Uint16Array.from(mapValue(TypeKey.Uint16Array, value));
++  }
++
++  // Uint32Array
++  if (TypeKey.Uint32Array in value) {
++    return Uint32Array.from(mapValue(TypeKey.Uint32Array, value));
++  }
++
++  // BigUint64Array
++  if (TypeKey.BigUint64Array in value) {
++    return BigUint64Array.from(mapValue(TypeKey.BigUint64Array, value));
++  }
++
++  // Uint8ClampedArray
++  if (TypeKey.Uint8ClampedArray in value) {
++    return Uint8ClampedArray.from(
++      mapValue(TypeKey.Uint8ClampedArray, value),
++    );
++  }
++
++  // TODO:
++  /*
++  // Float16Array
++  if (TypeKey.Float16Array in value) {
++    return Float16Array.from(mapValue(TypeKey.Float16Array, value));
++  }*/
++
++  // Float32Array
++  if (TypeKey.Float32Array in value) {
++    return Float32Array.from(mapValue(TypeKey.Float32Array, value));
++  }
++
++  // Float64Array
++  if (TypeKey.Float64Array in value) {
++    return Float64Array.from(mapValue(TypeKey.Float64Array, value));
++  }
++
++  // ArrayBuffer
++  if (TypeKey.ArrayBuffer in value) {
++    const uint8array = Uint8Array.from(
++      mapValue(TypeKey.ArrayBuffer, value),
++    );
++    return uint8array.buffer;
++  }
++
++  // DataView
++  if (TypeKey.DataView in value) {
++    const uint8array = Uint8Array.from(mapValue(TypeKey.DataView, value));
++    return new DataView(uint8array.buffer);
++  }
++
++  // Set
++  if (TypeKey.Set in value) {
++    return new Set(mapValue<Array<KvValue>>(TypeKey.Set, value));
++  }
++
++  // Map
++  if (TypeKey.Map in value) {
++    return new Map(mapValue<Array<[KvValue, KvValue]>>(TypeKey.Map, value));
++  }
++
++  // Array
++  if (Array.isArray(value)) {
++    return value.map(_reviver);
++  }
++
++  // KvObject
++  if (isKvObject(value)) {
++    return Object.fromEntries(
++      Object.entries(value).map(([k, v]) => [k, _reviver(v)]),
++    );
++  }
++
++  // Return value
++  return value;
++}
++
++/**
++ * Additional revival steps to perform after initial parse.
++ *
++ * @param value
++ * @returns
++ */
++function postReviver<T>(value: T): T {
++  // Return value if not an object
++  if (
++    value === undefined ||
++    value === null ||
++    typeof value !== "object"
++  ) {
++    return value;
++  }
++
++  // undefined
++  if (TypeKey.Undefined in value) {
++    return undefined as T;
++  }
++
++  // Array
++  if (Array.isArray(value)) {
++    return value.map(postReviver) as T;
++  }
++
++  // Set
++  if (value instanceof Set) {
++    return new Set(
++      Array.from(value.values()).map(postReviver),
++    ) as T;
++  }
++
++  // Map
++  if (value instanceof Map) {
++    return new Map(
++      Array.from(value.entries()).map(([k, v]) => [k, postReviver(v)]),
++    ) as T;
++  }
++
++  // KvObject
++  if (isKvObject(value)) {
++    return Object.fromEntries(
++      Object.entries(value).map(([k, v]) => [k, postReviver(v)]),
++    ) as T;
++  }
++
++  return value;
++}
++
++/**
++ * Map from special type entry to value.
++ *
++ * @param key - Type key.
++ * @param value - JSON value to map from.
++ * @returns Mapped value.
++ */
++function mapValue<T>(key: string, value: unknown) {
++  return (value as Record<string, T>)[key];
++}
+diff --git a/src/ext/encoding/mod.ts b/src/ext/encoding/mod.ts
+new file mode 100644
+index 0000000..c92e1c8
+--- /dev/null
++++ b/src/ext/encoding/mod.ts
+@@ -0,0 +1,107 @@
++/**
++ * @module # Encoding
++ *
++ * Utilities for encoding data.
++ *
++ * @module ## JSON
++ *
++ * JSON-encoder and utilities for stringifying and serializing data.
++ *
++ * @example
++ * ```ts
++ * import { jsonEncoder } from "@olli/kvdex/encoding/json"
++ *
++ * // With default options (no compression)
++ * const encoder = jsonEncoder()
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonEncoder } from "@olli/kvdex/encoding/json"
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // With brotli compression
++ * const encoder = jsonEncoder({ compressor: brotliCompressor() })
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonStringify, jsonParse } from "@olli/kvdex/encoding/json"
++ *
++ * // Stringify value
++ * const json = jsonStringify({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Parse value
++ * const value = jsonParse(json)
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { jsonSerialize, jsonDeserialize } from "@olli/kvdex/encoding/json"
++ *
++ * // Serialize value as Uint8Array
++ * const serialized = jsonSerialize({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Deserialize value from Uint8Array
++ * const value = jsonDeserialize(serialized)
++ * ```
++ *
++ * @module ## V8
++ *
++ * V8-encoder and serialization utilities.
++ *
++ * Relies on the `node:v8` built-in.
++ *
++ * @example
++ * ```ts
++ * import { v8Encoder } from "@olli/kvdex/encoding/v8"
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // V8-encoder without compression
++ * const encoder = v8Encoder()
++ *
++ * // V8-encoder with brotli compression
++ * const encoder = v8Encoder({ compressor: brotliCompressor() })
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { v8Serialize, v8Deserialize } from "@olli/kvdex/encoding/v8"
++ *
++ * // Serialize value as Uint8Array
++ * const serialized = v8Serialize({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Deserialize value from Uint8Array
++ * const value = v8Deserialize(serialized)
++ * ```
++ *
++ * @module ## Brotli
++ *
++ * Easy to configure brotli compression for use with the `encoder` option for collections.
++ *
++ * Relies on the `node:zlib` built-in.
++ *
++ * @example
++ * ```ts
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // With default options
++ * const compressor = brotliCompressor()
++ *
++ * // Explicitly set quality level (default is 1)
++ * const compressor = brotliCompressor({ quality: 2 })
++ * ```
++ */
++
++export * from "./brotli/mod.ts";
++export * from "./json/mod.ts";
++export * from "./v8/mod.ts";
+diff --git a/src/ext/encoding/v8/mod.ts b/src/ext/encoding/v8/mod.ts
+new file mode 100644
+index 0000000..8c686d6
+--- /dev/null
++++ b/src/ext/encoding/v8/mod.ts
+@@ -0,0 +1,37 @@
++/**
++ * @module # V8
++ *
++ * V8-encoder and serialization utilities.
++ *
++ * Relies on the `node:v8` built-in.
++ *
++ * @example
++ * ```ts
++ * import { v8Encoder } from "@olli/kvdex/encoding/v8"
++ * import { brotliCompressor } from "@olli/kvdex/encoding/brotli"
++ *
++ * // V8-encoder without compression
++ * const encoder = v8Encoder()
++ *
++ * // V8-encoder with brotli compression
++ * const encoder = v8Encoder({ compressor: brotliCompressor() })
++ * ```
++ *
++ * @example
++ * ```ts
++ * import { v8Serialize, v8Deserialize } from "@olli/kvdex/encoding/v8"
++ *
++ * // Serialize value as Uint8Array
++ * const serialized = v8Serialize({
++ *   foo: "bar",
++ *   big: 100n
++ * })
++ *
++ * // Deserialize value from Uint8Array
++ * const value = v8Deserialize(serialized)
++ * ```
++ */
++
++export { v8Encoder } from "./v8_encoder.ts";
++export { v8Deserialize, v8Serialize } from "./utils.ts";
++export type * from "./types.ts";
+diff --git a/src/ext/encoding/v8/types.ts b/src/ext/encoding/v8/types.ts
+new file mode 100644
+index 0000000..db85c07
+--- /dev/null
++++ b/src/ext/encoding/v8/types.ts
+@@ -0,0 +1,7 @@
++import type { Compressor } from "../../../types.ts";
++
++/** Options for V8 encoding. */
++export type V8EncoderOptions = {
++  /** Optional compressor object. */
++  compressor?: Compressor;
++};
+diff --git a/src/ext/encoding/v8/utils.ts b/src/ext/encoding/v8/utils.ts
+new file mode 100644
+index 0000000..62e92b3
+--- /dev/null
++++ b/src/ext/encoding/v8/utils.ts
+@@ -0,0 +1,112 @@
++import type { KvObject } from "../../../types.ts";
++import { isKvObject } from "../../../utils.ts";
++import { deserialize, serialize } from "node:v8";
++
++/**
++ * Extended V8 serialize.
++ *
++ * @param value - Value to be serialized.
++ * @returns A serialized value.
++ */
++export function v8Serialize(value: unknown): Uint8Array {
++  return new Uint8Array(serialize(beforeV8Serialize(value)));
++}
++
++/**
++ * Extended V8 deserialize.
++ *
++ * @param value - Value to be deserialized.
++ * @returns Deserialized value.
++ */
++export function v8Deserialize<T>(
++  value: Uint8Array,
++): T {
++  return afterV8Serialize(deserialize(value)) as T;
++}
++
++/**
++ * Additional steps to perform before V8 serialize.
++ *
++ * @param value
++ * @returns
++ */
++function beforeV8Serialize(value: unknown): unknown {
++  // KvObject
++  if (isKvObject(value)) {
++    return Object.fromEntries(
++      Object.entries(value as KvObject).map((
++        [key, val],
++      ) => [key, beforeV8Serialize(val)]),
++    );
++  }
++
++  // Array
++  if (Array.isArray(value)) {
++    return value.map((val) => beforeV8Serialize(val));
++  }
++
++  // Set
++  if (value instanceof Set) {
++    return new Set(
++      Array.from(value.values()).map((v) => beforeV8Serialize(v)),
++    );
++  }
++
++  // Map
++  if (value instanceof Map) {
++    return new Map(
++      Array.from(value.entries()).map((
++        [k, v],
++      ) => [k, beforeV8Serialize(v)]),
++    );
++  }
++
++  return value;
++}
++
++/**
++ * Additional steps to perform after V8 deserialize.
++ *
++ * @param value
++ * @returns
++ */
++function afterV8Serialize(value: unknown): unknown {
++  // Return value if not an object
++  if (
++    value === undefined ||
++    value === null ||
++    typeof value !== "object"
++  ) {
++    return value;
++  }
++
++  // KvObject
++  if (isKvObject(value)) {
++    return Object.fromEntries(
++      Object.entries(value).map(([k, v]) => [k, afterV8Serialize(v)]),
++    );
++  }
++
++  // Array
++  if (Array.isArray(value)) {
++    return value.map((v) => afterV8Serialize(v));
++  }
++
++  // Set
++  if (value instanceof Set) {
++    return new Set(
++      Array.from(value.values()).map((v) => afterV8Serialize(v)),
++    );
++  }
++
++  // Map
++  if (value instanceof Map) {
++    return new Map(
++      Array.from(value.entries()).map((
++        [k, v],
++      ) => [k, afterV8Serialize(v)]),
++    );
++  }
++
++  return value;
++}
+diff --git a/src/ext/encoding/v8/v8_encoder.ts b/src/ext/encoding/v8/v8_encoder.ts
+new file mode 100644
+index 0000000..3d2b114
+--- /dev/null
++++ b/src/ext/encoding/v8/v8_encoder.ts
+@@ -0,0 +1,23 @@
++import type { Encoder } from "../../../types.ts";
++import type { V8EncoderOptions } from "./types.ts";
++import { v8Deserialize, v8Serialize } from "./utils.ts";
++
++/**
++ * V8-encoder.
++ *
++ * Used for serializing and deserializing data as Uint8Array.
++ *
++ * Relies on `serialize()` and `deserialize()` from the node:v8 built-in module.
++ *
++ * @param options - V8 encoding options.
++ * @returns - An Encoder object.
++ */
++export function v8Encoder(options?: V8EncoderOptions): Encoder {
++  return {
++    serializer: {
++      serialize: v8Serialize,
++      deserialize: v8Deserialize,
++    },
++    compressor: options?.compressor,
++  };
++}
+diff --git a/src/ext/kv/map_kv.ts b/src/ext/kv/map_kv.ts
+index a0be60c..6a93af6 100644
+--- a/src/ext/kv/map_kv.ts
++++ b/src/ext/kv/map_kv.ts
+@@ -13,11 +13,11 @@ import type {
+   DenoKvStrictKey,
+   DenoKvWatchOptions,
+ } from "../../types.ts";
+-import { jsonParse, jsonStringify } from "../../utils.ts";
+ import { MapKvAtomicOperation } from "./atomic.ts";
+ import { Watcher } from "./watcher.ts";
+ import { createVersionstamp, keySort } from "./utils.ts";
+ import type { BasicMap, MapKvOptions } from "./types.ts";
++import { jsonParse, jsonStringify } from "../encoding/mod.ts";
+ 
+ /**
+  * KV instance utilising a `BasicMap` as it's backend.
+diff --git a/src/ext/kv/mod.ts b/src/ext/kv/mod.ts
+index cf42941..9eef711 100644
+--- a/src/ext/kv/mod.ts
++++ b/src/ext/kv/mod.ts
+@@ -13,7 +13,7 @@
+  *
+  * // Create a database from a `MapKv` instance, using `Map` as it's backend by default.
+  * const kv = new MapKv()
+- * const db = kvdex(kv, {})
++ * const db = kvdex({ kv })
+  * ```
+  *
+  * @example
+@@ -23,7 +23,7 @@
+  *
+  * // Create a database from a `MapKv` instance, explicitly using `Map` as it's backend.
+  * const kv = new MapKv({ map: new Map() })
+- * const db = kvdex(kv, {})
++ * const db = kvdex({ kv })
+  * ```
+  *
+  * @example
+@@ -34,7 +34,7 @@
+  * // Create a database from a `MapKv` instance, using `localStorage` as it's backend by default.
+  * const map = new StorageAdapter()
+  * const kv = new MapKv({ map })
+- * const db = kvdex(kv, {})
++ * const db = kvdex({ kv })
+  * ```
+  *
+  * @example
+@@ -45,7 +45,7 @@
+  * // Create an ephimeral database from a `MapKv` instance, explicitly using `localStorage` as it's backend.
+  * const map = new StorageAdapter(localStorage)
+  * const kv = new MapKv({ map, clearOnClose: true })
+- * const db = kvdex(kv, {})
++ * const db = kvdex({ kv })
+  * ```
+  */
+ 
+diff --git a/src/ext/kv/storage_adapter.ts b/src/ext/kv/storage_adapter.ts
+index 39409ab..40bb927 100644
+--- a/src/ext/kv/storage_adapter.ts
++++ b/src/ext/kv/storage_adapter.ts
+@@ -1,4 +1,4 @@
+-import { jsonParse, jsonStringify } from "../../utils.ts";
++import { jsonParse, jsonStringify } from "../encoding/mod.ts";
+ import type { BasicMap } from "./types.ts";
+ 
+ /**
+diff --git a/src/ext/kv/utils.ts b/src/ext/kv/utils.ts
+index c62e6b8..4614d9c 100644
+--- a/src/ext/kv/utils.ts
++++ b/src/ext/kv/utils.ts
+@@ -1,4 +1,4 @@
+-import { ulid } from "../../deps.ts";
++import { ulid } from "@std/ulid";
+ import type { DenoKvStrictKey, DenoKvStrictKeyPart } from "../../types.ts";
+ 
+ export function createVersionstamp() {
+diff --git a/src/ext/kv/watcher.ts b/src/ext/kv/watcher.ts
+index a75ecff..2e43f22 100644
+--- a/src/ext/kv/watcher.ts
++++ b/src/ext/kv/watcher.ts
+@@ -1,6 +1,6 @@
+ import type { DenoKvWatchOptions } from "../../../mod.ts";
+ import type { DenoKvEntryMaybe, DenoKvStrictKey } from "../../types.ts";
+-import { jsonStringify } from "../../utils.ts";
++import { jsonStringify } from "../encoding/mod.ts";
+ import type { MapKv } from "./map_kv.ts";
+ 
+ export class Watcher {
+diff --git a/src/ext/migrate/deps.ts b/src/ext/migrate/deps.ts
+deleted file mode 100644
+index 69bcfe6..0000000
+--- a/src/ext/migrate/deps.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export { parseArgs } from "jsr:@std/cli@^0.220/parse_args";
+diff --git a/src/ext/migrate/migrate.ts b/src/ext/migrate/migrate.ts
+index 23a1536..975febd 100644
+--- a/src/ext/migrate/migrate.ts
++++ b/src/ext/migrate/migrate.ts
+@@ -6,7 +6,7 @@ import type { MigrateOptions } from "./types.ts";
+  *
+  * @example
+  * ```ts
+- * import { migrate } from "jsr:@olli/kvdex/ext/migrate"
++ * import { migrate } from "@olli/kvdex/ext/migrate"
+  *
+  * const source = await Deno.openKv("./source.sqlite3")
+  * const target = await Deno.openKv("./target.sqlite3")
+diff --git a/src/ext/migrate/mod.ts b/src/ext/migrate/mod.ts
+index fd69e80..0594d6d 100644
+--- a/src/ext/migrate/mod.ts
++++ b/src/ext/migrate/mod.ts
+@@ -20,7 +20,7 @@
+  * Optionally pass `all: true` to migrate all entries.
+  *
+  * ```ts
+- * import { migrate } from "jsr:@olli/kvdex/migrate"
++ * import { migrate } from "@olli/kvdex/migrate"
+  *
+  * const source = await Deno.openKv("./source.sqlite3")
+  * const target = await Deno.openKv("./target.sqlite3")
+@@ -33,7 +33,7 @@
+  */
+ 
+ // Imports
+-import { parseArgs } from "./deps.ts";
++import { parseArgs } from "@std/cli/parse-args";
+ import { migrate } from "./migrate.ts";
+ import { NoKvFoundError } from "./errors.ts";
+ 
+diff --git a/src/ext/zod/deps.ts b/src/ext/zod/deps.ts
+deleted file mode 100644
+index a4d628b..0000000
+--- a/src/ext/zod/deps.ts
++++ /dev/null
+@@ -1 +0,0 @@
+-export { z } from "npm:zod@^3.22";
+diff --git a/src/ext/zod/mod.ts b/src/ext/zod/mod.ts
+index 085825b..c7951b0 100644
+--- a/src/ext/zod/mod.ts
++++ b/src/ext/zod/mod.ts
+@@ -11,7 +11,7 @@
+  *
+  * ```ts
+  * import { z } from "npm:zod"
+- * import { KvIdSchema } from "jsr:@olli/kvdex/zod"
++ * import { KvIdSchema } from "@olli/kvdex/zod"
+  *
+  * const UserSchema = z.object({
+  *   username: z.string(),
+diff --git a/src/ext/zod/schemas.ts b/src/ext/zod/schemas.ts
+index a62c4d3..f6d1205 100644
+--- a/src/ext/zod/schemas.ts
++++ b/src/ext/zod/schemas.ts
+@@ -1,4 +1,4 @@
+-import { z } from "./deps.ts";
++import { z } from "zod";
+ import type { KvArray, KvId, KvObject, KvValue } from "../../types.ts";
+ 
+ const LazyKvValueSchema = z.lazy(() => KvValueSchema);
+@@ -33,7 +33,7 @@ export const KvValueSchema: z.ZodType<KvValue> = z.undefined()
+   .or(z.instanceof(Uint32Array))
+   .or(z.instanceof(BigUint64Array))
+   .or(z.instanceof(Uint8ClampedArray))
+-  .or(z.instanceof(Float16Array))
++  // TODO: .or(z.instanceof(Float16Array))
+   .or(z.instanceof(Float32Array))
+   .or(z.instanceof(Float64Array))
+   .or(z.instanceof(ArrayBuffer))
+diff --git a/src/kvdex.ts b/src/kvdex.ts
+index 3aa8f81..29dde2c 100644
+--- a/src/kvdex.ts
++++ b/src/kvdex.ts
+@@ -9,6 +9,7 @@ import type {
+   FindOptions,
+   IntervalMessage,
+   IntervalSetter,
++  KvdexOptions,
+   KvId,
+   KvKey,
+   KvValue,
+@@ -48,7 +49,8 @@ import { AtomicWrapper } from "./atomic_wrapper.ts";
+  *
+  * @example
+  * ```ts
+- * import { kvdex, model, collection } from "jsr:@olli/kvdex"
++ * import { kvdex, model, collection } from "@olli/kvdex"
++ * import { jsonEncoder } from "@olli/kvdex"
+  *
+  * type User = {
+  *   username: string
+@@ -57,16 +59,19 @@ import { AtomicWrapper } from "./atomic_wrapper.ts";
+  *
+  * const kv = await Deno.openKv()
+  *
+- * const db = kvdex(kv, {
+- *   numbers: collection(model<number>()),
+- *   u64s: collection(model<Deno.KvU64>()),
+- *   serializedStrings: collection(model<string>(), { serialize: "json" }),
+- *   users: collection(model<User>(), {
+- *     indices: {
+- *       username: "primary",
+- *       age: "secondary"
+- *     }
+- *   })
++ * const db = kvdex({
++ *   kv: kv,
++ *   schema: {
++ *     numbers: collection(model<number>()),
++ *     u64s: collection(model<Deno.KvU64>()),
++ *     serializedStrings: collection(model<string>(), { encoder: jsonEncoder() }),
++ *     users: collection(model<User>(), {
++ *       indices: {
++ *         username: "primary",
++ *         age: "secondary"
++ *       }
++ *     })
++ *   }
+  * })
+  * ```
+  *
+@@ -74,10 +79,9 @@ import { AtomicWrapper } from "./atomic_wrapper.ts";
+  * @param schemaDefinition - The schema definition used to build collections and create the database schema.
+  * @returns A Kvdex instance with attached schema.
+  */
+-export function kvdex<const T extends SchemaDefinition>(
+-  kv: DenoKv,
+-  schemaDefinition: T,
+-): Kvdex<Schema<T>> & Schema<T> {
++export function kvdex<const T extends KvdexOptions>(
++  options: T,
++): Kvdex<Schema<T["schema"]>> & Schema<T["schema"]> {
+   // Set listener activated flag and queue handlers map
+   let listener: Promise<void>;
+   const queueHandlers = new Map<string, QueueMessageHandler<KvValue>[]>();
+@@ -87,7 +91,7 @@ export function kvdex<const T extends SchemaDefinition>(
+     // Create new queue listener if not already created
+     if (!listener) {
+       // Add queue listener
+-      listener = kv.listenQueue(async (msg) => {
++      listener = options.kv.listenQueue(async (msg) => {
+         // Parse queue message
+         const parsed = parseQueueMessage(msg);
+         if (!parsed.ok) {
+@@ -109,14 +113,19 @@ export function kvdex<const T extends SchemaDefinition>(
+ 
+   // Create schema
+   const schema = _createSchema(
+-    schemaDefinition,
+-    kv,
++    options.schema ?? {},
++    options.kv,
+     queueHandlers,
+     idempotentListener,
+-  ) as Schema<T>;
++  ) as Schema<T["schema"]>;
+ 
+   // Create KvDex object
+-  const db = new Kvdex(kv, schema, queueHandlers, idempotentListener);
++  const db = new Kvdex(
++    options.kv,
++    schema,
++    queueHandlers,
++    idempotentListener,
++  );
+ 
+   // Return schema and db combination
+   return Object.assign(db, schema);
+@@ -588,13 +597,13 @@ export class Kvdex<const TSchema extends Schema<SchemaDefinition>> {
+  * @param treeKey - The current tree key.
+  * @returns
+  */
+-function _createSchema<const T extends SchemaDefinition>(
+-  def: T,
++function _createSchema(
++  def: SchemaDefinition,
+   kv: DenoKv,
+   queueHandlers: Map<string, QueueMessageHandler<KvValue>[]>,
+   idempotentListener: () => Promise<void>,
+   treeKey?: KvKey,
+-): Schema<T> {
++): Schema<SchemaDefinition> {
+   // Get all the definition entries
+   const entries = Object.entries(def);
+ 
+@@ -619,7 +628,7 @@ function _createSchema<const T extends SchemaDefinition>(
+   const schema = Object.fromEntries(schemaEntries);
+ 
+   // Return the built schema object
+-  return schema as Schema<T>;
++  return schema;
+ }
+ 
+ /**
+diff --git a/src/types.ts b/src/types.ts
+index 659819d..08ea624 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -1,5 +1,5 @@
+ import type { Collection } from "./collection.ts";
+-import type { DeepMergeOptions } from "./deps.ts";
++import type { DeepMergeOptions } from "@std/collections/deep-merge";
+ import type { Document } from "./document.ts";
+ 
+ /*********************/
+@@ -8,6 +8,11 @@ import type { Document } from "./document.ts";
+ /*                   */
+ /*********************/
+ 
++const EMPTY_OBJECT = {};
++
++/** Empty object type */
++export type EmptyObject = typeof EMPTY_OBJECT;
++
+ /** Collection builder function */
+ export type BuilderFn<
+   TInput,
+@@ -66,6 +71,15 @@ export type IdGenerator<T1 extends KvValue, T2 extends KvId> = (
+   data: T1,
+ ) => T2 | Promise<T2>;
+ 
++/** Management of an active watcher. */
++export type WatchManager = {
++  /** The watcher promise, which is resolved either by closing the KV connection or by calling the watcher's `cancel()` function. */
++  promise: Promise<void>;
++
++  /** Stops the active watcher. */
++  cancel: () => Promise<void>;
++};
++
+ /**********************/
+ /*                    */
+ /*   INTERVAL TYPES   */
+@@ -261,9 +275,10 @@ export type AtomicMutation<T1, T2 extends KvId> =
+   );
+ 
+ /** Options for atomic set operation */
+-export type AtomicSetOptions = NonNullable<
+-  Parameters<ReturnType<DenoKv["atomic"]>["set"]>["2"]
+->;
++export type AtomicSetOptions<T extends CollectionOptions<any>> =
++  & DenoKvSetOptions
++  & (T extends { indices: IndexRecord<KvObject> } ? EmptyObject
++    : Pick<SetOptions, "overwrite">);
+ 
+ /************************/
+ /*                      */
+@@ -275,7 +290,7 @@ export type AtomicSetOptions = NonNullable<
+ export type CollectionOptions<T extends KvValue> =
+   & {
+     idGenerator?: IdGenerator<T, KvId>;
+-    serialize?: SerializeOptions;
++    encoder?: Encoder;
+     history?: true;
+   }
+   & (
+@@ -373,50 +388,51 @@ export type IndexDataEntry<T extends KvObject> = Omit<T, "__id__"> & {
+   __id__: KvId;
+ };
+ 
+-/***********************/
+-/*                     */
+-/*   SERIALIZE TYPES   */
+-/*                     */
+-/***********************/
++/**********************/
++/*                    */
++/*   ENCODING TYPES   */
++/*                    */
++/**********************/
++
++/**
++ * Object containing logic for serialization and compression of KvValues.
++ *
++ * Implements a serializer, and optionally a compressor.
++ */
++export type Encoder = {
++  serializer: Serializer;
++  compressor?: Compressor;
++};
+ 
+-/** Record of serializer functions */
++/** Object that implements a serilize and deserilaize method */
+ export type Serializer = {
+-  serialize: <T>(data: T) => Uint8Array | Promise<Uint8Array>;
+-  deserialize: <T>(data: Uint8Array) => T | Promise<T>;
+-  compress: (data: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+-  decompress: (data: Uint8Array) => Uint8Array | Promise<Uint8Array>;
++  serialize: SerializeFn;
++  deserialize: DeserializeFn;
+ };
+ 
+-/** Serialized value entry */
+-export type SerializedEntry = {
++/** Object that implements a compress and decompress method */
++export type Compressor = {
++  compress: CompressFn;
++  decompress: CompressFn;
++};
++
++/** Function that serializes a KvValue as a Uint8Array */
++export type SerializeFn = (data: unknown) => Uint8Array | Promise<Uint8Array>;
++
++/** Function that deserializes a KvValue from a Uint8Array */
++export type DeserializeFn = <T>(
++  data: Uint8Array,
++) => T | Promise<T>;
++
++/** Function that compresses/decompresses data represented by a Uint8Array */
++export type CompressFn = (data: Uint8Array) => Uint8Array | Promise<Uint8Array>;
++
++/** Encoded value entry */
++export type EncodedEntry = {
+   isUint8Array: boolean;
+   ids: KvId[];
+ };
+ 
+-/**
+- * Serialize options.
+- *
+- * "v8" = built-in v8 serializer + brotli compression.
+- *
+- * "v8-uncompressed" = built-in v8 serializer and no compression.
+- *
+- * "json" = custom JSON serializer + brotli compression.
+- *
+- * "json-uncompressed" = custom JSON serializer and no compression (best runtime compatibility).
+- *
+- * If the serialize option is not set, or if a custom serialize configuration is used,
+- * then JSON serialization is used by default for any unset serialize functions,
+- * while brotli compression is used for any unset compress functions. V8 serialization and
+- * Brotli compression rely on runtime implementations, and are therefore only
+- * compatible with runtimes that implement them (Deno, Node.js).
+- */
+-export type SerializeOptions =
+-  | "v8"
+-  | "v8-uncompressed"
+-  | "json"
+-  | "json-uncompressed"
+-  | Partial<Serializer>;
+-
+ /***************************/
+ /*                         */
+ /*   METHOD OPTION TYPES   */
+@@ -596,11 +612,11 @@ export type PrimaryIndexUpsert<
+   update: UpdateData<TOutput, TStrategy>;
+ };
+ 
+-/********************/
+-/*                  */
+-/*   SCHEMA TYPES   */
+-/*                  */
+-/********************/
++/*******************/
++/*                 */
++/*   KVDEX TYPES   */
++/*                 */
++/*******************/
+ 
+ /** Schema definition, containing builder functions and nested schema definitions. */
+ export type SchemaDefinition = {
+@@ -610,10 +626,21 @@ export type SchemaDefinition = {
+ };
+ 
+ /** Built schema from schema definition */
+-export type Schema<T extends SchemaDefinition> = {
+-  [K in keyof T]: T[K] extends SchemaDefinition ? Schema<T[K]>
+-    : T[K] extends BuilderFnAny ? ReturnType<T[K]>
+-    : never;
++export type Schema<T extends SchemaDefinition | undefined> = T extends undefined
++  ? EmptyObject
++  : {
++    [K in keyof T]: T[K] extends SchemaDefinition ? Schema<T[K]>
++      : T[K] extends BuilderFnAny ? ReturnType<T[K]>
++      : never;
++  };
++
++/** Database options */
++export type KvdexOptions = {
++  /** The KV instance that will power the database. */
++  kv: DenoKv;
++
++  /** Schema definition containing the database collections */
++  schema?: SchemaDefinition;
+ };
+ 
+ /*******************/
+@@ -722,7 +749,7 @@ export type KvValue =
+   | Uint32Array
+   | BigUint64Array
+   | Uint8ClampedArray
+-  | Float16Array
++  // TODO: | Float16Array
+   | Float32Array
+   | Float64Array
+   | ArrayBuffer
+diff --git a/src/utils.ts b/src/utils.ts
+index b4cde2b..2524b38 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1,12 +1,13 @@
+-import { COMPRESSION_QUALITY_LEVEL, GET_MANY_KEY_LIMIT } from "./constants.ts";
++import { GET_MANY_KEY_LIMIT } from "./constants.ts";
+ import type { Collection } from "./collection.ts";
+ import type {
+-  AtomicSetOptions,
+   DenoAtomicOperation,
+   DenoKv,
+   DenoKvEntryMaybe,
+   DenoKvListSelector,
++  DenoKvSetOptions,
+   DenoKvStrictKey,
++  Encoder,
+   EnqueueOptions,
+   FindManyOptions,
+   IndexDataEntry,
+@@ -18,22 +19,11 @@ import type {
+   ParsedQueueMessage,
+   PreparedEnqueue,
+   QueueMessage,
++  WatchManager,
+   WatchOptions,
+ } from "./types.ts";
+-import {
+-  brotliCompressSync,
+-  brotliDecompressSync,
+-  constants,
+-  deserialize as _v8Deserialize,
+-  serialize as _v8Serialize,
+-  ulid,
+-} from "./deps.ts";
+-
+-/*************************/
+-/*                       */
+-/*   PUBLIC FUNCTIONS    */
+-/*                       */
+-/*************************/
++import { ulid } from "@std/ulid";
++import { jsonEncoder } from "./ext/encoding/mod.ts";
+ 
+ /**
+  * Generate a new document id.
+@@ -76,6 +66,24 @@ export function keyEq(k1: KvKey, k2: KvKey) {
+   return JSON.stringify(k1) === JSON.stringify(k2);
+ }
+ 
++export async function encodeData(
++  value: unknown,
++  encoder: Encoder = jsonEncoder(),
++): Promise<Uint8Array> {
++  const { serializer, compressor } = encoder;
++  const serialized = await serializer.serialize(value);
++  return compressor ? await compressor.compress(serialized) : serialized;
++}
++
++export async function decodeData<T>(
++  value: Uint8Array,
++  encoder: Encoder = jsonEncoder(),
++): Promise<T> {
++  const { serializer, compressor } = encoder;
++  const decompressed = compressor ? await compressor.decompress(value) : value;
++  return await serializer.deserialize<T>(decompressed);
++}
++
+ /**
+  * Create a secondary index key prefix.
+  *
+@@ -90,14 +98,13 @@ export async function createSecondaryIndexKeyPrefix(
+   collection: Collection<any, any, any>,
+ ) {
+   // Serialize and compress index value
+-  const serialized = await collection._serializer.serialize(value);
+-  const compressed = await collection._serializer.compress(serialized);
++  const encoded = await encodeData(value, collection._encoder);
+ 
+   // Create prefix key
+   return extendKey(
+     collection._keys.secondaryIndex,
+     index as KvId,
+-    compressed,
++    encoded,
+   );
+ }
+ 
+@@ -130,7 +137,7 @@ export function isKvObject(value: unknown) {
+     value instanceof Uint32Array ||
+     value instanceof BigUint64Array ||
+     value instanceof Uint8ClampedArray ||
+-    value instanceof Float16Array ||
++    // TODO: value instanceof Float16Array ||
+     value instanceof Float32Array ||
+     value instanceof Float64Array ||
+     value instanceof ArrayBuffer ||
+@@ -164,59 +171,27 @@ export async function setIndices(
+   value: KvObject,
+   atomic: DenoAtomicOperation,
+   collection: Collection<any, any, any>,
+-  options: AtomicSetOptions | undefined,
++  options: DenoKvSetOptions | undefined,
+ ) {
+-  // Set primary indices using primary index list
+-  for (const index of collection._primaryIndexList) {
+-    // Get the index value from data, if undefined continue to next index
+-    const indexValue = data[index] as KvId | undefined;
+-    if (typeof indexValue === "undefined") continue;
+-
+-    // Serialize and compress
+-    const serialized = await collection._serializer.serialize(indexValue);
+-    const compressed = await collection._serializer.compress(serialized);
+-
+-    // Create the index key
+-    const indexKey = extendKey(
+-      collection._keys.primaryIndex,
+-      index,
+-      compressed,
+-    );
+-
+-    // Create the index document value
+-    const indexEntry: IndexDataEntry<KvObject> = {
+-      ...value,
+-      __id__: id,
+-    };
+-
+-    // Add index insertion to atomic operation, check for exisitng indices
+-    atomic.set(indexKey, indexEntry, options).check({
+-      key: indexKey,
+-      versionstamp: null,
+-    });
+-  }
+-
+-  // Set secondary indices using secondary index list
+-  for (const index of collection._secondaryIndexList) {
+-    // Get the index value from data, if undefined continue to next index
+-    const indexValue = data[index] as KvId | undefined;
+-    if (typeof indexValue === "undefined") continue;
+-
+-    // Serialize and compress
+-    const serialized = await collection._serializer.serialize(indexValue);
+-    const compressed = await collection._serializer.compress(serialized);
+-
+-    // Create the index key
+-    const indexKey = extendKey(
+-      collection._keys.secondaryIndex,
+-      index,
+-      compressed,
+-      id,
+-    );
+-
+-    // Add index insertion to atomic operation, check for exisitng indices
+-    atomic.set(indexKey, value, options);
+-  }
++  await handleIndices(
++    id,
++    data,
++    collection,
++    (primaryIndexKey) => {
++      const indexEntry: IndexDataEntry<KvObject> = {
++        ...value,
++        __id__: id,
++      };
++
++      atomic.set(primaryIndexKey, indexEntry, options).check({
++        key: primaryIndexKey,
++        versionstamp: null,
++      });
++    },
++    (secondaryIndexKey) => {
++      atomic.set(secondaryIndexKey, value, options);
++    },
++  );
+ }
+ 
+ /**
+@@ -232,31 +207,17 @@ export async function checkIndices(
+   atomic: DenoAtomicOperation,
+   collection: Collection<any, any, any>,
+ ) {
+-  // Check primary indices using primary index list
+-  for (const index of collection._primaryIndexList) {
+-    // Get the index value from data, if undefined continue to next index
+-    const indexValue = data[index] as KvId | undefined;
+-    if (typeof indexValue === "undefined") {
+-      continue;
+-    }
+-
+-    // Serialize and compress
+-    const serialized = await collection._serializer.serialize(indexValue);
+-    const compressed = await collection._serializer.compress(serialized);
+-
+-    // Create the index key
+-    const indexKey = extendKey(
+-      collection._keys.primaryIndex,
+-      index,
+-      compressed,
+-    );
+-
+-    // Check for existing index entry
+-    atomic.check({
+-      key: indexKey,
+-      versionstamp: null,
+-    });
+-  }
++  await handleIndices(
++    null,
++    data,
++    collection,
++    (primaryIndexKey) => {
++      atomic.check({
++        key: primaryIndexKey,
++        versionstamp: null,
++      });
++    },
++  );
+ }
+ 
+ /**
+@@ -274,48 +235,13 @@ export async function deleteIndices(
+   atomic: DenoAtomicOperation,
+   collection: Collection<any, any, any>,
+ ) {
+-  // Delete primary indices using primary index list
+-  for (const index of collection._primaryIndexList) {
+-    // Get the index value from data, if undefined continue to next index
+-    const indexValue = data[index] as KvId | undefined;
+-    if (typeof indexValue === "undefined") continue;
+-
+-    // Serialize and compress
+-    const serialized = await collection._serializer.serialize(indexValue);
+-    const compressed = await collection._serializer.compress(serialized);
+-
+-    // Create the index key
+-    const indexKey = extendKey(
+-      collection._keys.primaryIndex,
+-      index,
+-      compressed,
+-    );
+-
+-    // Add index deletion to atomic operation
+-    atomic.delete(indexKey);
+-  }
+-
+-  // Delete seocndary indices using secondary index list
+-  for (const index of collection._secondaryIndexList) {
+-    // Get the index value from data, if undefined continue to next index
+-    const indexValue = data[index] as KvId | undefined;
+-    if (typeof indexValue === "undefined") continue;
+-
+-    // Serialize and compress
+-    const serialized = await collection._serializer.serialize(indexValue);
+-    const compressed = await collection._serializer.compress(serialized);
+-
+-    // Create the index key
+-    const indexKey = extendKey(
+-      collection._keys.secondaryIndex,
+-      index,
+-      compressed,
+-      id,
+-    );
+-
+-    // Add index deletion to atomic operation
+-    atomic.delete(indexKey);
+-  }
++  await handleIndices(
++    id,
++    data,
++    collection,
++    (primaryIndexKey) => atomic.delete(primaryIndexKey),
++    (secondaryIndexKey) => atomic.delete(secondaryIndexKey),
++  );
+ }
+ 
+ /**
+@@ -530,10 +456,7 @@ export function createWatcher(
+   options: WatchOptions | undefined,
+   keys: KvKey[],
+   fn: (entries: DenoKvEntryMaybe[]) => unknown,
+-): {
+-  promise: Promise<void>;
+-  cancel: () => Promise<void>;
+-} {
++): WatchManager {
+   // Create watch stream
+   const stream = kv.watch(keys, options);
+   const reader = stream.getReader();
+@@ -564,693 +487,47 @@ export function createWatcher(
+   return { promise: promise(), cancel };
+ }
+ 
+-/**
+- * Compress a uint8Array.
+- *
+- * @param data - Uint8Array to be compressed.
+- * @returns Compressed Uint8Array.
+- */
+-export function compress(data: Uint8Array) {
+-  const buffer = brotliCompressSync(data, {
+-    params: { [constants.BROTLI_PARAM_QUALITY]: COMPRESSION_QUALITY_LEVEL },
+-  });
+-
+-  return new Uint8Array(buffer);
+-}
+-
+-/**
+- * Decompress a Uint8Array.
+- *
+- * @param data - Uint8Array to be decompressed.
+- * @returns Decompressed Uint8Array.
+- */
+-export function decompress(data: Uint8Array) {
+-  const buffer = brotliDecompressSync(data, {
+-    params: { [constants.BROTLI_PARAM_QUALITY]: COMPRESSION_QUALITY_LEVEL },
+-  });
+-
+-  return new Uint8Array(buffer);
+-}
+-
+-/**
+- * Extended V8 serialize.
+- *
+- * @param value - Value to be serialized.
+- * @returns A serialized value.
+- */
+-export function v8Serialize(value: unknown): Uint8Array {
+-  return new Uint8Array(_v8Serialize(beforeV8Serialize(value)));
+-}
+-
+-/**
+- * Extended V8 deserialize.
+- *
+- * @param value - Value to be deserialized.
+- * @returns Deserialized value.
+- */
+-export function v8Deserialize<T>(
+-  value: Uint8Array,
+-): T {
+-  return afterV8Serialize(_v8Deserialize(value)) as T;
+-}
+-
+-export type JSONError = {
+-  message: string;
+-  name: string;
+-  cause?: string;
+-  stack?: string;
+-};
+-
+-export enum TypeKey {
+-  Undefined = "__undefined__",
+-  BigInt = "__bigint__",
+-  KvU64 = "__kvu64__",
+-  Int8Array = "__int8array__",
+-  Int16Array = "__int16array__",
+-  Int32Array = "__int32array__",
+-  BigInt64Array = "__bigint64array__",
+-  Uint8Array = "__uint8array__",
+-  Uint16Array = "__uint16array__",
+-  Uint32Array = "__uint32array__",
+-  BigUint64Array = "__biguint64array__",
+-  Uint8ClampedArray = "__uint8clampedarray__",
+-  Float16Array = "__float16array__",
+-  Float32Array = "__float32array__",
+-  Float64Array = "__float64array__",
+-  ArrayBuffer = "__arraybuffer__",
+-  Date = "__date__",
+-  Set = "__set__",
+-  Map = "__map__",
+-  RegExp = "__regexp__",
+-  DataView = "__dataview__",
+-  Error = "__error__",
+-  NaN = "__nan__",
+-  Infinity = "__infinity__",
+-}
+-
+-/**
+- * Additional steps to perform before V8 serialize.
+- *
+- * @param value
+- * @returns
+- */
+-export function beforeV8Serialize(value: unknown): unknown {
+-  // KvObject
+-  if (isKvObject(value)) {
+-    return Object.fromEntries(
+-      Object.entries(value as KvObject).map((
+-        [key, val],
+-      ) => [key, beforeV8Serialize(val)]),
+-    );
+-  }
+-
+-  // Array
+-  if (Array.isArray(value)) {
+-    return value.map((val) => beforeV8Serialize(val));
+-  }
+-
+-  // Set
+-  if (value instanceof Set) {
+-    return new Set(
+-      Array.from(value.values()).map((v) => beforeV8Serialize(v)),
+-    );
+-  }
+-
+-  // Map
+-  if (value instanceof Map) {
+-    return new Map(
+-      Array.from(value.entries()).map((
+-        [k, v],
+-      ) => [k, beforeV8Serialize(v)]),
+-    );
+-  }
+-
+-  return value;
+-}
+-
+-/**
+- * Additional steps to perform after V8 deserialize.
+- *
+- * @param value
+- * @returns
+- */
+-export function afterV8Serialize(value: unknown): unknown {
+-  // Return value if not an object
+-  if (
+-    value === undefined ||
+-    value === null ||
+-    typeof value !== "object"
+-  ) {
+-    return value;
+-  }
+-
+-  // KvObject
+-  if (isKvObject(value)) {
+-    return Object.fromEntries(
+-      Object.entries(value).map(([k, v]) => [k, afterV8Serialize(v)]),
+-    );
+-  }
+-
+-  // Array
+-  if (Array.isArray(value)) {
+-    return value.map((v) => afterV8Serialize(v));
+-  }
+-
+-  // Set
+-  if (value instanceof Set) {
+-    return new Set(
+-      Array.from(value.values()).map((v) => afterV8Serialize(v)),
+-    );
+-  }
+-
+-  // Map
+-  if (value instanceof Map) {
+-    return new Map(
+-      Array.from(value.entries()).map((
+-        [k, v],
+-      ) => [k, afterV8Serialize(v)]),
+-    );
+-  }
+-
+-  return value;
+-}
+-
+-/**
+- * Serialize a JSON-like value to a Uint8Array.
+- *
+- * @example
+- * ```ts
+- * import { jsonSerialize } from "@olli/kvdex"
+- *
+- * const serialized = jsonSerialize({
+- *   foo: "foo",
+- *   bar: "bar",
+- *   bigint: 10n
+- * })
+- * ```
+- *
+- * @param value - Value to be serialized.
+- * @returns Serialized value.
+- */
+-export function jsonSerialize(value: unknown): Uint8Array {
+-  const str = jsonStringify(value);
+-  return new TextEncoder().encode(str);
+-}
+-
+-/**
+- * Deserialize a value that was serialized using `jsonSerialize()`.
+- *
+- * @example
+- * ```ts
+- * import { jsonSerialize, jsonDeserialize } from "@olli/kvdex"
+- *
+- * const serialized = jsonSerialize({
+- *   foo: "foo",
+- *   bar: "bar",
+- *   bigint: 10n
+- * })
+- *
+- * const value = jsonDeserialize(serialized)
+- * ```
+- *
+- * @param value - Value to be deserialize.
+- * @returns Deserialized value.
+- */
+-export function jsonDeserialize<T>(value: Uint8Array): T {
+-  const str = new TextDecoder().decode(value);
+-  return jsonParse<T>(str);
+-}
+-
+-/**
+- * Stringify a JSON-like value.
+- *
+- * @example
+- * ```ts
+- * import { jsonStringify } from "@olli/kvdex"
+- *
+- * const str = jsonStringify({
+- *   foo: "foo",
+- *   bar: "bar",
+- *   bigint: 10n
+- * })
+- * ```
+- *
+- * @param value
+- * @param space
+- * @returns
+- */
+-export function jsonStringify(value: unknown, space?: number | string): string {
+-  return JSON.stringify(_replacer(value), replacer, space);
+-}
+-
+-/**
+- * Parse a value that was stringified using `jsonStringify()`
+- *
+- * @example
+- * ```ts
+- * import { jsonStringify, jsonParse } from "@olli/kvdex"
+- *
+- * const str = jsonStringify({
+- *   foo: "foo",
+- *   bar: "bar",
+- *   bigint: 10n
+- * })
+- *
+- * const value = jsonParse(str)
+- * ```
+- *
+- * @param value
+- * @returns
+- */
+-export function jsonParse<T>(value: string): T {
+-  return postReviver(JSON.parse(value, reviver)) as T;
+-}
+-
+-/**
+- * Outer replacer function.
+- *
+- * @param _key
+- * @param value
+- * @returns
+- */
+-export function replacer(_key: string, value: unknown) {
+-  return _replacer(value);
+-}
+-
+-/**
+- * Outer reviver function.
+- *
+- * @param _key
+- * @param value
+- * @returns
+- */
+-export function reviver(_key: string, value: unknown) {
+-  return _reviver(value);
+-}
+-
+-/**
+- * Inner replacer function.
+- *
+- * @param value
+- * @returns
+- */
+-export function _replacer(value: unknown): unknown {
+-  // undefined
+-  if (value === undefined) {
+-    return {
+-      [TypeKey.Undefined]: false,
+-    };
+-  }
+-
+-  // NaN
+-  if (Number.isNaN(value)) {
+-    return {
+-      [TypeKey.NaN]: false,
+-    };
+-  }
+-
+-  // Infinity
+-  if (value === Infinity) {
+-    return {
+-      [TypeKey.Infinity]: false,
+-    };
+-  }
+-
+-  // bigint
+-  if (typeof value === "bigint") {
+-    return {
+-      [TypeKey.BigInt]: value.toString(),
+-    };
+-  }
+-
+-  // Date
+-  if (value instanceof Date) {
+-    return {
+-      [TypeKey.Date]: value.toISOString(),
+-    };
+-  }
+-
+-  // Array
+-  if (Array.isArray(value)) {
+-    return value.map(_replacer);
+-  }
+-
+-  // Set
+-  if (value instanceof Set) {
+-    return {
+-      [TypeKey.Set]: Array.from(value.values()).map(_replacer),
+-    };
+-  }
+-
+-  // Map
+-  if (value instanceof Map) {
+-    return {
+-      [TypeKey.Map]: Array.from(value.entries()).map((
+-        [k, v],
+-      ) => [k, _replacer(v)]),
+-    };
+-  }
+-
+-  // RegExp
+-  if (value instanceof RegExp) {
+-    return {
+-      [TypeKey.RegExp]: value.source,
+-    };
+-  }
+-
+-  // Error
+-  if (value instanceof Error) {
+-    const jsonError: JSONError = {
+-      message: value.message,
+-      name: value.name,
+-      stack: value.stack,
+-      cause: jsonStringify(value.cause),
+-    };
+-    return {
+-      [TypeKey.Error]: jsonError,
+-    };
+-  }
+-
+-  // Int8Array
+-  if (value instanceof Int8Array) {
+-    return {
+-      [TypeKey.Int8Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Int16Array
+-  if (value instanceof Int16Array) {
+-    return {
+-      [TypeKey.Int16Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Int32Array
+-  if (value instanceof Int32Array) {
+-    return {
+-      [TypeKey.Int32Array]: Array.from(value),
+-    };
+-  }
+-
+-  // BigInt64Array
+-  if (value instanceof BigInt64Array) {
+-    return {
+-      [TypeKey.BigInt64Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Uint8Array
+-  if (value instanceof Uint8Array) {
+-    return {
+-      [TypeKey.Uint8Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Uint16Array
+-  if (value instanceof Uint16Array) {
+-    return {
+-      [TypeKey.Uint16Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Uint32Array
+-  if (value instanceof Uint32Array) {
+-    return {
+-      [TypeKey.Uint32Array]: Array.from(value),
+-    };
+-  }
+-
+-  // BigUint64Array
+-  if (value instanceof BigUint64Array) {
+-    return {
+-      [TypeKey.BigUint64Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Uint8ClampedArray
+-  if (value instanceof Uint8ClampedArray) {
+-    return {
+-      [TypeKey.Uint8ClampedArray]: Array.from(value),
+-    };
+-  }
+-
+-  // Float16Array
+-  if (value instanceof Float16Array) {
+-    return {
+-      [TypeKey.Float16Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Float32Array
+-  if (value instanceof Float32Array) {
+-    return {
+-      [TypeKey.Float32Array]: Array.from(value),
+-    };
+-  }
+-
+-  // Float64Array
+-  if (value instanceof Float64Array) {
+-    return {
+-      [TypeKey.Float64Array]: Array.from(value),
+-    };
+-  }
+-
+-  // ArrayBuffer
+-  if (value instanceof ArrayBuffer) {
+-    return {
+-      [TypeKey.ArrayBuffer]: Array.from(new Uint8Array(value)),
+-    };
+-  }
+-
+-  // DataView
+-  if (value instanceof DataView) {
+-    return {
+-      [TypeKey.DataView]: Array.from(new Uint8Array(value.buffer)),
+-    };
+-  }
+-
+-  // KvObject
+-  if (isKvObject(value)) {
+-    return Object.fromEntries(
+-      Object.entries(value as KvObject).map(([k, v]) => [k, _replacer(v)]),
+-    );
+-  }
+-
+-  return value;
+-}
+-
+-/**
+- * Inner reviver function.
+- *
+- * @param value
+- * @returns
+- */
+-export function _reviver(value: unknown): unknown {
+-  // Return if nullish or not an object
+-  if (
+-    value === null ||
+-    value === undefined ||
+-    typeof value !== "object"
+-  ) {
+-    return value;
+-  }
+-
+-  // bigint
+-  if (TypeKey.BigInt in value) {
+-    return BigInt(mapValue(TypeKey.BigInt, value));
+-  }
+-
+-  // Date
+-  if (TypeKey.Date in value) {
+-    return new Date(mapValue<string>(TypeKey.Date, value));
+-  }
+-
+-  // NaN
+-  if (TypeKey.NaN in value) {
+-    return NaN;
+-  }
+-
+-  // Infnity
+-  if (TypeKey.Infinity in value) {
+-    return Infinity;
+-  }
++async function handleIndices(
++  id: KvId | null,
++  data: KvObject,
++  collection: Collection<any, any, any>,
++  primary: (indexKey: KvKey) => void,
++  secondary?: (indexKey: KvKey) => void,
++): Promise<void> {
++  // Handle primary indices
++  for (const index of collection._primaryIndexList) {
++    const indexValue = data[index] as KvId | undefined;
++    if (typeof indexValue === "undefined") continue;
+ 
+-  // RegExp
+-  if (TypeKey.RegExp in value) {
+-    return new RegExp(mapValue(TypeKey.RegExp, value));
+-  }
++    const encoded = await encodeData(indexValue, collection._encoder);
+ 
+-  // Error
+-  if (TypeKey.Error in value) {
+-    const { message, stack, cause, ...rest } = mapValue<JSONError>(
+-      TypeKey.Error,
+-      value,
++    const indexKey = extendKey(
++      collection._keys.primaryIndex,
++      index,
++      encoded,
+     );
+ 
+-    const error = new Error(message, {
+-      cause: cause ? jsonParse(cause) : undefined,
+-      ...rest,
+-    });
+-
+-    error.stack = stack;
+-    return error;
+-  }
+-
+-  // Int8Array
+-  if (TypeKey.Int8Array in value) {
+-    return Int8Array.from(mapValue(TypeKey.Int8Array, value));
+-  }
+-
+-  // Int16Array
+-  if (TypeKey.Int16Array in value) {
+-    return Int16Array.from(mapValue(TypeKey.Int16Array, value));
+-  }
+-
+-  // Int32Array
+-  if (TypeKey.Int32Array in value) {
+-    return Int32Array.from(mapValue(TypeKey.Int32Array, value));
+-  }
+-
+-  // BigInt64Array
+-  if (TypeKey.BigInt64Array in value) {
+-    return BigInt64Array.from(mapValue(TypeKey.BigInt64Array, value));
+-  }
+-
+-  // Uint8Array
+-  if (TypeKey.Uint8Array in value) {
+-    return Uint8Array.from(mapValue(TypeKey.Uint8Array, value));
+-  }
+-
+-  // Uint16Array
+-  if (TypeKey.Uint16Array in value) {
+-    return Uint16Array.from(mapValue(TypeKey.Uint16Array, value));
+-  }
+-
+-  // Uint32Array
+-  if (TypeKey.Uint32Array in value) {
+-    return Uint32Array.from(mapValue(TypeKey.Uint32Array, value));
+-  }
+-
+-  // BigUint64Array
+-  if (TypeKey.BigUint64Array in value) {
+-    return BigUint64Array.from(mapValue(TypeKey.BigUint64Array, value));
++    primary(indexKey);
+   }
+ 
+-  // Uint8ClampedArray
+-  if (TypeKey.Uint8ClampedArray in value) {
+-    return Uint8ClampedArray.from(mapValue(TypeKey.Uint8ClampedArray, value));
++  if (!secondary || !id) {
++    return;
+   }
+ 
+-  // Float16Array
+-  if (TypeKey.Float16Array in value) {
+-    return Float16Array.from(mapValue(TypeKey.Float16Array, value));
+-  }
+-
+-  // Float32Array
+-  if (TypeKey.Float32Array in value) {
+-    return Float32Array.from(mapValue(TypeKey.Float32Array, value));
+-  }
+-
+-  // Float64Array
+-  if (TypeKey.Float64Array in value) {
+-    return Float64Array.from(mapValue(TypeKey.Float64Array, value));
+-  }
+-
+-  // ArrayBuffer
+-  if (TypeKey.ArrayBuffer in value) {
+-    const uint8array = Uint8Array.from(mapValue(TypeKey.ArrayBuffer, value));
+-    return uint8array.buffer;
+-  }
+-
+-  // DataView
+-  if (TypeKey.DataView in value) {
+-    const uint8array = Uint8Array.from(mapValue(TypeKey.DataView, value));
+-    return new DataView(uint8array.buffer);
+-  }
+-
+-  // Set
+-  if (TypeKey.Set in value) {
+-    return new Set(mapValue<Array<KvValue>>(TypeKey.Set, value));
+-  }
+-
+-  // Map
+-  if (TypeKey.Map in value) {
+-    return new Map(mapValue<Array<[KvValue, KvValue]>>(TypeKey.Map, value));
+-  }
++  // Handle secondary indices
++  for (const index of collection._secondaryIndexList) {
++    const indexValue = data[index] as KvId | undefined;
++    if (typeof indexValue === "undefined") continue;
+ 
+-  // Array
+-  if (Array.isArray(value)) {
+-    return value.map(_reviver);
+-  }
++    const encoded = await encodeData(indexValue, collection._encoder);
+ 
+-  // KvObject
+-  if (isKvObject(value)) {
+-    return Object.fromEntries(
+-      Object.entries(value).map(([k, v]) => [k, _reviver(v)]),
++    const indexKey = extendKey(
++      collection._keys.secondaryIndex,
++      index,
++      encoded,
++      id,
+     );
+-  }
+-
+-  // Return value
+-  return value;
+-}
+-
+-/**
+- * Additional revival steps to perform after initial parse.
+- *
+- * @param value
+- * @returns
+- */
+-export function postReviver<T>(value: T): T {
+-  // Return value if not an object
+-  if (
+-    value === undefined ||
+-    value === null ||
+-    typeof value !== "object"
+-  ) {
+-    return value;
+-  }
+ 
+-  // undefined
+-  if (TypeKey.Undefined in value) {
+-    return undefined as T;
++    secondary(indexKey);
+   }
+-
+-  // Array
+-  if (Array.isArray(value)) {
+-    return value.map(postReviver) as T;
+-  }
+-
+-  // Set
+-  if (value instanceof Set) {
+-    return new Set(
+-      Array.from(value.values()).map(postReviver),
+-    ) as T;
+-  }
+-
+-  // Map
+-  if (value instanceof Map) {
+-    return new Map(
+-      Array.from(value.entries()).map(([k, v]) => [k, postReviver(v)]),
+-    ) as T;
+-  }
+-
+-  // KvObject
+-  if (isKvObject(value)) {
+-    return Object.fromEntries(
+-      Object.entries(value).map(([k, v]) => [k, postReviver(v)]),
+-    ) as T;
+-  }
+-
+-  return value;
+-}
+-
+-/**
+- * Map from special type entry to value.
+- *
+- * @param key - Type key.
+- * @param value - JSON value to map from.
+- * @returns Mapped value.
+- */
+-export function mapValue<T>(key: string, value: unknown) {
+-  return (value as Record<string, T>)[key];
+ }

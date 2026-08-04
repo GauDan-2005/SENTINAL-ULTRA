@@ -1,0 +1,72 @@
+Original Directory Name
+20260719_045042**oliver-oloughlin_kvdex**245
+Category
+evolution_and_maintenance
+Difficulty
+hard
+Task Tags
+deno
+serialization
+encoder
+api-migration
+brotli
+type-safety
+Languages
+TypeScript
+YAML
+Metadata
+schema_version = "1.3"
+
+[metadata]
+pass_at_k_opus_4_8 = "1/3"
+pass_at_k_gpt_5_5 = "0/3"
+author_name = "anonymous"
+author_email = "anonymous@snorkel.ai"
+
+# --- swe_ultra_requirements §4 field names ---
+
+category = "evolution_and_maintenance"
+subcategory = "migration"
+coding_language = "typescript"
+repo_name = "kvdex"
+repo_license = "MIT"
+source_pr_url = "https://github.com/oliver-oloughlin/kvdex/pull/245"
+base_commit_sha = "c9aba256e74a5dec2644319023ea440f245bc9fb"
+model_difficulty = "medium"
+tags = ["deno", "serialization", "encoder", "api-migration", "brotli", "type-safety"]
+
+# --- legacy aliases (kept for backward-compatible internal consumers) ---
+
+difficulty = "hard"
+task_type = "evolution_and_maintenance"
+task_subtype = "migration"
+source = "https://github.com/oliver-oloughlin/kvdex/pull/245"
+language = "typescript"
+expert_time_estimate_min = 120.0
+junior_time_estimate_min = 360.0
+pr_created_at = "2024-11-19T22:19:33Z"
+pr_merged_at = "2024-11-19T22:37:53Z"
+
+[verifier]
+timeout_sec = 300.0
+network_mode = "no-network"
+
+[agent]
+timeout_sec = 1800.0
+network_mode = "allowlist"
+allowed_hosts = [
+"registry.npmjs.org",
+"api.anthropic.com",
+"*.anthropic.com",
+"api.openai.com",
+"*.openai.com",
+"api.portkey.ai",
+]
+
+[environment]
+build_timeout_sec = 900.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+network_mode = "no-network"

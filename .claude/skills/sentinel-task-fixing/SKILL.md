@@ -1,0 +1,433 @@
+---
+name: sentinel-task-fixing
+description: Execution rules for fixing a Fixable Sentinel Ultra task. Use when editing the instruction, problem_statement, tests, tests.patch, config.json, oracle, Dockerfile, task.toml, or git metadata, and when running the pre-upload checklist and zipping the corrected bundle.
+---
+
+> **Mirror.** This skill and `.cursor/rules/sentinel-task-fixing.mdc` hold the same rules. Edit both together — Cursor loads the `.mdc`, Claude Code loads this file.
+
+
+# Sentinel 2.0 — Fixable Task Editing Rules
+
+Use these rules when a task has been judged **Fixable** and the user asks to apply the corrections. This is the execution companion to the validity-check rules (sentinel-task-check). Every edit must trace back to a specific finding — no drive-by changes.
+
+**Source of truth:** `docs/` is the local export of the Sentinel Ultra Hub. When this file disagrees with `docs/guidelines.md` or `docs/tasking-guide.md`, the docs win.
+
+---
+
+## 0. Hard boundaries (never violate)
+
+- **NEVER edit the tracked source files inside `environment/repo/`.** The task is anchored to the real base repository; changing its code breaks that grounding and is not allowed. Cleaning `.git` metadata and restoring the tree to the base commit IS allowed and expected — source edits are NOT.
+- **NEVER modify a test file that already existed at the base commit.** The harness checks pre-existing (pass-to-pass / regression) test files are byte-identical to base. If a fix seems to need a change there, add a new test through `tests/tests.patch` instead — new functions or new files only — and revert the existing file to its base-commit content.
+- The ONLY editable components are:
+  1. `task/instruction.md` (and its exact copy `problem_statement.md`, which ships at `task/environment/problem_statement.md` in the current spec and at `task/problem_statement.md` on older bundles)
+  2. Tests: `task/tests/test.sh`, `task/tests/tests.patch`, `config.json`. Those plus `grade.py` are the ONLY entries `tests/` may contain; a `tests/files/` directory is rejected at the static phase
+  3. Oracle: `task/solution/solve.sh` and its patch (`golden.patch`, or `init_state.patch` in reverse-diff tasks). Rename a shipped `solution.patch` to `golden.patch`
+  4. `task/environment/Dockerfile` — but ONLY the specific fixes listed in Section 4
+  5. `task/task.toml` — metadata and the resource/timeout/network fields (Section 4a)
+  6. Git metadata inside `environment/repo/` (Section 5)
+- If any needed fix would require **reducing or replacing the PR's behavior**, STOP editing and mark the task **Not Fixable** instead.
+- After ANY instruction edit, `problem_statement.md` MUST be made an exact identical copy of `instruction.md`. Verify with `diff` before finishing.
+
+---
+
+## 1. Recommended fix order
+
+Fixes depend on each other, so work in this order:
+
+1. **Git hygiene first** (Section 5) — HEAD/base alignment must be correct before patches can be regenerated
+2. **Instruction rewrite** (Section 2)
+3. **Sync `problem_statement.md`** to the new instruction
+4. **Oracle fixes** (Section 3), only if one of the two allowed cases applies
+5. **Tests** (Section 6): add/fix tests, regenerate `tests.patch` against the clean HEAD, update `config.json`
+6. **Dockerfile allowed fixes** (Section 4)
+7. **task.toml sanity** (Section 4a)
+8. **Pre-upload checklist** (Section 7), then the local oracle/NOP runs, then re-zip
+
+---
+
+## 2. Rewriting the instruction
+
+Rewrite overly prescriptive instructions to mirror real-world engineering tasks. Focus on **expected behavior, constraints, and observable outcomes**, while still requiring standard codebase investigation.
+
+| ❌ Overly prescriptive | ✅ Preferred |
+|---|---|
+| "The test testdownloadpackagesresumeonmirrorswitch uses /yum/partial and /yum/rangeonly to verify resume behavior." | "When a resumed download fails after writing a valid partial file, retrying against another mirror should preserve the partial data and request only the remaining bytes." |
+| "Fix the range() call inside the list comprehension that creates schemas.SlotBase." | "Generated slots must never extend past the schedule's availability end time." |
+| "The hook should expose handleScrollContainerWheel because the tests reference this name." | "The hook should expose a stable wheel handler for the scroll container." |
+
+Rewrite rules:
+
+- Remove "Where to look" file lists, named hidden tests/fixtures/harness files, verifier mechanics, root-cause analysis, exact internal function pointers, "the tests reference this name" statements, and any PR URLs/titles/numbers/SHAs
+- Replace each removed item with a **behavioral statement** of what must be true when the work is done (see table above for the transformation pattern)
+- Do NOT strip genuinely required public contracts: if the task needs a specific output format, schema, or API response shape, keep it stated in the instruction (or a clearly referenced environment file) — that is solvability, not leakage
+- If tests expect a name that is not derivable (not in the base codebase, not a standard convention), either state that name in the instruction or make the tests name-flexible — one of the two must happen
+- Keep one natural persona throughout; the result must read as one realistic ask, not a tacked-on list
+- **Lockstep rule:** any instruction change requires re-checking the tests mapping and oracle consistency before finishing
+- **Copy rule:** `problem_statement.md` must end up byte-identical to `instruction.md`
+
+---
+
+## 3. Editing the oracle (solve.sh / golden.patch)
+
+Edit the oracle in **only two cases**:
+
+1. The oracle does not implement the solution the instruction describes
+2. You are expanding PR scope to increase difficulty
+
+When you do:
+
+- **Match the canonical fix.** The solution must correspond to the actual fix from the source PR — not an alternative you invented. Diverge only if the upstream fix is genuinely unavailable or unsuitable, and document why
+- **No unnecessary changes.** The patch contains only what resolves the task. No unrelated refactors, style cleanups, or drive-by edits
+- **Scope expansion rules:** the expanded oracle must still resemble the source PR — anchor preserved, with additions — never reduce or replace its intent. Update the instruction and tests in lockstep so the trio stays internally consistent, and the instruction reads as one realistic ask. After expanding, re-run the difficulty eval to confirm the task now clears the bar
+- If the only viable fix reduces or replaces the PR's behavior → the task is **Not Fixable**, revert and stop
+
+### Checks that catch a bad oracle before the evals do
+
+- **Diff the patch's file list against the PR's.** `grep '^diff --git' solution/golden.patch | sed 's|diff --git a/||;s| b/.*||'` next to the files the source PR actually changed. Extra files are the "no unnecessary changes" rule being broken; missing files (docs, changelogs the PR updated) are the same defect inverted. Test files are the exception — those belong in `tests.patch`
+- **`solve.sh` forward-only and idempotent.** Apply if needed, no-op if already applied, fail loudly on partial state. A reverse-apply fallback treated as success inverts a correctly applied tree on a second run and hides a golden patch that did not apply. This is about the fallback, not the flag: a reverse-diff task shipping `init_state.patch` correctly runs `patch -p1 -R` as its only path
+- **Check the oracle against whatever standard the instruction names.** If the instruction says the API should behave like a known library function, read the implementation against that function's real contract rather than against the PR alone. Boundary cases are where a plausible-looking oracle is wrong and the tests agree with it
+- Both `solve.sh` and `tests/test.sh` ship mode `0755`
+
+---
+
+## 4. Environment fixes — allowed Dockerfile list ONLY
+
+Only the specific fixes below are allowed. Any environment issue not on this list makes the task **Not Fixable**.
+
+### Fixable environment issues
+
+| Issue | What's happening | Fix |
+|---|---|---|
+| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash | `apk add --no-cache bash` |
+| Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent | Generate the file |
+| tmux not installed | Harbor drives the agent/verifier inside a tmux pane; without it the session never starts | `apt-get install -y tmux` / `apk add --no-cache tmux` |
+| asciinema not installed | Harbor records the terminal session; a missing binary breaks the run | `apt-get install -y asciinema` / `pip install asciinema` / `apk add asciinema` |
+| Unpinned base image (`FROM ...:latest`) | Reproducibility failure | Pin to a concrete tag |
+| DownloadVerifierDirError / verifier-output-not-found | When caused by the above (bash/sh mismatch, missing artifact path, missing tmux/asciinema) | Fix the upstream cause |
+| Resource limits too low | Build OOM / disk-full from undersized cpus / memory_mb / storage_mb | Bump the limits |
+| Bad shell/shebang, CRLF line endings, non-executable scripts | Script fails to exec | Normalize line endings, fix shebang, `chmod +x` |
+| Stray pipeline artifacts / wrong metadata blocking build prep | e.g. metadata.json in root, `cpp` vs `c++`, missing language — strictly metadata but gates the build | Clean up |
+
+### Not Fixable environment issues (with the defensible edge)
+
+| Issue | When each side applies |
+|---|---|
+| Image/dependency build failures | apt/pip/npm/cargo errors, missing system libs, compiler flags. Adding ONE missing dev package or flag is worth fixing; a tangled toolchain/version conflict is NOT fixable |
+| Oracle timeout | `harbor run timed out after n seconds`. Bumping the timeout may be tried; if that cannot plausibly resolve it, Not Fixable |
+| External-network dependency at build/solve time | curl/wget/HF/model pulls at **run** time against the restricted sandbox. Vendoring one small file is fixable; a multi-GB model pull or a live external service is NOT |
+
+When in doubt whether an environment issue is on the allowed side, flag it and ask the user — do not guess.
+
+### Fail-open build steps — fix only where they cause a listed issue
+
+A Dockerfile that ends a configure step with `; exit 0`, or an install chain with `|| true`, builds green while leaving out tools the agent and verifier need. It is a real defect, but "make the build fail closed" is **not** on the allowed-fix table above, and that table is exhaustive by design.
+
+- **Fix it** when the swallowed failure produces a listed issue: a missing `tmux`, `asciinema`, `bash`, or a required compiler/toolchain. Installing the tool properly is the listed fix, and adding a `command -v` gate for tools the verifier depends on follows from the same row
+- **Do not fix it** as pure hygiene when nothing downstream actually breaks. Record it as a finding, say so in Comments for Reviewer, and leave the line alone
+- `docs/tasking-guide.md` requires the build to be reproducible with test dependencies baked into the image. A build that hides its own failures is not reproducible, which is the argument to make if a reviewer asks why the line changed
+
+### Build-time network is allowed
+
+The Dockerfile MAY use the network at build time — tasks were never required to build offline. Only run time is restricted: the solving agent reaches the model gateway only, and the verifier runs airgapped. Never flag a build-time `apt-get`/`pip install` as an issue. What matters is a **reproducible** build: run `apt-get update` before installs, use packages that exist in the base image's distro, pin the base image to a concrete tag, and bake test dependencies into the image instead of fetching them when the tests run.
+
+### Known Harbor failure workarounds
+
+- **Nonzero exit-code agent error** — first check whether it reproduces. A **one-off** `NonZeroAgentExitCode`, like a Daytona/rate-limit error, a sandbox auth or connection error, or blank feedback, is a platform failure and not a task defect: retry instead of editing, and never let it drive a Not Fixable verdict. If it reproduces on every run, work the usual checks (local `docker build`, `tests.patch` applies to base, agent timeout, `network_mode` per block), then remove the `curl` package install from `environment/Dockerfile` and rebuild. Known Harbor edge-case bug affecting a small subset of tasks. If the task genuinely needs curl, flag it to the user for the Slack channel with the submission UID
+- **Agent timeout** — raise `[agent] timeout_sec` up to the 7200 max. If it still times out, read `runs/` to find WHERE the time goes; if it genuinely cannot fit in 7200 and the only remedy would shrink the PR, the task is Not Fixable
+- **DownloadVerifierDirError / verifier-output-not-found** — fix the upstream cause (bash vs ash shebang, missing artifact path, missing tmux or asciinema)
+
+---
+
+## 4a. task.toml — editable metadata and limits
+
+Check and fix every field against these limits:
+
+| Block | Field | Required value / limit |
+|---|---|---|
+| `[environment]` | `os` | container OS, e.g. `"linux"` — documented in `docs/harbor-framework.md` and present in the reference file; a bundle missing it is a metadata finding |
+| | `cpus` | `2` or `4` |
+| | `memory_mb` | min `2048`, max `16384` |
+| | `storage_mb` | min `5120`, max `10240` |
+| | `gpus` | always `0` |
+| | `build_timeout_sec` | max `1800` |
+| | `network_mode` | `"public"` |
+| `[agent]` | `network_mode` | `"allowlist"` |
+| | `allowed_hosts` | `["api.portkey.ai"]` |
+| | `timeout_sec` | max `7200` |
+| `[verifier]` | `network_mode` | `"no-network"` |
+| | `timeout_sec` | max `1800` |
+| `[metadata]` | `category`, `difficulty_explanation`, `source` | accurate — the judge's packaging axis cross-checks metadata against actual task content |
+
+- `network_mode` is a **per-block** field. Do NOT strip it or `allowed_hosts` — the older "remove them" guidance is dead
+- Separately, remove `network_mode = "none"` from `docker_compose.yaml` if present
+- `schema_version` is the Harbor format version, not the task version — leave it alone
+- Legacy fields (`pass_at_k_*`, `tags`, `coding_language`, `expert_time_estimate_min`) are gone from the current schema. Keep and cross-check them when a task still carries them; never add them back
+- **Never hand-edit the difficulty or pass-rate fields to make a check pass.** If the measured difficulty disagrees with the declared metadata and the linter then rejects the task as "easy", that is a known tooling conflict — matching the metadata to the measurement and satisfying the linter pull in opposite directions. Do not tune the fields back and forth; escalate on Slack with the task/submission UID and the two conflicting values
+- **A legacy `model_difficulty` contradicting `difficulty` is a finding to report, not a field to quietly reconcile.** Neither is in the current schema. Name the mismatch in Comments for Reviewer. If a reviewer asks directly for them to agree, make the change and attribute it to their note — the rule above forbids editing these fields to satisfy a *check*, not to satisfy an explicit review instruction
+
+---
+
+## 5. Git cleanup in environment/repo (fixable, and expected)
+
+The shipped repo is a real git checkout and **its HEAD is the source of truth** for the task. Do the git work inside `environment/repo`, then re-zip the task. You may clean git metadata and realign task.toml to HEAD — you must still never edit tracked source files.
+
+**HEAD vs base_commit_sha:** when HEAD and the `base_commit_sha` declared in task.toml disagree, the shipped repo (HEAD) wins — realign the declared commit to HEAD. (This mostly shows up on older tasks.)
+
+| Issue | Why it matters | Fix |
+|---|---|---|
+| `.git` missing | No repo for the agent to work in — usually a zip tool dropped dotfiles | Ensure `environment/repo/` is a real repo and `.git/` is in the zip |
+| HEAD doesn't resolve | Detached, empty, or corrupt HEAD can't be checked out | Ensure at least one commit exists and HEAD points at it (`git rev-parse --verify HEAD`) |
+| HEAD ≠ declared base commit | Agent must start from the declared commit; shipped repo wins | `git checkout <base_commit_sha>`, or edit task.toml so its base commit equals HEAD |
+| Commits / branches / tags beyond HEAD | Any ref past HEAD can carry the fix history and leak the answer | Delete them so `git rev-list --all --not HEAD` is empty; ship a single branch at the base commit, no stray tags |
+| Remote configured | Escape hatch to external history; tasks must be self-contained and offline | `git remote remove <name>` for each remote |
+| Filter drivers (`filter.*`) | clean/smudge drivers are arbitrary commands git can run — security risk, non-reproducible | Remove every `filter.*` section from `.git/config` |
+| Dirty working tree | Non-reproducible start; an uncommitted solution leaks the answer | Commit or discard until `git status --porcelain` prints nothing |
+| Reflog present (`.git/logs`) | Records rewound commits (like the solution) and bloats the repo | `git reflog expire --expire=now --all && git gc --prune=now`, then remove `.git/logs` |
+| Unreachable objects in `.git` | Regenerating `tests.patch` and running the oracle both write blobs that never reach a branch. `git fsck --unreachable` + `git cat-file -p` prints the golden file and the patched test file in full, and every other git check still passes | Re-run the expire/gc pair above, then **verify** with `git fsck --unreachable --no-progress` — it must print nothing. See `learning/unreachable-git-blobs.md` |
+| `.git` over 100 MB | Accidental large blobs; slows every trial | `git gc --aggressive --prune=now`; if still large, strip big blobs or ship a fresh single-commit base history, then reset the base commit in task.toml |
+| `tests/tests.patch` won't apply | A patch cut against a different base fails every trial | Fix HEAD == base commit FIRST, then regenerate the patch against the shipped repo state |
+
+---
+
+## 6. Editing the tests
+
+- Map tests **1:1** with the instruction's requirements
+- Ensure **at least 10 fail-to-pass tests** (ideally 10–20); if short, add tests covering requirements stated or reasonably implied in the instruction — never undescribed behavior
+- Keep tests flexible enough to allow multiple valid implementations where appropriate
+- Do NOT introduce arbitrary names, strings, paths, or formats that are not derivable from the instruction
+- Validate **observable behavior**, not implementation details
+- NEVER modify a pre-existing test file — new tests arrive only as new functions or new files inside `tests.patch`
+- Regenerate `tests.patch` against the shipped repo HEAD and verify with `git apply --check`
+- Distinct contracts, not padding. The f2p count is a coverage floor, not a quota to fill — the same assertion repeated across N sizes or shapes adds count and no coverage
+- Test the wiring, not only the helper. If the PR's point is that some path now uses a new component, at least one f2p must go through that path
+- Do not pin serialization accidents — object numbers, byte offsets, creation-order ids. Assert structure and observable values
+- If the instruction says a message may be worded freely, the matcher must accept the paraphrases, including every example the instruction itself gives
+
+### Where the graded tests live
+
+`docs/tasking-guide.md` allows added tests as new functions **or** new files. Take the new file every time:
+
+- Put them in a source file no agent would plausibly create — `test/test_sentinel_<topic>_verifier.<ext>` — and prefix the suite and test identifiers distinctively
+- Injecting into an existing public suite under ordinary names invites a symbol collision. An agent writing its own test with the same name produces a redefinition or duplicate-registration error, the build fails, and a correct implementation is scored as a failed trial. Restoring the test tree before applying the patch does not help, because the collision is between two different files in the same binary
+- Register the new file in `execution.commands` and its ids in `fail_to_pass`. The file still arrives through `tests.patch` — never ship it inside `environment/repo`
+- Full detail in `learning/tests-patch-vs-agent-edits.md`
+
+### A test must exercise the constraint it claims
+
+The Quality Check coverage axis asks whether a broken or stub solution fails at least one test. A test that names a constraint but uses a fixture that cannot violate it fails that bar while looking like coverage — "bidirectional iterator" tests built on a random-access container, "empty input" with a one-element fixture, "rejects oversized payloads" with a payload under the limit. For every assertion, ask what implementation defect it would actually catch.
+
+**Hostile-delete gate before the zip.** In a throwaway copy, stub or delete one requirement the instruction states, re-run the verifier, and confirm the reward drops to `0.0`. Pick the requirement you are least confident is tested. Reward staying at `1.0` means it has no enforcing assertion.
+
+### Regenerating tests.patch
+
+From `environment/repo` at the base commit:
+
+1. Confirm the target test files are in their ORIGINAL state — they must not already contain the new f2p tests, since the patch is what adds them
+2. Apply the fail-to-pass test additions by hand
+3. `git add -A && git diff --cached -- <test paths> > ../../tests/tests.patch`
+4. `git checkout .` to restore the repo to base
+5. Re-verify with `git apply --check ../../tests/tests.patch`, then run the oracle and tests end to end
+
+Common traps: the repo copy already includes the new tests (the patch re-adds them and conflicts), or the patch touches a non-test file such as `CMakeLists.txt` that has since changed.
+
+### config.json reference
+
+Tells the harness how to run the suite and which test ids decide the reward. `fail_to_pass` is the required, non-empty list; `pass_to_pass` is the regression guard. Every added test must be registered in `fail_to_pass`.
+
+- **Populate `pass_to_pass`** with existing tests covering the area the patch touches, and confirm they actually pass in the oracle run. Docs do not make it mandatory, but an empty regression guard is a weak verifier and reviewers read it that way. Cross-check `learning/stale-test-reports.md` — a `pass_to_pass` list a build-time test report can satisfy is not a guard at all
+- **`allow_extra_failures` does not appear anywhere in `docs/`.** If the shipped config already carries the field and the run executes exactly the graded set, set it to `false`. Do NOT add the field to a config that lacks it — same discipline as the legacy `task.toml` fields
+
+```json
+{
+  "execution": {
+    "commands": ["python -m pytest -q tests/test_resume.py"],
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "tests/test_resume.py::test_partial_file_preserved",
+      "tests/test_resume.py::test_range_request_on_retry"
+    ],
+    "pass_to_pass": [
+      "tests/test_resume.py::test_basic_download"
+    ],
+    "parser": { "framework": "pytest", "result_source": "stdout_stderr" }
+  },
+  "artifacts": { "reward": "/logs/verifier/reward.txt" }
+}
+```
+
+### test.sh reference
+
+Applies the tests, runs the suite, writes the reward to the path Harbor reads. **The exit code must match the reward it writes** — `docs/guidelines.md` states this as the invariant, and it is the one every fail-open grader breaks.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Add the fail-to-pass tests to the repo
+git apply /tests/tests.patch
+
+# Run the suite; write 1.0 only if it passes, else 0.0
+cd /workspace/repo
+if python -m pytest -q tests/test_resume.py; then
+  echo "1.0" > /logs/verifier/reward.txt
+else
+  echo "0.0" > /logs/verifier/reward.txt
+  exit 1
+fi
+```
+
+**Audit the grader on every task — the reward must fail closed.** A `test.sh` that runs the suite, scans stdout for the graded test names, and writes `1.0` when it finds them is satisfied by the *text* of a successful run. A compile failure, a timeout, a crash or a partially executed suite can all leave those lines in the log and still score `1.0`. Three things must hold:
+
+1. Reward `1.0` requires the test command's exit status to be zero AND every f2p id to have passed
+2. `test.sh` exits nonzero whenever it writes `0.0`
+3. `set -euo pipefail`, and nothing on the line running the suite ends in `|| true`
+
+When the run has to be parsed rather than trusted wholesale, capture the status explicitly — recording it without branching on it is the defect:
+
+```bash
+set +e
+<test command> 2>&1 | tee /logs/verifier/test-stdout.txt
+raw_exit=${PIPESTATUS[0]}       # NOT $? — with tee in the pipe, $? is tee's status
+set -e
+
+if [ "$raw_exit" -ne 0 ]; then
+  echo "0.0" > /logs/verifier/reward.txt
+  exit 1
+fi
+# only now parse the log for the graded ids
+```
+
+The NOP run is the check: it must show a nonzero exit as well as reward `0.0`. Full detail in `learning/verifier-fail-open.md`.
+
+**The stock harness ships fail-open, so this is your task's defect unless you fixed it.** The generic `test.sh` computes `success = not missing_required and not unexpected` and never reads the `raw_exit_code` it recorded a few lines earlier. Two traps when fixing it:
+
+- `execution.commands` is a **list**, and the generated runner's exit status is the last command's. Suite-then-parser means a failing suite plus a healthy parser gives status 0 and your gate never fires. Emit `set -e` at the top of the generated runner.
+- **`set -e` does not cover a command that is itself a pipeline**, and the `set -o pipefail` at the top of `test.sh` does not reach the runner, because `bash /tmp/run_tests.sh` is a child shell and inherits no shell options. A command like `deno test … | python3 -c '<parser>'` therefore reports the parser's status. Measured: `raw_exit_code 0` on a NOP where zero tests ran. Invoke as `RUNNER=(bash -o pipefail /tmp/run_tests.sh)` and keep the `set -e` as well.
+- **Measure the runner's bare exit on a green tree before gating.** A runner that exits nonzero on a fully passing suite turns your gate into a failing oracle. Tests reported as *ignored* emit neither PASS nor FAIL, so an upstream skip is safe when flipping `allow_extra_failures` to `false`.
+- **Do not fail closed by writing an `infrastructure_error`.** The difficulty harness reads that as *invalid trial*, so every non-compiling agent would be scored invalid rather than failed, poisoning the difficulty verdict exactly like a broken `tests.patch`. Add the condition to the grader's success expression (`and args.raw_exit_code == 0`) so the per-test report survives. Verify on the NOP: reward `0`, raw exit nonzero, `infrastructure_error: None`.
+
+**Restore the test tree before applying `tests.patch`, and do NOT build that restore on git.** Add it on every task, not only ones that bounced. Three git-based designs shipped on kvdex 245 across three rounds and none of them measurably worked, while every one passed every local scenario that could be constructed: the verify-time workspace is not a git repository. Reproduced locally, and named outright by four codex trial analyses in a sibling task's report. The git-independent design was accepted first time. Full history in `learning/tests-patch-vs-agent-edits.md`.
+
+Pick the shape by counting where the graded ids actually live:
+
+```bash
+python3 - <<'PY'
+import json, re
+patch = open('tests/tests.patch', encoding='utf-8', errors='replace').read()
+touched = set(re.findall(r'^diff --git a/(\S+)', patch, re.M))
+g = json.load(open('tests/config.json'))['grading']
+ids = g['fail_to_pass'] + g['pass_to_pass']
+outside = [i for i in ids if i.split('::')[0] not in touched]
+print(len(outside), 'of', len(ids), 'graded ids live in files tests.patch does not touch')
+PY
+```
+
+**Zero → create-only patch, no payload needed.** Regenerate `tests.patch` so every graded file is a create (`new file mode`, `--- /dev/null`) rather than a diff. A create has no context lines, so nothing can conflict. Delete those paths first in `test.sh`, reading the list out of the patch with `sed -n 's|^+++ b/||p' /tests/tests.patch`.
+
+**Above zero → restore the whole tree from a base64 payload embedded in `test.sh`.** kvdex measured 102 of 132, because `pass_to_pass` was 112 guards spread across a suite where only 45 files are patched, so a create-only patch would have left 102 graded tests running the agent's own copies.
+
+```bash
+# build deterministically from the pristine base tree
+tar --sort=name --mtime='<base commit date>' --owner=0 --group=0 --numeric-owner \
+    -czf /tmp/tests_base.tar.gz -C environment/repo tests
+base64 -w76 /tmp/tests_base.tar.gz
+```
+
+```bash
+TEST_TREE="tests"
+TEST_TREE_B64="/tmp/tests_base.tar.gz.b64"
+TEST_TREE_TGZ="/tmp/tests_base.tar.gz"
+
+cat > "$TEST_TREE_B64" <<'TESTS_BASE_B64_EOF'
+<base64 of the gzipped tarball, wrapped at 76 columns>
+TESTS_BASE_B64_EOF
+
+if base64 -d "$TEST_TREE_B64" > "$TEST_TREE_TGZ" 2>/dev/null \
+   || base64 --decode "$TEST_TREE_B64" > "$TEST_TREE_TGZ" 2>/dev/null; then
+  rm -rf "$TEST_TREE"
+  tar -xzf "$TEST_TREE_TGZ" -C . || <infra error, reward 0, exit 2>
+else
+  <infra error, reward 0, exit 2>
+fi
+```
+
+The payload lives **inside `test.sh`**, never in `tests/files/` — `tests/` accepts only `config.json`, `grade.py`, `test.sh` and `tests.patch`, and that upload is rejected at the static phase. `test.sh` is read from `/tests`, so it is present whenever the verifier runs at all, which makes it the most dependable restore source inside the verifier. Deleting the tree first is what removes a file the agent created where `tests.patch` adds one. A failed restore genuinely is a harness failure, so `infrastructure_error` is correct on those two paths only. Verify the payload round-trips **out of the built zip**, not just the working copy.
+
+Pair it with verifier-only names for the files the patch creates (see the test-placement rule), and simulate an agent that **stages and commits**, not one that only leaves the tree dirty. An unstaged-only simulation proves nothing.
+
+---
+
+## 7. Pre-upload checklist
+
+Run inside `environment/repo` before re-zipping. Every line must be clean or empty:
+
+```bash
+cd environment/repo
+
+git rev-parse --verify HEAD                   # HEAD resolves
+git rev-parse HEAD                            # == base_commit_sha in task.toml?
+git rev-list --all --not HEAD                 # MUST be empty (no leaked commits)
+git remote                                    # MUST be empty
+git config --local --get-regexp '^filter\.'   # MUST be empty
+git status --porcelain                        # MUST be empty (clean tree)
+ls .git/logs 2>/dev/null                      # MUST NOT exist / be empty
+du -sh .git                                   # MUST be < 100 MB
+git fsck --unreachable --no-progress          # MUST print nothing (see below)
+git apply --check ../../tests/tests.patch     # MUST apply cleanly
+```
+
+The `fsck` line is not in the `docs/` checklist and is the one that catches what the others miss. A repo can pass every other line and still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p`. Regenerating `tests.patch` writes them; so does running the oracle anywhere but a disposable copy. If it prints anything, read one before doing anything else, then re-run `git reflog expire --expire=now --all && git gc --prune=now` until it is silent.
+
+Then verify at the task level:
+
+- `diff instruction.md environment/problem_statement.md` → no output (byte-identical). Use whichever location the bundle ships; if both exist, all copies must match
+- `fail_to_pass` in config.json is non-empty, ids match the actual tests, count is ≥ 10 (the form says "more than 10", so treat 11+ as the safe bar)
+- Instruction ↔ tests ↔ oracle re-verified as a consistent trio after all edits
+- If PR scope was expanded: difficulty eval re-run and passing
+- `docker build environment/` succeeds and is reproducible — network at build time is allowed, run-time fetches are not
+- No pre-existing test file was modified
+- Stray-artifact sweep is empty and no solution material is readable from agent paths. Intentional dotfiles (`.gitignore`, `.dockerignore`, `.gitattributes`, `.gitkeep`, `.github/`) are fine:
+
+```bash
+find . -name '__pycache__' -o -name '*.pyc' -o -name '.DS_Store' \
+  -o -name '.pytest_cache' -o -name '.mypy_cache' -o -name '.ruff_cache' \
+  -o -name '.venv' -o -name 'node_modules' -o -name '.idea' -o -name '.vscode' \
+  -o -name '*.swp' -o -name '*~' -o -name '*.orig' -o -name '*.bak'
+```
+
+- `task.toml` passes Section 4a, and `docker_compose.yaml` has no `network_mode = "none"`
+- `solution/solution.patch` renamed to `golden.patch` if the bundle shipped that name
+- **Script modes:** `tests/test.sh` and `solution/solve.sh` are `0755`. Check the mode in the extracted zip, not only the working copy — a `0644` verifier entrypoint fails at run time, not at build time
+- **Grader fails closed:** reward `1.0` only when the test command also exited zero (Section 6)
+- **Hostile-delete gate:** one stated requirement stubbed in a throwaway copy drops the reward to `0.0`
+- **Golden patch file list matches the source PR's**, in both directions
+
+### Zipping the corrected task
+
+Zip the flat contents of `task/` — not the folder, not `runs/`. The archive must unpack directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, `tests/`:
+
+```bash
+cd task
+zip -rX ../<your_task>.zip . -x '*.DS_Store' '__MACOSX/*'
+unzip -l ../<your_task>.zip | grep 'refs/'    # empty git dirs must still be listed
+```
+
+Never use `zip -rD` or a GUI compress tool. `-D` skips directory entries, which silently drops the empty `.git/refs/` that `git gc` leaves behind — the repo then unpacks broken on the platform even though the local copy works fine.
+
+---
+
+## 8. Finish with a change log
+
+After all edits, output a change log so the diff is reviewable:
+
+```
+Change Log
+
+1. <file path>
+   Changed: <what changed>
+   Reason: <which finding or rule this resolves>
+```
+
+Every entry must map to a specific issue. If any planned fix could not be completed within these boundaries, say so explicitly and reassess the verdict instead of shipping a partial fix.

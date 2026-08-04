@@ -1,0 +1,66 @@
+[
+  {
+    "tab_id": "whatsnew",
+    "navigation_title": "What's New",
+    "local_path": "whats-new.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 42,
+    "character_count": 2311
+  },
+  {
+    "tab_id": "guide",
+    "navigation_title": "Guidelines",
+    "local_path": "guidelines.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 368,
+    "character_count": 29657
+  },
+  {
+    "tab_id": "tasking",
+    "navigation_title": "Tasking Guide",
+    "local_path": "tasking-guide.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 458,
+    "character_count": 39805
+  },
+  {
+    "tab_id": "harbor",
+    "navigation_title": "The Harbor Framework",
+    "local_path": "harbor-framework.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 110,
+    "character_count": 6546
+  },
+  {
+    "tab_id": "glossary",
+    "navigation_title": "Glossary",
+    "local_path": "glossary.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 58,
+    "character_count": 4955
+  },
+  {
+    "tab_id": "faq",
+    "navigation_title": "FAQ",
+    "local_path": "faq.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 76,
+    "character_count": 8164
+  },
+  {
+    "tab_id": "quicklinks",
+    "navigation_title": "Quick Links",
+    "local_path": "quick-links.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 7,
+    "character_count": 380
+  },
+  {
+    "tab_id": "changelog",
+    "navigation_title": "Changelog",
+    "local_path": "changelog.md",
+    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+    "line_count": 83,
+    "character_count": 10640
+  }
+]

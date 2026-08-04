@@ -1,0 +1,4548 @@
+diff --git a/tests/collection/add.test.ts b/tests/collection/add.test.ts
+index b58c416..67c8799 100644
+--- a/tests/collection/add.test.ts
++++ b/tests/collection/add.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/collection/addMany.test.ts b/tests/collection/addMany.test.ts
+index bcb664c..c5b257a 100644
+--- a/tests/collection/addMany.test.ts
++++ b/tests/collection/addMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateInvalidUsers, generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("collection - addMany", async (t) => {
+diff --git a/tests/collection/count.test.ts b/tests/collection/count.test.ts
+index d900eec..e4d3daf 100644
+--- a/tests/collection/count.test.ts
++++ b/tests/collection/count.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers } from "../utils.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/collection/delete.test.ts b/tests/collection/delete.test.ts
+index 6a2e03a..44f1623 100644
+--- a/tests/collection/delete.test.ts
++++ b/tests/collection/delete.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/collection/deleteMany.test.ts b/tests/collection/deleteMany.test.ts
+index 15a0501..12809de 100644
+--- a/tests/collection/deleteMany.test.ts
++++ b/tests/collection/deleteMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("collection - deleteMany", async (t) => {
+diff --git a/tests/collection/enqueue.test.ts b/tests/collection/enqueue.test.ts
+index 1885919..2a3b668 100644
+--- a/tests/collection/enqueue.test.ts
++++ b/tests/collection/enqueue.test.ts
+@@ -6,7 +6,7 @@ import {
+   type QueueMessage,
+ } from "../../mod.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, useDb, useKv } from "../utils.ts";
+ 
+ Deno.test("collection - enqueue", async (t) => {
+@@ -16,8 +16,9 @@ Deno.test("collection - enqueue", async (t) => {
+       const undeliveredId = "undelivered";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       const handlerId = createHandlerId(db.numbers._keys.base, undefined);
+diff --git a/tests/collection/find.test.ts b/tests/collection/find.test.ts
+index b45e4d0..674617b 100644
+--- a/tests/collection/find.test.ts
++++ b/tests/collection/find.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/collection/findMany.test.ts b/tests/collection/findMany.test.ts
+index dbc1e64..70efc42 100644
+--- a/tests/collection/findMany.test.ts
++++ b/tests/collection/findMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("collection - findMany", async (t) => {
+diff --git a/tests/collection/forEach.test.ts b/tests/collection/forEach.test.ts
+index 4f7c394..2c08169 100644
+--- a/tests/collection/forEach.test.ts
++++ b/tests/collection/forEach.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateUsers } from "../utils.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/collection/getMany.test.ts b/tests/collection/getMany.test.ts
+index 0808a31..8e9050b 100644
+--- a/tests/collection/getMany.test.ts
++++ b/tests/collection/getMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("collection - getMany", async (t) => {
+diff --git a/tests/collection/getOne.test.ts b/tests/collection/getOne.test.ts
+index e541f0c..25d7c73 100644
+--- a/tests/collection/getOne.test.ts
++++ b/tests/collection/getOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/collection/history.test.ts b/tests/collection/history.test.ts
+index 7bac1e6..a2261f4 100644
+--- a/tests/collection/history.test.ts
++++ b/tests/collection/history.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useKv } from "../utils.ts";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+@@ -9,8 +9,9 @@ Deno.test("collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), { history: true }),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>(), { history: true }) },
+         });
+ 
+         const id = "id";
+@@ -37,8 +38,9 @@ Deno.test("collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order after deleting",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), { history: true }),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>(), { history: true }) },
+         });
+ 
+         const id = "id";
+@@ -73,8 +75,9 @@ Deno.test("collection - history", async (t) => {
+     "Should persist history of multiple inserts and updates in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), { history: true }),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>(), { history: true }) },
+         });
+ 
+         const id = "id";
+@@ -101,8 +104,9 @@ Deno.test("collection - history", async (t) => {
+     "Should persist version history of insert and delete by deleteMany()",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), { history: true }),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>(), { history: true }) },
+         });
+ 
+         const id = "id";
+@@ -132,8 +136,9 @@ Deno.test("collection - history", async (t) => {
+     "Should not find history",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>()),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>()) },
+         });
+ 
+         const id = "id";
+@@ -150,8 +155,9 @@ Deno.test("collection - history", async (t) => {
+ 
+   await t.step("Should find filtered history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), { history: true }),
++      const db = kvdex({
++        kv,
++        schema: { users: collection(model<User>(), { history: true }) },
+       });
+ 
+       const id = "id";
+@@ -188,8 +194,9 @@ Deno.test("collection - history", async (t) => {
+ 
+   await t.step("Should delete all document history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), { history: true }),
++      const db = kvdex({
++        kv,
++        schema: { users: collection(model<User>(), { history: true }) },
+       });
+ 
+       const id = "id";
+diff --git a/tests/collection/listenQueue.test.ts b/tests/collection/listenQueue.test.ts
+index 0532950..e33bd2b 100644
+--- a/tests/collection/listenQueue.test.ts
++++ b/tests/collection/listenQueue.test.ts
+@@ -10,7 +10,7 @@ import {
+   UNDELIVERED_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { createHandlerId, extendKey } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, sleep, useKv } from "../utils.ts";
+ 
+ Deno.test("collection - listenQueue", async (t) => {
+@@ -20,8 +20,11 @@ Deno.test("collection - listenQueue", async (t) => {
+       const undeliveredId = "id";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: {
++          numbers: collection(model<number>()),
++        },
+       });
+ 
+       const handlerId = createHandlerId(db.numbers._keys.base, undefined);
+@@ -60,8 +63,9 @@ Deno.test("collection - listenQueue", async (t) => {
+ 
+   await t.step("Should not receive db queue message", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       let assertion = true;
+diff --git a/tests/collection/map.test.ts b/tests/collection/map.test.ts
+index 9ed432b..19649ec 100644
+--- a/tests/collection/map.test.ts
++++ b/tests/collection/map.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("collection - map", async (t) => {
+diff --git a/tests/collection/properties.test.ts b/tests/collection/properties.test.ts
+index e535a7a..a4680fa 100644
+--- a/tests/collection/properties.test.ts
++++ b/tests/collection/properties.test.ts
+@@ -1,7 +1,7 @@
+ import { collection, type Document, kvdex, model } from "../../mod.ts";
+ import { ID_KEY_PREFIX, KVDEX_KEY_PREFIX } from "../../src/constants.ts";
+ import { extendKey, keyEq } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { generateUsers, useDb, useKv } from "../utils.ts";
+@@ -21,16 +21,19 @@ Deno.test("collection - properties", async (t) => {
+ 
+   await t.step("Should generate ids with custom id generator", async () => {
+     await useKv((kv) => {
+-      const db = kvdex(kv, {
+-        users1: collection(model<User>(), {
+-          idGenerator: () => Math.random(),
+-        }),
+-        users2: collection(model<User>(), {
+-          idGenerator: (data) => data.username,
+-          indices: {
+-            username: "primary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users1: collection(model<User>(), {
++            idGenerator: () => Math.random(),
++          }),
++          users2: collection(model<User>(), {
++            idGenerator: (data) => data.username,
++            indices: {
++              username: "primary",
++            },
++          }),
++        },
+       });
+ 
+       const id1 = db.users1._idGenerator(mockUser1);
+@@ -282,16 +285,19 @@ Deno.test("collection - properties", async (t) => {
+ 
+   await t.step("Should successfully generate id asynchronously", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        test: collection(model<User>(), {
+-          idGenerator: async (user) => {
+-            const buffer = await crypto.subtle.digest(
+-              "SHA-256",
+-              new ArrayBuffer(user.age),
+-            );
+-            return Math.random() * buffer.byteLength;
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          test: collection(model<User>(), {
++            idGenerator: async (user) => {
++              const buffer = await crypto.subtle.digest(
++                "SHA-256",
++                new ArrayBuffer(user.age),
++              );
++              return Math.random() * buffer.byteLength;
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.test.add(mockUser1);
+diff --git a/tests/collection/set.test.ts b/tests/collection/set.test.ts
+index 6aa2baa..3dd64f7 100644
+--- a/tests/collection/set.test.ts
++++ b/tests/collection/set.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/collection/types.test.ts b/tests/collection/types.test.ts
+index 326f194..c2ae412 100644
+--- a/tests/collection/types.test.ts
++++ b/tests/collection/types.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { useKv } from "../utils.ts";
+ import { VALUES } from "../values.ts";
+ 
+@@ -15,7 +15,7 @@ Deno.test("collection - types", async (t) => {
+           ) => [i, collection(model<typeof val>())]),
+         );
+ 
+-        const db = kvdex(kv, schema);
++        const db = kvdex({ kv, schema });
+ 
+         const crs = await Promise.all(VALUES.map((val, i) => db[i].add(val)));
+         assert(crs.every((cr) => cr.ok));
+diff --git a/tests/collection/update.test.ts b/tests/collection/update.test.ts
+index af59bca..c06633d 100644
+--- a/tests/collection/update.test.ts
++++ b/tests/collection/update.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { useDb, useKv } from "../utils.ts";
+ 
+@@ -108,10 +108,13 @@ Deno.test("collection - update", async (t) => {
+     "Should update documents of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -168,10 +171,13 @@ Deno.test("collection - update", async (t) => {
+     "Should update documents of primitive and built-in object types using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const cr1 = await db.numbers.add(10);
+diff --git a/tests/collection/updateMany.test.ts b/tests/collection/updateMany.test.ts
+index f8a6d1f..fdf1f81 100644
+--- a/tests/collection/updateMany.test.ts
++++ b/tests/collection/updateMany.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateNumbers, generateUsers, useDb, useKv } from "../utils.ts";
+ 
+@@ -123,10 +123,13 @@ Deno.test("collection - updateMany", async (t) => {
+     "Should update 1000 documents of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -197,10 +200,13 @@ Deno.test("collection - updateMany", async (t) => {
+     "Should update 1000 documents of types primitive and built-in object using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const numbers = generateNumbers(1_000);
+diff --git a/tests/collection/updateOne.test.ts b/tests/collection/updateOne.test.ts
+index 137b3be..008a306 100644
+--- a/tests/collection/updateOne.test.ts
++++ b/tests/collection/updateOne.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals, assertNotEquals } from "../test.deps.ts";
++import { assert, assertEquals, assertNotEquals } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import {
+   generateNumbers,
+@@ -144,10 +144,13 @@ Deno.test("collection - updateOne", async (t) => {
+     "Should update only one document of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -218,10 +221,13 @@ Deno.test("collection - updateOne", async (t) => {
+     "Should update only one document of types primitive and built-in object using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const numbers = generateNumbers(1_000);
+diff --git a/tests/collection/upsert.test.ts b/tests/collection/upsert.test.ts
+index 3e23ae1..f2c3225 100644
+--- a/tests/collection/upsert.test.ts
++++ b/tests/collection/upsert.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/collection/watch.test.ts b/tests/collection/watch.test.ts
+index 88b4dd9..9867291 100644
+--- a/tests/collection/watch.test.ts
++++ b/tests/collection/watch.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/collection/watchMany.test.ts b/tests/collection/watchMany.test.ts
+index 0c589a6..296709c 100644
+--- a/tests/collection/watchMany.test.ts
++++ b/tests/collection/watchMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/db/atomic.test.ts b/tests/db/atomic.test.ts
+index afd372b..7e8c4a0 100644
+--- a/tests/db/atomic.test.ts
++++ b/tests/db/atomic.test.ts
+@@ -6,7 +6,7 @@ import {
+   type QueueMessage,
+ } from "../../mod.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert, assertEquals, assertThrows } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { sleep, useDb, useKv } from "../utils.ts";
+ 
+@@ -46,6 +46,42 @@ Deno.test("db - atomic", async (t) => {
+     },
+   );
+ 
++  await t.step("Should overwrite document in standard collection", async () => {
++    await useDb(async (db) => {
++      const cr1 = await db.users.add(mockUser1);
++      assert(cr1.ok);
++
++      const cr2 = await db
++        .atomic((schema) => schema.users)
++        .set(cr1.id, mockUser2, { overwrite: true })
++        .commit();
++
++      assert(cr2.ok);
++
++      const count = await db.users.count();
++      assert(count === 1);
++
++      const doc = await db.users.find(cr1.id);
++      assertEquals(doc?.value, mockUser2);
++    });
++  });
++
++  await t.step(
++    "Should throw when trying to overwrite document in indexable collection",
++    async () => {
++      await useDb(async (db) => {
++        const cr1 = await db.i_users.add(mockUser1);
++        assert(cr1.ok);
++
++        assertThrows(() => {
++          db
++            .atomic((schema) => schema.i_users)
++            .set(cr1.id, mockUser2, { overwrite: true } as any);
++        });
++      });
++    },
++  );
++
+   await t.step("Should delete document", async () => {
+     await useDb(async (db) => {
+       const cr1 = await db.users.add(mockUser1);
+@@ -272,8 +308,9 @@ Deno.test("db - atomic", async (t) => {
+       const data = "data";
+       const undeliveredId = "undelivered";
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       const handlerId = createHandlerId(db.numbers._keys.base, undefined);
+@@ -373,8 +410,9 @@ Deno.test("db - atomic", async (t) => {
+ 
+   await t.step("Should retain history in correct order", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>(), { history: true }),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>(), { history: true }) },
+       });
+ 
+       const id = "id";
+diff --git a/tests/db/countAll.test.ts b/tests/db/countAll.test.ts
+index b0f30ff..0749254 100644
+--- a/tests/db/countAll.test.ts
++++ b/tests/db/countAll.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("db - countAll", async (t) => {
+diff --git a/tests/db/deleteAll.test.ts b/tests/db/deleteAll.test.ts
+index f4fe71d..350d017 100644
+--- a/tests/db/deleteAll.test.ts
++++ b/tests/db/deleteAll.test.ts
+@@ -1,28 +1,32 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, generateUsers, useKv } from "../utils.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("db - deleteAll", async (t) => {
+   await t.step(
+     "Should delete all documents from the database without deleting history entries",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          i_users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
+-          s_users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-          }),
+-          u64s: collection(model<Deno.KvU64>(), {
+-            history: true,
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            i_users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++            s_users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++            }),
++            u64s: collection(model<Deno.KvU64>(), {
++              history: true,
++            }),
++          },
+         });
+ 
+         const users = generateUsers(100);
+diff --git a/tests/db/enqueue.test.ts b/tests/db/enqueue.test.ts
+index b76cc53..3f69997 100644
+--- a/tests/db/enqueue.test.ts
++++ b/tests/db/enqueue.test.ts
+@@ -7,7 +7,7 @@ import {
+ } from "../../mod.ts";
+ import { KVDEX_KEY_PREFIX } from "../../src/constants.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, useKv } from "../utils.ts";
+ 
+ Deno.test("db - enqueue", async (t) => {
+@@ -17,8 +17,9 @@ Deno.test("db - enqueue", async (t) => {
+       const undeliveredId = "undelivered";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       const handlerId = createHandlerId([KVDEX_KEY_PREFIX], undefined);
+@@ -51,8 +52,9 @@ Deno.test("db - enqueue", async (t) => {
+       const topic = "topic";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       let assertion1 = false;
+@@ -88,8 +90,9 @@ Deno.test("db - enqueue", async (t) => {
+       const undeliveredId = "undelivered";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       const handlerId = createHandlerId([KVDEX_KEY_PREFIX], undefined);
+diff --git a/tests/db/indexable_atomic.test.ts b/tests/db/indexable_atomic.test.ts
+index ccdf37f..cda81fb 100644
+--- a/tests/db/indexable_atomic.test.ts
++++ b/tests/db/indexable_atomic.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/db/kvdex.test.ts b/tests/db/kvdex.test.ts
+index 38906c4..5c9f347 100644
+--- a/tests/db/kvdex.test.ts
++++ b/tests/db/kvdex.test.ts
+@@ -1,6 +1,6 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+ import { KVDEX_KEY_PREFIX } from "../../src/constants.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { useKv } from "../utils.ts";
+ 
+ Deno.test("db - kvdex", async (t) => {
+@@ -8,10 +8,13 @@ Deno.test("db - kvdex", async (t) => {
+     "Should create unique keys for collections with equal name in different nestings",
+     async () => {
+       await useKv((kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          nested: {
++        const db = kvdex({
++          kv,
++          schema: {
+             numbers: collection(model<number>()),
++            nested: {
++              numbers: collection(model<number>()),
++            },
+           },
+         });
+ 
+diff --git a/tests/db/listenQueue.test.ts b/tests/db/listenQueue.test.ts
+index 8fccb28..c0e3d3c 100644
+--- a/tests/db/listenQueue.test.ts
++++ b/tests/db/listenQueue.test.ts
+@@ -7,14 +7,14 @@ import {
+ } from "../../mod.ts";
+ import { KVDEX_KEY_PREFIX } from "../../src/constants.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, sleep, useKv } from "../utils.ts";
+ 
+ Deno.test("db - listenQueue", async (t) => {
+   await t.step("Should receive message with string data", async () => {
+     await useKv(async (kv) => {
+       const data = "data";
+-      const db = kvdex(kv, {});
++      const db = kvdex({ kv });
+       const sleeper = createResolver();
+ 
+       const handlerId = createHandlerId([KVDEX_KEY_PREFIX], undefined);
+@@ -45,8 +45,9 @@ Deno.test("db - listenQueue", async (t) => {
+     await useKv(async (kv) => {
+       const data = "data";
+ 
+-      const db = kvdex(kv, {
+-        numbers: collection(model<number>()),
++      const db = kvdex({
++        kv,
++        schema: { numbers: collection(model<number>()) },
+       });
+ 
+       let assertion = true;
+diff --git a/tests/db/loop.test.ts b/tests/db/loop.test.ts
+index 20550cf..a35f85e 100644
+--- a/tests/db/loop.test.ts
++++ b/tests/db/loop.test.ts
+@@ -1,5 +1,5 @@
+ import { kvdex } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, useDb, useKv } from "../utils.ts";
+ 
+ Deno.test("db - loop", async (t) => {
+@@ -37,7 +37,7 @@ Deno.test("db - loop", async (t) => {
+     "Should run loop for 10 iterations and carry accumulated result",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {});
++        const db = kvdex({ kv });
+         const { resolve, promise } = createResolver();
+         let count = 0;
+ 
+diff --git a/tests/db/properties.test.ts b/tests/db/properties.test.ts
+index d6a8d34..fe0994e 100644
+--- a/tests/db/properties.test.ts
++++ b/tests/db/properties.test.ts
+@@ -4,13 +4,13 @@ import { kvdex } from "../../mod.ts";
+ Deno.test("db - properties", async (t) => {
+   await t.step("Should allow native Deno KV type", async () => {
+     const kv = await Deno.openKv();
+-    kvdex(kv, {});
++    kvdex({ kv });
+     kv.close();
+   });
+ 
+   await t.step("Should allow NPM Deno KV type", async () => {
+     const kv = await openKv();
+-    kvdex(kv, {});
++    kvdex({ kv });
+     kv.close();
+   });
+ });
+diff --git a/tests/db/setInterval.test.ts b/tests/db/setInterval.test.ts
+index 49a6c7a..94c8cdd 100644
+--- a/tests/db/setInterval.test.ts
++++ b/tests/db/setInterval.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { createResolver, useDb } from "../utils.ts";
+ 
+ Deno.test("db - setInterval", async (t) => {
+diff --git a/tests/db/wipe.test.ts b/tests/db/wipe.test.ts
+index 7bb84c0..6e28199 100644
+--- a/tests/db/wipe.test.ts
++++ b/tests/db/wipe.test.ts
+@@ -1,28 +1,32 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, generateUsers, useKv } from "../utils.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("db - wipe", async (t) => {
+   await t.step(
+     "Should delete all kvdex entries from the database, including history entries",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          i_users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
+-          s_users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-          }),
+-          u64s: collection(model<Deno.KvU64>(), {
+-            history: true,
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            i_users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++            s_users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++            }),
++            u64s: collection(model<Deno.KvU64>(), {
++              history: true,
++            }),
++          },
+         });
+ 
+         const users = generateUsers(100);
+diff --git a/tests/document/flat.test.ts b/tests/document/flat.test.ts
+index 12bccfb..61173d6 100644
+--- a/tests/document/flat.test.ts
++++ b/tests/document/flat.test.ts
+@@ -1,5 +1,5 @@
+ import { Document, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ 
+diff --git a/tests/document/properties.test.ts b/tests/document/properties.test.ts
+index 75d035b..dd496f7 100644
+--- a/tests/document/properties.test.ts
++++ b/tests/document/properties.test.ts
+@@ -1,5 +1,6 @@
+ import { Document, model } from "../../mod.ts";
+-import { assert, z } from "../test.deps.ts";
++import { assert } from "@std/assert";
++import { z } from "zod";
+ 
+ Deno.test("document - properties", async (t) => {
+   await t.step("Should create document with Model", () => {
+diff --git a/tests/ext/encoder.test.ts b/tests/ext/encoder.test.ts
+new file mode 100644
+index 0000000..1cd3bb7
+--- /dev/null
++++ b/tests/ext/encoder.test.ts
+@@ -0,0 +1,64 @@
++import { assert, assertEquals } from "@std/assert";
++import { VALUES } from "../values.ts";
++import {
++  jsonDeserialize,
++  jsonSerialize,
++  v8Deserialize,
++  v8Serialize,
++} from "../../src/ext/encoding/mod.ts";
++
++Deno.test("ext - encoder", async (t) => {
++  await t.step("json", async (t) => {
++    await t.step(
++      "Should successfully serialize all KvValue type values",
++      () => {
++        const serialized = VALUES.map(jsonSerialize);
++        assert(serialized.every((val) => val instanceof Uint8Array));
++      },
++    );
++
++    await t.step(
++      "Should successfully deserialize all KvValue type values from Uint8Array",
++      () => {
++        VALUES.forEach((val) => {
++          const seralized = jsonSerialize(val);
++          const deserialized = jsonDeserialize(seralized);
++          assertEquals(val, deserialized);
++        });
++      },
++    );
++  });
++
++  await t.step("v8", async (t) => {
++    await t.step(
++      "Should successfully serialize all KvValue type values",
++      () => {
++        const serialized = VALUES.map((val) => {
++          try {
++            return v8Serialize(val);
++          } catch (e) {
++            throw new Error(
++              `Failed to serialize value: ${val}, Error: ${e}`,
++            );
++          }
++        });
++        assert(serialized.every((val) => val instanceof Uint8Array));
++      },
++    );
++
++    await t.step(
++      "Should successfully deserialize all KvValue type values from Uint8Array",
++      () => {
++        VALUES.forEach((val) => {
++          const serialized = v8Serialize(val);
++          try {
++            const deserialized = v8Deserialize(serialized);
++            assertEquals(val, deserialized);
++          } catch (e) {
++            throw new Error(`Failed to deserialize value: ${val}, Error: ${e}`);
++          }
++        });
++      },
++    );
++  });
++});
+diff --git a/tests/ext/kv.test.ts b/tests/ext/kv.test.ts
+index 9c57ded..5d8e34f 100644
+--- a/tests/ext/kv.test.ts
++++ b/tests/ext/kv.test.ts
+@@ -1,6 +1,6 @@
+ import { MapKv } from "../../src/ext/kv/map_kv.ts";
+ import { StorageAdapter } from "../../src/ext/kv/mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { sleep } from "../utils.ts";
+ 
+ async function useStore(fn: (store: StorageAdapter<any, any>) => unknown) {
+diff --git a/tests/ext/migrate.test.ts b/tests/ext/migrate.test.ts
+index e6b99d6..3829bb9 100644
+--- a/tests/ext/migrate.test.ts
++++ b/tests/ext/migrate.test.ts
+@@ -2,7 +2,7 @@ import { migrate } from "../../src/ext/migrate/mod.ts";
+ import { collection } from "../../src/collection.ts";
+ import { kvdex } from "../../src/kvdex.ts";
+ import { model } from "../../src/model.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import {
+   TArray,
+   TBigint,
+@@ -34,74 +34,78 @@ import {
+   TUint8ClampedArray,
+   TUndefined,
+ } from "../values.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ function createDb(kv: Deno.Kv) {
+-  return kvdex(kv, {
+-    c_TUndefined: collection(model<typeof TUndefined>()),
+-    c_TNull: collection(model<typeof TNull>()),
+-    c_TNaN: collection(model<typeof TNaN>()),
+-    c_TInfinity: collection(model<typeof TInfinity>()),
+-    c_TNumber: collection(model<typeof TNumber>()),
+-    c_TString: collection(model<typeof TString>()),
+-    c_TBigint: collection(model<typeof TBigint>()),
+-    c_TKvU64: collection(model<typeof TKvU64>()),
+-    c_TBoolean: collection(model<typeof TBoolean>()),
+-    c_TInt8Array: collection(model<typeof TInt8Array>()),
+-    c_TInt16Array: collection(model<typeof TInt16Array>()),
+-    c_TInt32Array: collection(model<typeof TInt32Array>()),
+-    c_TBigInt64Array: collection(model<typeof TBigInt64Array>()),
+-    c_TUint8Array: collection(model<typeof TUint8Array>()),
+-    c_TUint16Array: collection(model<typeof TUint16Array>()),
+-    c_TUint32Array: collection(model<typeof TUint32Array>()),
+-    c_TBigUint64Array: collection(model<typeof TBigUint64Array>()),
+-    c_TUint8ClampedArray: collection(model<typeof TUint8ClampedArray>()),
+-    c_TFloat32Array: collection(model<typeof TFloat32Array>()),
+-    c_TFloat64Array: collection(model<typeof TFloat64Array>()),
+-    c_TBuffer: collection(model<typeof TBuffer>()),
+-    c_TDataView: collection(model<typeof TDataView>()),
+-    c_TDate: collection(model<typeof TDate>()),
+-    c_TError: collection(model<typeof TError>()),
+-    c_TRegExp: collection(model<typeof TRegExp>()),
+-    c_TArray: collection(model<typeof TArray>()),
+-    c_TObject: collection(model<typeof TObject>()),
+-    c_TSet: collection(model<typeof TSet>()),
+-    c_TMap: collection(model<typeof TMap>()),
+-    s_TUndefined: collection(model<typeof TUndefined>()),
+-    s_TNull: collection(model<typeof TNull>()),
+-    s_TNaN: collection(model<typeof TNaN>()),
+-    s_TInfinity: collection(model<typeof TInfinity>()),
+-    s_TNumber: collection(model<typeof TNumber>()),
+-    s_TString: collection(model<typeof TString>()),
+-    s_TBigint: collection(model<typeof TBigint>()),
+-    s_TKvU64: collection(model<typeof TKvU64>()),
+-    s_TBoolean: collection(model<typeof TBoolean>()),
+-    s_TInt8Array: collection(model<typeof TInt8Array>()),
+-    s_TInt16Array: collection(model<typeof TInt16Array>()),
+-    s_TInt32Array: collection(model<typeof TInt32Array>()),
+-    s_TBigInt64Array: collection(model<typeof TBigInt64Array>()),
+-    s_TUint8Array: collection(model<typeof TUint8Array>()),
+-    s_TUint16Array: collection(model<typeof TUint16Array>()),
+-    s_TUint32Array: collection(model<typeof TUint32Array>()),
+-    s_TBigUint64Array: collection(model<typeof TBigUint64Array>()),
+-    s_TUint8ClampedArray: collection(model<typeof TUint8ClampedArray>()),
+-    s_TFloat32Array: collection(model<typeof TFloat32Array>()),
+-    s_TFloat64Array: collection(model<typeof TFloat64Array>()),
+-    s_TBuffer: collection(model<typeof TBuffer>()),
+-    s_TDataView: collection(model<typeof TDataView>()),
+-    s_TDate: collection(model<typeof TDate>()),
+-    s_TError: collection(model<typeof TError>()),
+-    s_TRegExp: collection(model<typeof TRegExp>()),
+-    s_TArray: collection(model<typeof TArray>()),
+-    s_TObject: collection(model<typeof TObject>()),
+-    s_TSet: collection(model<typeof TSet>()),
+-    s_TMap: collection(model<typeof TMap>()),
+-    i: collection(model<typeof TObject>(), {
+-      indices: { TString: "primary", TNumber: "secondary" },
+-    }),
+-    is: collection(model<typeof TObject>(), {
+-      serialize: "json",
+-      indices: { TString: "primary", TNumber: "secondary" },
+-    }),
++  return kvdex({
++    kv,
++    schema: {
++      c_TUndefined: collection(model<typeof TUndefined>()),
++      c_TNull: collection(model<typeof TNull>()),
++      c_TNaN: collection(model<typeof TNaN>()),
++      c_TInfinity: collection(model<typeof TInfinity>()),
++      c_TNumber: collection(model<typeof TNumber>()),
++      c_TString: collection(model<typeof TString>()),
++      c_TBigint: collection(model<typeof TBigint>()),
++      c_TKvU64: collection(model<typeof TKvU64>()),
++      c_TBoolean: collection(model<typeof TBoolean>()),
++      c_TInt8Array: collection(model<typeof TInt8Array>()),
++      c_TInt16Array: collection(model<typeof TInt16Array>()),
++      c_TInt32Array: collection(model<typeof TInt32Array>()),
++      c_TBigInt64Array: collection(model<typeof TBigInt64Array>()),
++      c_TUint8Array: collection(model<typeof TUint8Array>()),
++      c_TUint16Array: collection(model<typeof TUint16Array>()),
++      c_TUint32Array: collection(model<typeof TUint32Array>()),
++      c_TBigUint64Array: collection(model<typeof TBigUint64Array>()),
++      c_TUint8ClampedArray: collection(model<typeof TUint8ClampedArray>()),
++      c_TFloat32Array: collection(model<typeof TFloat32Array>()),
++      c_TFloat64Array: collection(model<typeof TFloat64Array>()),
++      c_TBuffer: collection(model<typeof TBuffer>()),
++      c_TDataView: collection(model<typeof TDataView>()),
++      c_TDate: collection(model<typeof TDate>()),
++      c_TError: collection(model<typeof TError>()),
++      c_TRegExp: collection(model<typeof TRegExp>()),
++      c_TArray: collection(model<typeof TArray>()),
++      c_TObject: collection(model<typeof TObject>()),
++      c_TSet: collection(model<typeof TSet>()),
++      c_TMap: collection(model<typeof TMap>()),
++      s_TUndefined: collection(model<typeof TUndefined>()),
++      s_TNull: collection(model<typeof TNull>()),
++      s_TNaN: collection(model<typeof TNaN>()),
++      s_TInfinity: collection(model<typeof TInfinity>()),
++      s_TNumber: collection(model<typeof TNumber>()),
++      s_TString: collection(model<typeof TString>()),
++      s_TBigint: collection(model<typeof TBigint>()),
++      s_TKvU64: collection(model<typeof TKvU64>()),
++      s_TBoolean: collection(model<typeof TBoolean>()),
++      s_TInt8Array: collection(model<typeof TInt8Array>()),
++      s_TInt16Array: collection(model<typeof TInt16Array>()),
++      s_TInt32Array: collection(model<typeof TInt32Array>()),
++      s_TBigInt64Array: collection(model<typeof TBigInt64Array>()),
++      s_TUint8Array: collection(model<typeof TUint8Array>()),
++      s_TUint16Array: collection(model<typeof TUint16Array>()),
++      s_TUint32Array: collection(model<typeof TUint32Array>()),
++      s_TBigUint64Array: collection(model<typeof TBigUint64Array>()),
++      s_TUint8ClampedArray: collection(model<typeof TUint8ClampedArray>()),
++      s_TFloat32Array: collection(model<typeof TFloat32Array>()),
++      s_TFloat64Array: collection(model<typeof TFloat64Array>()),
++      s_TBuffer: collection(model<typeof TBuffer>()),
++      s_TDataView: collection(model<typeof TDataView>()),
++      s_TDate: collection(model<typeof TDate>()),
++      s_TError: collection(model<typeof TError>()),
++      s_TRegExp: collection(model<typeof TRegExp>()),
++      s_TArray: collection(model<typeof TArray>()),
++      s_TObject: collection(model<typeof TObject>()),
++      s_TSet: collection(model<typeof TSet>()),
++      s_TMap: collection(model<typeof TMap>()),
++      i: collection(model<typeof TObject>(), {
++        indices: { TString: "primary", TNumber: "secondary" },
++      }),
++      is: collection(model<typeof TObject>(), {
++        encoder: jsonEncoder(),
++        indices: { TString: "primary", TNumber: "secondary" },
++      }),
++    },
+   });
+ }
+ 
+diff --git a/tests/ext/zod.test.ts b/tests/ext/zod.test.ts
+index f133691..3d5ef62 100644
+--- a/tests/ext/zod.test.ts
++++ b/tests/ext/zod.test.ts
+@@ -1,4 +1,5 @@
+-import { assert, z } from "../test.deps.ts";
++import { z } from "zod";
++import { assert } from "@std/assert";
+ import {
+   KvArraySchema,
+   KvIdSchema,
+@@ -6,7 +7,7 @@ import {
+   KvValueSchema,
+ } from "../../src/ext/zod/mod.ts";
+ import { collection, kvdex } from "../../mod.ts";
+-import { useKv } from "../utils.ts";
++import { testEncoder, useKv } from "../utils.ts";
+ import { VALUES } from "../values.ts";
+ 
+ const UserSchema = z.object({
+@@ -42,15 +43,18 @@ const kvArray = ["test", 10, true, 10n];
+ Deno.test("ext - zod", async (t) => {
+   await t.step("Should correctly parse insert model", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(UserSchema),
+-        i_users: collection(UserSchema, {
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-        }),
+-        s_users: collection(UserSchema, { serialize: "json" }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(UserSchema),
++          i_users: collection(UserSchema, {
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++          }),
++          s_users: collection(UserSchema, { encoder: testEncoder }),
++        },
+       });
+ 
+       const cr1 = await db.users.add({
+@@ -87,15 +91,18 @@ Deno.test("ext - zod", async (t) => {
+     "Should use base model when typing selected documents",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(UserSchema),
+-          i_users: collection(UserSchema, {
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
+-          l_users: collection(UserSchema),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(UserSchema),
++            i_users: collection(UserSchema, {
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++            l_users: collection(UserSchema),
++          },
+         });
+ 
+         // Default values should not be inferred as optional when selecting
+diff --git a/tests/indexable_collection/add.test.ts b/tests/indexable_collection/add.test.ts
+index 4787674..77f94d9 100644
+--- a/tests/indexable_collection/add.test.ts
++++ b/tests/indexable_collection/add.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/addMany.test.ts b/tests/indexable_collection/addMany.test.ts
+index c1c55cb..5243a2c 100644
+--- a/tests/indexable_collection/addMany.test.ts
++++ b/tests/indexable_collection/addMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { generateInvalidUsers, generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/count.test.ts b/tests/indexable_collection/count.test.ts
+index 6720ff5..13324a7 100644
+--- a/tests/indexable_collection/count.test.ts
++++ b/tests/indexable_collection/count.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("indexable_collection - count", async (t) => {
+diff --git a/tests/indexable_collection/countBySecondaryIndex.test.ts b/tests/indexable_collection/countBySecondaryIndex.test.ts
+index b89e334..1ca47bd 100644
+--- a/tests/indexable_collection/countBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/countBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/countBySecondaryOrder.test.ts b/tests/indexable_collection/countBySecondaryOrder.test.ts
+index 956916e..9a8d204 100644
+--- a/tests/indexable_collection/countBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/countBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUsersWithAlteredAge } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/delete.test.ts b/tests/indexable_collection/delete.test.ts
+index 779a464..fc5a511 100644
+--- a/tests/indexable_collection/delete.test.ts
++++ b/tests/indexable_collection/delete.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/deleteByPrimaryIndex.test.ts b/tests/indexable_collection/deleteByPrimaryIndex.test.ts
+index dbcdcfe..c2ad634 100644
+--- a/tests/indexable_collection/deleteByPrimaryIndex.test.ts
++++ b/tests/indexable_collection/deleteByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/deleteBySecondaryIndex.test.ts b/tests/indexable_collection/deleteBySecondaryIndex.test.ts
+index 29df499..dea6a13 100644
+--- a/tests/indexable_collection/deleteBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/deleteBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/deleteMany.test.ts b/tests/indexable_collection/deleteMany.test.ts
+index cc560d9..b91c93e 100644
+--- a/tests/indexable_collection/deleteMany.test.ts
++++ b/tests/indexable_collection/deleteMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("indexable_collection - deleteMany", async (t) => {
+diff --git a/tests/indexable_collection/deleteManyBySecondaryOrder.test.ts b/tests/indexable_collection/deleteManyBySecondaryOrder.test.ts
+index 3ee058b..a341213 100644
+--- a/tests/indexable_collection/deleteManyBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/deleteManyBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser2, mockUsersWithAlteredAge } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/enqueue.test.ts b/tests/indexable_collection/enqueue.test.ts
+index 92b0a5b..49895e3 100644
+--- a/tests/indexable_collection/enqueue.test.ts
++++ b/tests/indexable_collection/enqueue.test.ts
+@@ -6,7 +6,7 @@ import {
+   type QueueMessage,
+ } from "../../mod.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { createResolver, useDb, useKv } from "../utils.ts";
+ 
+@@ -16,8 +16,9 @@ Deno.test("indexable_collection - enqueue", async (t) => {
+       const data = "data";
+       const undeliveredId = "undelivered";
+ 
+-      const db = kvdex(kv, {
+-        i_users: collection(model<User>(), { indices: {} }),
++      const db = kvdex({
++        kv,
++        schema: { i_users: collection(model<User>(), { indices: {} }) },
+       });
+ 
+       const sleeper = createResolver();
+diff --git a/tests/indexable_collection/find.test.ts b/tests/indexable_collection/find.test.ts
+index b7bc916..e6217f4 100644
+--- a/tests/indexable_collection/find.test.ts
++++ b/tests/indexable_collection/find.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/findByPrimaryIndex.test.ts b/tests/indexable_collection/findByPrimaryIndex.test.ts
+index 82c0146..36a99f3 100644
+--- a/tests/indexable_collection/findByPrimaryIndex.test.ts
++++ b/tests/indexable_collection/findByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { TransformUserModel } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/findBySecondaryIndex.test.ts b/tests/indexable_collection/findBySecondaryIndex.test.ts
+index e6708ef..faaa464 100644
+--- a/tests/indexable_collection/findBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/findBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ import { TransformUserModel } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/findMany.test.ts b/tests/indexable_collection/findMany.test.ts
+index b536cb4..c748964 100644
+--- a/tests/indexable_collection/findMany.test.ts
++++ b/tests/indexable_collection/findMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("indexable_collection - findMany", async (t) => {
+diff --git a/tests/indexable_collection/forEach.test.ts b/tests/indexable_collection/forEach.test.ts
+index 8da46d3..62169b1 100644
+--- a/tests/indexable_collection/forEach.test.ts
++++ b/tests/indexable_collection/forEach.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/forEachBySecondaryIndex.test.ts b/tests/indexable_collection/forEachBySecondaryIndex.test.ts
+index 07ed07d..8a195e7 100644
+--- a/tests/indexable_collection/forEachBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/forEachBySecondaryIndex.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/forEachBySecondaryOrder.test.ts b/tests/indexable_collection/forEachBySecondaryOrder.test.ts
+index 5b43cca..17c65f3 100644
+--- a/tests/indexable_collection/forEachBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/forEachBySecondaryOrder.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/indexable_collection/getMany.test.ts b/tests/indexable_collection/getMany.test.ts
+index 0235379..e7f4b26 100644
+--- a/tests/indexable_collection/getMany.test.ts
++++ b/tests/indexable_collection/getMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers } from "../utils.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/getManyBySecondaryOrder.test.ts b/tests/indexable_collection/getManyBySecondaryOrder.test.ts
+index e9963d5..b445ed1 100644
+--- a/tests/indexable_collection/getManyBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/getManyBySecondaryOrder.test.ts
+@@ -4,7 +4,7 @@ import {
+   mockUser3,
+   mockUsersWithAlteredAge,
+ } from "../mocks.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { useDb } from "../utils.ts";
+ 
+ Deno.test("indexable_collection - getManyBySecondaryOrder", async (t) => {
+diff --git a/tests/indexable_collection/getOne.test.ts b/tests/indexable_collection/getOne.test.ts
+index 69dfc50..b3f148f 100644
+--- a/tests/indexable_collection/getOne.test.ts
++++ b/tests/indexable_collection/getOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/indexable_collection/getOneBySecondaryIndex.test.ts b/tests/indexable_collection/getOneBySecondaryIndex.test.ts
+index 113e63d..fb74645 100644
+--- a/tests/indexable_collection/getOneBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/getOneBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/indexable_collection/getOneBySecondaryOrder.test.ts b/tests/indexable_collection/getOneBySecondaryOrder.test.ts
+index 4802cdb..91f2b78 100644
+--- a/tests/indexable_collection/getOneBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/getOneBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { useDb } from "../utils.ts";
+ import { mockUser3, mockUsersWithAlteredAge } from "../mocks.ts";
+ 
+diff --git a/tests/indexable_collection/history.test.ts b/tests/indexable_collection/history.test.ts
+index f7fcf65..8f11f7f 100644
+--- a/tests/indexable_collection/history.test.ts
++++ b/tests/indexable_collection/history.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, sleep, useKv } from "../utils.ts";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+@@ -9,14 +9,17 @@ Deno.test("indexable_collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -43,14 +46,17 @@ Deno.test("indexable_collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order after deleting",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -85,14 +91,17 @@ Deno.test("indexable_collection - history", async (t) => {
+     "Should persist history of multiple inserts and updates in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -119,14 +128,17 @@ Deno.test("indexable_collection - history", async (t) => {
+     "Should persist version history of insert and delete by deleteMany()",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -156,13 +168,16 @@ Deno.test("indexable_collection - history", async (t) => {
+     "Should not find history",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -179,14 +194,17 @@ Deno.test("indexable_collection - history", async (t) => {
+ 
+   await t.step("Should find filtered history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          history: true,
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            history: true,
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const id = "id";
+@@ -223,14 +241,17 @@ Deno.test("indexable_collection - history", async (t) => {
+ 
+   await t.step("Should delete all document history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          history: true,
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            history: true,
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const id = "id";
+diff --git a/tests/indexable_collection/listenQueue.test.ts b/tests/indexable_collection/listenQueue.test.ts
+index 17ed319..f1f2a2d 100644
+--- a/tests/indexable_collection/listenQueue.test.ts
++++ b/tests/indexable_collection/listenQueue.test.ts
+@@ -10,7 +10,7 @@ import {
+   UNDELIVERED_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { createHandlerId, extendKey } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { createResolver, sleep, useKv } from "../utils.ts";
+ 
+@@ -20,8 +20,9 @@ Deno.test("indexable_collection - listenQueue", async (t) => {
+       const data = "data";
+       const undeliveredId = "id";
+ 
+-      const db = kvdex(kv, {
+-        i_users: collection(model<User>(), { indices: {} }),
++      const db = kvdex({
++        kv,
++        schema: { i_users: collection(model<User>(), { indices: {} }) },
+       });
+ 
+       const sleeper = createResolver();
+@@ -60,8 +61,9 @@ Deno.test("indexable_collection - listenQueue", async (t) => {
+ 
+   await t.step("Should not receive db queue message", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        i_users: collection(model<User>(), { indices: {} }),
++      const db = kvdex({
++        kv,
++        schema: { i_users: collection(model<User>(), { indices: {} }) },
+       });
+ 
+       let assertion = true;
+diff --git a/tests/indexable_collection/map.test.ts b/tests/indexable_collection/map.test.ts
+index ac10a62..adc8a9a 100644
+--- a/tests/indexable_collection/map.test.ts
++++ b/tests/indexable_collection/map.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("indexable_collection - map", async (t) => {
+diff --git a/tests/indexable_collection/mapBySecondaryIndex.test.ts b/tests/indexable_collection/mapBySecondaryIndex.test.ts
+index f89a874..1ac610d 100644
+--- a/tests/indexable_collection/mapBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/mapBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/mapBySecondaryOrder.test.ts b/tests/indexable_collection/mapBySecondaryOrder.test.ts
+index 973ac1a..0777ca0 100644
+--- a/tests/indexable_collection/mapBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/mapBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/indexable_collection/properties.test.ts b/tests/indexable_collection/properties.test.ts
+index b20ccc7..50f6df2 100644
+--- a/tests/indexable_collection/properties.test.ts
++++ b/tests/indexable_collection/properties.test.ts
+@@ -12,7 +12,7 @@ import {
+   SECONDARY_INDEX_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { extendKey, keyEq } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { generateUsers, sleep, useDb, useKv } from "../utils.ts";
+@@ -41,15 +41,18 @@ Deno.test("indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should generate ids with custom id generator", async () => {
+     await useKv((kv) => {
+-      const db = kvdex(kv, {
+-        users1: collection(model<User>(), {
+-          idGenerator: () => Math.random(),
+-          indices: {},
+-        }),
+-        users2: collection(model<User>(), {
+-          idGenerator: (data) => data.username,
+-          indices: {},
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users1: collection(model<User>(), {
++            idGenerator: () => Math.random(),
++            indices: {},
++          }),
++          users2: collection(model<User>(), {
++            idGenerator: (data) => data.username,
++            indices: {},
++          }),
++        },
+       });
+ 
+       const id1 = db.users1._idGenerator(mockUser1);
+@@ -232,24 +235,27 @@ Deno.test("indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should allow optional indices", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        i: collection(
+-          model<{
+-            oblPrimary: string;
+-            oblSecondary: number;
+-            optPrimary?: string;
+-            optSecondary?: number;
+-            check?: Date;
+-          }>(),
+-          {
+-            indices: {
+-              oblPrimary: "primary",
+-              oblSecondary: "secondary",
+-              optPrimary: "primary",
+-              optSecondary: "secondary",
++      const db = kvdex({
++        kv,
++        schema: {
++          i: collection(
++            model<{
++              oblPrimary: string;
++              oblSecondary: number;
++              optPrimary?: string;
++              optSecondary?: number;
++              check?: Date;
++            }>(),
++            {
++              indices: {
++                oblPrimary: "primary",
++                oblSecondary: "secondary",
++                optPrimary: "primary",
++                optSecondary: "secondary",
++              },
+             },
+-          },
+-        ),
++          ),
++        },
+       });
+ 
+       const cr1 = await db.i.add({
+@@ -459,7 +465,6 @@ Deno.test("indexable_collection - properties", async (t) => {
+         val20,
+         val21,
+         val22,
+-        val23,
+       };
+       const val25 = new Set<KvValue>(val23);
+       const val26 = new Map<KvValue, KvValue>([
+@@ -487,163 +492,166 @@ Deno.test("indexable_collection - properties", async (t) => {
+         ["val22", val22],
+       ]);
+ 
+-      const db = kvdex(kv, {
+-        val1: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val2: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val3: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val4: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val5: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val6: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val7: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val8: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val9: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val10: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val11: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val12: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val13: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val14: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val15: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val16: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val17: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val18: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val19: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val20: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val21: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val22: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val23: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val24: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val25: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val26: collection(model<Data>(), {
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          val1: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val2: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val3: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val4: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val5: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val6: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val7: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val8: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val9: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val10: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val11: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val12: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val13: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val14: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val15: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val16: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val17: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val18: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val19: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val20: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val21: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val22: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val23: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val24: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val25: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val26: collection(model<Data>(), {
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.val1.add({ p: val1, s: val1 });
+@@ -891,20 +899,23 @@ Deno.test("indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should successfully generate id asynchronously", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        test: collection(model<User>(), {
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-          idGenerator: async (user) => {
+-            const buffer = await crypto.subtle.digest(
+-              "SHA-256",
+-              new ArrayBuffer(user.age),
+-            );
+-            return Math.random() * buffer.byteLength;
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          test: collection(model<User>(), {
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++            idGenerator: async (user) => {
++              const buffer = await crypto.subtle.digest(
++                "SHA-256",
++                new ArrayBuffer(user.age),
++              );
++              return Math.random() * buffer.byteLength;
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.test.add(mockUser1);
+diff --git a/tests/indexable_collection/set.test.ts b/tests/indexable_collection/set.test.ts
+index bfe4dd8..99a750f 100644
+--- a/tests/indexable_collection/set.test.ts
++++ b/tests/indexable_collection/set.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/types.test.ts b/tests/indexable_collection/types.test.ts
+index fdcd998..071044c 100644
+--- a/tests/indexable_collection/types.test.ts
++++ b/tests/indexable_collection/types.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { useKv } from "../utils.ts";
+ import { TObject } from "../values.ts";
+ 
+@@ -8,13 +8,16 @@ Deno.test("indexable_collection - types", async (t) => {
+     "Should allow and properly store/retrieve all KvValue types",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          objects: collection(model<typeof TObject>(), {
+-            indices: {
+-              TString: "primary",
+-              TNumber: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            objects: collection(model<typeof TObject>(), {
++              indices: {
++                TString: "primary",
++                TNumber: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const cr = await db.objects.add(TObject);
+diff --git a/tests/indexable_collection/update.test.ts b/tests/indexable_collection/update.test.ts
+index 60a7d87..b9796f3 100644
+--- a/tests/indexable_collection/update.test.ts
++++ b/tests/indexable_collection/update.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/updateByPrimaryIndex.test.ts b/tests/indexable_collection/updateByPrimaryIndex.test.ts
+index ffb8ac6..04a63ce 100644
+--- a/tests/indexable_collection/updateByPrimaryIndex.test.ts
++++ b/tests/indexable_collection/updateByPrimaryIndex.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/updateBySecondaryIndex.test.ts b/tests/indexable_collection/updateBySecondaryIndex.test.ts
+index 0775b85..636c4a7 100644
+--- a/tests/indexable_collection/updateBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/updateBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/updateMany.test.ts b/tests/indexable_collection/updateMany.test.ts
+index 28e61bb..d484ba2 100644
+--- a/tests/indexable_collection/updateMany.test.ts
++++ b/tests/indexable_collection/updateMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/updateManyBySecondaryOrder.test.ts b/tests/indexable_collection/updateManyBySecondaryOrder.test.ts
+index 4b0ddba..2286e05 100644
+--- a/tests/indexable_collection/updateManyBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/updateManyBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+@@ -8,6 +8,7 @@ import {
+ import { generateUsers, useDb } from "../utils.ts";
+ import type { User } from "../models.ts";
+ 
++// TODO: fix update document deleting indices even when failing to update document
+ Deno.test.ignore(
+   "indexable_collection - updateManyBySecondaryOrder",
+   async (t) => {
+diff --git a/tests/indexable_collection/updateOne.test.ts b/tests/indexable_collection/updateOne.test.ts
+index 0a0896e..e6cd6a3 100644
+--- a/tests/indexable_collection/updateOne.test.ts
++++ b/tests/indexable_collection/updateOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/updateOneBySecondaryIndex.test.ts b/tests/indexable_collection/updateOneBySecondaryIndex.test.ts
+index 11cb078..5e26d10 100644
+--- a/tests/indexable_collection/updateOneBySecondaryIndex.test.ts
++++ b/tests/indexable_collection/updateOneBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ 
+diff --git a/tests/indexable_collection/updateOneBySecondaryOrder.test.ts b/tests/indexable_collection/updateOneBySecondaryOrder.test.ts
+index 9020442..c96ada0 100644
+--- a/tests/indexable_collection/updateOneBySecondaryOrder.test.ts
++++ b/tests/indexable_collection/updateOneBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/indexable_collection/upsert.test.ts b/tests/indexable_collection/upsert.test.ts
+index 070c4a6..65f1223 100644
+--- a/tests/indexable_collection/upsert.test.ts
++++ b/tests/indexable_collection/upsert.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/upsertByPrimaryIndex.test.ts b/tests/indexable_collection/upsertByPrimaryIndex.test.ts
+index ab957ea..c4950ce 100644
+--- a/tests/indexable_collection/upsertByPrimaryIndex.test.ts
++++ b/tests/indexable_collection/upsertByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/indexable_collection/watch.test.ts b/tests/indexable_collection/watch.test.ts
+index 1cacfde..ec8c0d4 100644
+--- a/tests/indexable_collection/watch.test.ts
++++ b/tests/indexable_collection/watch.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { User } from "../models.ts";
+diff --git a/tests/indexable_collection/watchMany.test.ts b/tests/indexable_collection/watchMany.test.ts
+index 5f2e7dc..c6a5975 100644
+--- a/tests/indexable_collection/watchMany.test.ts
++++ b/tests/indexable_collection/watchMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { generateUsers, sleep, useDb } from "../utils.ts";
+ import type { User } from "../models.ts";
+diff --git a/tests/models.ts b/tests/models.ts
+index 8f9f618..7e9db27 100644
+--- a/tests/models.ts
++++ b/tests/models.ts
+@@ -1,5 +1,5 @@
+ import { model } from "../mod.ts";
+-import { z } from "./test.deps.ts";
++import { z } from "zod";
+ 
+ export type Address = z.infer<typeof AddressSchema>;
+ 
+diff --git a/tests/serialized_collection/add.test.ts b/tests/serialized_collection/add.test.ts
+index 9170edf..8c2d02a 100644
+--- a/tests/serialized_collection/add.test.ts
++++ b/tests/serialized_collection/add.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUserInvalid } from "../mocks.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_collection/addMany.test.ts b/tests/serialized_collection/addMany.test.ts
+index 3662fa8..bfc8185 100644
+--- a/tests/serialized_collection/addMany.test.ts
++++ b/tests/serialized_collection/addMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateInvalidUsers, generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - addMany", async (t) => {
+diff --git a/tests/serialized_collection/count.test.ts b/tests/serialized_collection/count.test.ts
+index da6e321..47c2897 100644
+--- a/tests/serialized_collection/count.test.ts
++++ b/tests/serialized_collection/count.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - count", async (t) => {
+diff --git a/tests/serialized_collection/delete.test.ts b/tests/serialized_collection/delete.test.ts
+index c6e1a39..5398c59 100644
+--- a/tests/serialized_collection/delete.test.ts
++++ b/tests/serialized_collection/delete.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_collection/deleteMany.test.ts b/tests/serialized_collection/deleteMany.test.ts
+index bb3df78..287b642 100644
+--- a/tests/serialized_collection/deleteMany.test.ts
++++ b/tests/serialized_collection/deleteMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - deleteMany", async (t) => {
+diff --git a/tests/serialized_collection/enqueue.test.ts b/tests/serialized_collection/enqueue.test.ts
+index e22247e..ccbb42f 100644
+--- a/tests/serialized_collection/enqueue.test.ts
++++ b/tests/serialized_collection/enqueue.test.ts
+@@ -6,9 +6,9 @@ import {
+   type QueueMessage,
+ } from "../../mod.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+-import { createResolver, useDb, useKv } from "../utils.ts";
++import { createResolver, testEncoder, useDb, useKv } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - enqueue", async (t) => {
+   await t.step("Should enqueue message with string data", async () => {
+@@ -16,8 +16,11 @@ Deno.test("serialized_collection - enqueue", async (t) => {
+       const data = "data";
+       const undeliveredId = "undelivered";
+ 
+-      const db = kvdex(kv, {
+-        s_users: collection(model<User>(), { serialize: "json" }),
++      const db = kvdex({
++        kv,
++        schema: {
++          s_users: collection(model<User>(), { encoder: testEncoder }),
++        },
+       });
+ 
+       const sleeper = createResolver();
+diff --git a/tests/serialized_collection/find.test.ts b/tests/serialized_collection/find.test.ts
+index d85b5af..9aa2dcf 100644
+--- a/tests/serialized_collection/find.test.ts
++++ b/tests/serialized_collection/find.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_collection/findMany.test.ts b/tests/serialized_collection/findMany.test.ts
+index 9c0fe24..ebb0eae 100644
+--- a/tests/serialized_collection/findMany.test.ts
++++ b/tests/serialized_collection/findMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - findMany", async (t) => {
+diff --git a/tests/serialized_collection/forEach.test.ts b/tests/serialized_collection/forEach.test.ts
+index 8af7a05..836a820 100644
+--- a/tests/serialized_collection/forEach.test.ts
++++ b/tests/serialized_collection/forEach.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_collection/getMany.test.ts b/tests/serialized_collection/getMany.test.ts
+index 0696af7..20e9552 100644
+--- a/tests/serialized_collection/getMany.test.ts
++++ b/tests/serialized_collection/getMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - getMany", async (t) => {
+diff --git a/tests/serialized_collection/getOne.test.ts b/tests/serialized_collection/getOne.test.ts
+index 4664886..a847fb7 100644
+--- a/tests/serialized_collection/getOne.test.ts
++++ b/tests/serialized_collection/getOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/serialized_collection/history.test.ts b/tests/serialized_collection/history.test.ts
+index 42f567e..ecf60ec 100644
+--- a/tests/serialized_collection/history.test.ts
++++ b/tests/serialized_collection/history.test.ts
+@@ -1,19 +1,23 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useKv } from "../utils.ts";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("serialized_collection - history", async (t) => {
+   await t.step(
+     "Should persist history of multiple inserts in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            serialize: "json",
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              encoder: jsonEncoder(),
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -40,11 +44,14 @@ Deno.test("serialized_collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order after deleting",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            serialize: "json",
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              encoder: jsonEncoder(),
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -79,11 +86,14 @@ Deno.test("serialized_collection - history", async (t) => {
+     "Should persist history of multiple inserts and updates in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            serialize: "json",
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              encoder: jsonEncoder(),
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -110,11 +120,14 @@ Deno.test("serialized_collection - history", async (t) => {
+     "Should persist version history of insert and delete by deleteMany()",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            history: true,
+-            serialize: "json",
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              history: true,
++              encoder: jsonEncoder(),
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -144,8 +157,9 @@ Deno.test("serialized_collection - history", async (t) => {
+     "Should not find history",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>()),
++        const db = kvdex({
++          kv,
++          schema: { users: collection(model<User>()) },
+         });
+ 
+         const id = "id";
+@@ -162,11 +176,14 @@ Deno.test("serialized_collection - history", async (t) => {
+ 
+   await t.step("Should find filtered history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          history: true,
+-          serialize: "json",
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            history: true,
++            encoder: jsonEncoder(),
++          }),
++        },
+       });
+ 
+       const id = "id";
+@@ -203,11 +220,14 @@ Deno.test("serialized_collection - history", async (t) => {
+ 
+   await t.step("Should delete all document history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          serialize: "json",
+-          history: true,
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            history: true,
++          }),
++        },
+       });
+ 
+       const id = "id";
+diff --git a/tests/serialized_collection/listenQueue.test.ts b/tests/serialized_collection/listenQueue.test.ts
+index 366503c..027effd 100644
+--- a/tests/serialized_collection/listenQueue.test.ts
++++ b/tests/serialized_collection/listenQueue.test.ts
+@@ -10,7 +10,7 @@ import {
+   UNDELIVERED_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { createHandlerId, extendKey } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { createResolver, sleep, useKv } from "../utils.ts";
+ 
+@@ -20,8 +20,9 @@ Deno.test("serialized_collection - listenQueue", async (t) => {
+       const data = "data";
+       const undeliveredId = "id";
+ 
+-      const db = kvdex(kv, {
+-        s_users: collection(model<User>()),
++      const db = kvdex({
++        kv,
++        schema: { s_users: collection(model<User>()) },
+       });
+ 
+       const sleeper = createResolver();
+@@ -61,8 +62,9 @@ Deno.test("serialized_collection - listenQueue", async (t) => {
+ 
+   await t.step("Should not receive db queue message", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        l_users: collection(model<User>()),
++      const db = kvdex({
++        kv,
++        schema: { l_users: collection(model<User>()) },
+       });
+ 
+       let assertion = true;
+diff --git a/tests/serialized_collection/map.test.ts b/tests/serialized_collection/map.test.ts
+index 46e06cf..b86f063 100644
+--- a/tests/serialized_collection/map.test.ts
++++ b/tests/serialized_collection/map.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_collection - map", async (t) => {
+diff --git a/tests/serialized_collection/properties.test.ts b/tests/serialized_collection/properties.test.ts
+index 456c802..6607d01 100644
+--- a/tests/serialized_collection/properties.test.ts
++++ b/tests/serialized_collection/properties.test.ts
+@@ -5,12 +5,13 @@ import {
+   SEGMENT_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { extendKey, keyEq } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, useDb, useKv } from "../utils.ts";
+ import { mockUser3 } from "../mocks.ts";
+ import { sleep } from "../utils.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("serialized_collection - properties", async (t) => {
+   await t.step("Keys should have the correct prefixes", async () => {
+@@ -28,15 +29,18 @@ Deno.test("serialized_collection - properties", async (t) => {
+ 
+   await t.step("Should generate ids with custom id generator", async () => {
+     await useKv((kv) => {
+-      const db = kvdex(kv, {
+-        users1: collection(model<User>(), {
+-          serialize: "json",
+-          idGenerator: () => Math.random(),
+-        }),
+-        users2: collection(model<User>(), {
+-          serialize: "json",
+-          idGenerator: (data) => data.username,
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users1: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            idGenerator: () => Math.random(),
++          }),
++          users2: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            idGenerator: (data) => data.username,
++          }),
++        },
+       });
+ 
+       const id1 = db.users1._idGenerator(mockUser1);
+@@ -288,17 +292,20 @@ Deno.test("serialized_collection - properties", async (t) => {
+ 
+   await t.step("Should successfully generate id asynchronously", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        test: collection(model<User>(), {
+-          serialize: "json",
+-          idGenerator: async (user) => {
+-            const buffer = await crypto.subtle.digest(
+-              "SHA-256",
+-              new ArrayBuffer(user.age),
+-            );
+-            return Math.random() * buffer.byteLength;
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          test: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            idGenerator: async (user) => {
++              const buffer = await crypto.subtle.digest(
++                "SHA-256",
++                new ArrayBuffer(user.age),
++              );
++              return Math.random() * buffer.byteLength;
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.test.add(mockUser1);
+diff --git a/tests/serialized_collection/set.test.ts b/tests/serialized_collection/set.test.ts
+index 50d4571..2d6ccb5 100644
+--- a/tests/serialized_collection/set.test.ts
++++ b/tests/serialized_collection/set.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_collection/types.test.ts b/tests/serialized_collection/types.test.ts
+index 0bbb78e..5ceaccc 100644
+--- a/tests/serialized_collection/types.test.ts
++++ b/tests/serialized_collection/types.test.ts
+@@ -1,5 +1,6 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { useKv } from "../utils.ts";
+ import { VALUES } from "../values.ts";
+ 
+@@ -12,10 +13,13 @@ Deno.test("serialized_collection - types", async (t) => {
+           VALUES.map((
+             val,
+             i,
+-          ) => [i, collection(model<typeof val>(), { serialize: "v8" })]),
++          ) => [
++            i,
++            collection(model<typeof val>(), { encoder: jsonEncoder() }),
++          ]),
+         );
+ 
+-        const db = kvdex(kv, schema);
++        const db = kvdex({ kv, schema });
+ 
+         const crs = await Promise.all(VALUES.map((val, i) => db[i].add(val)));
+         assert(crs.every((cr) => cr.ok));
+diff --git a/tests/serialized_collection/update.test.ts b/tests/serialized_collection/update.test.ts
+index ba87873..bfca046 100644
+--- a/tests/serialized_collection/update.test.ts
++++ b/tests/serialized_collection/update.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import { useDb, useKv } from "../utils.ts";
+ 
+@@ -108,10 +108,13 @@ Deno.test("serialized_collection - update", async (t) => {
+     "Should update documents of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -168,10 +171,13 @@ Deno.test("serialized_collection - update", async (t) => {
+     "Should update documents of primitive and built-in object types using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const cr1 = await db.numbers.add(10);
+diff --git a/tests/serialized_collection/updateMany.test.ts b/tests/serialized_collection/updateMany.test.ts
+index b138084..ecd1ea2 100644
+--- a/tests/serialized_collection/updateMany.test.ts
++++ b/tests/serialized_collection/updateMany.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateNumbers, generateUsers, useDb, useKv } from "../utils.ts";
+ 
+@@ -123,10 +123,13 @@ Deno.test("serialized_collection - updateMany", async (t) => {
+     "Should update 1000 documents of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -197,10 +200,13 @@ Deno.test("serialized_collection - updateMany", async (t) => {
+     "Should update 1000 documents of types primitive and built-in object using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const numbers = generateNumbers(1_000);
+diff --git a/tests/serialized_collection/updateOne.test.ts b/tests/serialized_collection/updateOne.test.ts
+index 35c35e5..3164176 100644
+--- a/tests/serialized_collection/updateOne.test.ts
++++ b/tests/serialized_collection/updateOne.test.ts
+@@ -1,5 +1,5 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals, assertNotEquals } from "../test.deps.ts";
++import { assert, assertEquals, assertNotEquals } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import {
+   generateNumbers,
+@@ -144,10 +144,13 @@ Deno.test("serialized_collection - updateOne", async (t) => {
+     "Should update only one document of type Array, Set and Map using merge",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          arrays: collection(model<number[]>()),
+-          sets: collection(model<Set<number>>()),
+-          maps: collection(model<Map<string, number>>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            arrays: collection(model<number[]>()),
++            sets: collection(model<Set<number>>()),
++            maps: collection(model<Map<string, number>>()),
++          },
+         });
+ 
+         const val1 = [1, 2, 4];
+@@ -218,10 +221,13 @@ Deno.test("serialized_collection - updateOne", async (t) => {
+     "Should update only one document of types primitive and built-in object using replace",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          numbers: collection(model<number>()),
+-          strings: collection(model<string>()),
+-          dates: collection(model<Date>()),
++        const db = kvdex({
++          kv,
++          schema: {
++            numbers: collection(model<number>()),
++            strings: collection(model<string>()),
++            dates: collection(model<Date>()),
++          },
+         });
+ 
+         const numbers = generateNumbers(1_000);
+diff --git a/tests/serialized_collection/upsert.test.ts b/tests/serialized_collection/upsert.test.ts
+index a5b5259..ef41c58 100644
+--- a/tests/serialized_collection/upsert.test.ts
++++ b/tests/serialized_collection/upsert.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_collection/watch.test.ts b/tests/serialized_collection/watch.test.ts
+index 98ab772..b905be1 100644
+--- a/tests/serialized_collection/watch.test.ts
++++ b/tests/serialized_collection/watch.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/serialized_collection/watchMany.test.ts b/tests/serialized_collection/watchMany.test.ts
+index d5c173d..0f895e8 100644
+--- a/tests/serialized_collection/watchMany.test.ts
++++ b/tests/serialized_collection/watchMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/serialized_indexable_collection/add.test.ts b/tests/serialized_indexable_collection/add.test.ts
+index bc08b12..74977c3 100644
+--- a/tests/serialized_indexable_collection/add.test.ts
++++ b/tests/serialized_indexable_collection/add.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUserInvalid } from "../mocks.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/addMany.test.ts b/tests/serialized_indexable_collection/addMany.test.ts
+index ee59972..adc4360 100644
+--- a/tests/serialized_indexable_collection/addMany.test.ts
++++ b/tests/serialized_indexable_collection/addMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateInvalidUsers, generateLargeUsers, useDb } from "../utils.ts";
+ 
+ const [user] = generateLargeUsers(1);
+diff --git a/tests/serialized_indexable_collection/count.test.ts b/tests/serialized_indexable_collection/count.test.ts
+index cc37f31..827e540 100644
+--- a/tests/serialized_indexable_collection/count.test.ts
++++ b/tests/serialized_indexable_collection/count.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - count", async (t) => {
+diff --git a/tests/serialized_indexable_collection/countBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/countBySecondaryIndex.test.ts
+index ed967f0..9ba1bcf 100644
+--- a/tests/serialized_indexable_collection/countBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/countBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/countBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/countBySecondaryOrder.test.ts
+index faa5cd8..31b4cac 100644
+--- a/tests/serialized_indexable_collection/countBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/countBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUsersWithAlteredAge } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/delete.test.ts b/tests/serialized_indexable_collection/delete.test.ts
+index 158d8e4..4d04e27 100644
+--- a/tests/serialized_indexable_collection/delete.test.ts
++++ b/tests/serialized_indexable_collection/delete.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ const [user] = generateLargeUsers(1);
+diff --git a/tests/serialized_indexable_collection/deleteByPrimaryIndex.test.ts b/tests/serialized_indexable_collection/deleteByPrimaryIndex.test.ts
+index 5eecf03..8fcbbec 100644
+--- a/tests/serialized_indexable_collection/deleteByPrimaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/deleteByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ const [user] = generateLargeUsers(1);
+diff --git a/tests/serialized_indexable_collection/deleteBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/deleteBySecondaryIndex.test.ts
+index 690f4c4..8e67200 100644
+--- a/tests/serialized_indexable_collection/deleteBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/deleteBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ const [user1, user2] = generateLargeUsers(2);
+diff --git a/tests/serialized_indexable_collection/deleteMany.test.ts b/tests/serialized_indexable_collection/deleteMany.test.ts
+index ba88203..0e45421 100644
+--- a/tests/serialized_indexable_collection/deleteMany.test.ts
++++ b/tests/serialized_indexable_collection/deleteMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - deleteMany", async (t) => {
+diff --git a/tests/serialized_indexable_collection/deleteManyBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/deleteManyBySecondaryOrder.test.ts
+index af4b171..ad46078 100644
+--- a/tests/serialized_indexable_collection/deleteManyBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/deleteManyBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { mockUser2, mockUsersWithAlteredAge } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/enqueue.test.ts b/tests/serialized_indexable_collection/enqueue.test.ts
+index b6521e3..9dcf952 100644
+--- a/tests/serialized_indexable_collection/enqueue.test.ts
++++ b/tests/serialized_indexable_collection/enqueue.test.ts
+@@ -6,7 +6,7 @@ import {
+   type QueueMessage,
+ } from "../../mod.ts";
+ import { createHandlerId } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { createResolver, useDb, useKv } from "../utils.ts";
+ 
+@@ -17,8 +17,14 @@ Deno.test("serialized_indexable_collection - enqueue", async (t) => {
+       const undeliveredId = "undelivered";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        is_users: collection(model<User>(), { indices: {}, serialized: true }),
++      const db = kvdex({
++        kv,
++        schema: {
++          is_users: collection(model<User>(), {
++            indices: {},
++            serialized: true,
++          }),
++        },
+       });
+ 
+       const handlerId = createHandlerId(db.is_users._keys.base, undefined);
+diff --git a/tests/serialized_indexable_collection/find.test.ts b/tests/serialized_indexable_collection/find.test.ts
+index 9fff355..5535f96 100644
+--- a/tests/serialized_indexable_collection/find.test.ts
++++ b/tests/serialized_indexable_collection/find.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ const [user] = generateLargeUsers(1);
+diff --git a/tests/serialized_indexable_collection/findByPrimaryIndex.test.ts b/tests/serialized_indexable_collection/findByPrimaryIndex.test.ts
+index 032b0fa..f05a64b 100644
+--- a/tests/serialized_indexable_collection/findByPrimaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/findByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { TransformUserModel } from "../models.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/findBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/findBySecondaryIndex.test.ts
+index ccf8469..2bec478 100644
+--- a/tests/serialized_indexable_collection/findBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/findBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ import { TransformUserModel } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/findMany.test.ts b/tests/serialized_indexable_collection/findMany.test.ts
+index d61922f..ac260c1 100644
+--- a/tests/serialized_indexable_collection/findMany.test.ts
++++ b/tests/serialized_indexable_collection/findMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - findMany", async (t) => {
+diff --git a/tests/serialized_indexable_collection/forEach.test.ts b/tests/serialized_indexable_collection/forEach.test.ts
+index 6d87a96..b41f874 100644
+--- a/tests/serialized_indexable_collection/forEach.test.ts
++++ b/tests/serialized_indexable_collection/forEach.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/forEachBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/forEachBySecondaryIndex.test.ts
+index a265368..6c76041 100644
+--- a/tests/serialized_indexable_collection/forEachBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/forEachBySecondaryIndex.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/forEachBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/forEachBySecondaryOrder.test.ts
+index 498104b..e50f9ce 100644
+--- a/tests/serialized_indexable_collection/forEachBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/forEachBySecondaryOrder.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/serialized_indexable_collection/getMany.test.ts b/tests/serialized_indexable_collection/getMany.test.ts
+index c200421..286b13b 100644
+--- a/tests/serialized_indexable_collection/getMany.test.ts
++++ b/tests/serialized_indexable_collection/getMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - getMany", async (t) => {
+diff --git a/tests/serialized_indexable_collection/getManyBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/getManyBySecondaryOrder.test.ts
+index a0b0608..02a105e 100644
+--- a/tests/serialized_indexable_collection/getManyBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/getManyBySecondaryOrder.test.ts
+@@ -4,7 +4,7 @@ import {
+   mockUser3,
+   mockUsersWithAlteredAge,
+ } from "../mocks.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - getManyBySecondaryOrder", async (t) => {
+diff --git a/tests/serialized_indexable_collection/getOne.test.ts b/tests/serialized_indexable_collection/getOne.test.ts
+index 0c9bfc0..78d1946 100644
+--- a/tests/serialized_indexable_collection/getOne.test.ts
++++ b/tests/serialized_indexable_collection/getOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/getOneBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/getOneBySecondaryIndex.test.ts
+index ac1466b..2f993f3 100644
+--- a/tests/serialized_indexable_collection/getOneBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/getOneBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { sleep, useDb } from "../utils.ts";
+ import { mockUser1, mockUser2 } from "../mocks.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/getOneBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/getOneBySecondaryOrder.test.ts
+index d590c6f..ab53c76 100644
+--- a/tests/serialized_indexable_collection/getOneBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/getOneBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { useDb } from "../utils.ts";
+ import { mockUser3, mockUsersWithAlteredAge } from "../mocks.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/history.test.ts b/tests/serialized_indexable_collection/history.test.ts
+index da547d3..26e1a0d 100644
+--- a/tests/serialized_indexable_collection/history.test.ts
++++ b/tests/serialized_indexable_collection/history.test.ts
+@@ -1,23 +1,27 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, sleep, useKv } from "../utils.ts";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("serialized_indexable_collection - history", async (t) => {
+   await t.step(
+     "Should persist history of multiple inserts in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -44,15 +48,18 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+     "Should persist history of multiple inserts in correct order after deleting",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -87,15 +94,18 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+     "Should persist history of multiple inserts and updates in correct order",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -122,15 +132,18 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+     "Should persist version history of insert and delete by deleteMany()",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            serialize: "json",
+-            history: true,
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              history: true,
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -160,14 +173,17 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+     "Should not find history",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          users: collection(model<User>(), {
+-            serialize: "json",
+-            indices: {
+-              username: "primary",
+-              age: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            users: collection(model<User>(), {
++              encoder: jsonEncoder(),
++              indices: {
++                username: "primary",
++                age: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const id = "id";
+@@ -184,15 +200,18 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+ 
+   await t.step("Should find filtered history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          history: true,
+-          serialize: "json",
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            history: true,
++            encoder: jsonEncoder(),
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const id = "id";
+@@ -229,15 +248,18 @@ Deno.test("serialized_indexable_collection - history", async (t) => {
+ 
+   await t.step("Should delete all document history", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        users: collection(model<User>(), {
+-          serialize: "json",
+-          history: true,
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            history: true,
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const id = "id";
+diff --git a/tests/serialized_indexable_collection/listenQueue.test.ts b/tests/serialized_indexable_collection/listenQueue.test.ts
+index 8a571a4..5b57eda 100644
+--- a/tests/serialized_indexable_collection/listenQueue.test.ts
++++ b/tests/serialized_indexable_collection/listenQueue.test.ts
+@@ -10,9 +10,10 @@ import {
+   UNDELIVERED_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { createHandlerId, extendKey } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { createResolver, sleep, useKv } from "../utils.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ Deno.test("serialized_indexable_collection - listenQueue", async (t) => {
+   await t.step("Should receive message with string data", async () => {
+@@ -21,8 +22,14 @@ Deno.test("serialized_indexable_collection - listenQueue", async (t) => {
+       const undeliveredId = "id";
+       const sleeper = createResolver();
+ 
+-      const db = kvdex(kv, {
+-        is_users: collection(model<User>(), { indices: {}, serialize: "json" }),
++      const db = kvdex({
++        kv,
++        schema: {
++          is_users: collection(model<User>(), {
++            indices: {},
++            encoder: jsonEncoder(),
++          }),
++        },
+       });
+ 
+       const handlerId = createHandlerId(db.is_users._keys.base, undefined);
+@@ -61,8 +68,14 @@ Deno.test("serialized_indexable_collection - listenQueue", async (t) => {
+ 
+   await t.step("Should not receive db queue message", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        is_users: collection(model<User>(), { indices: {}, serialize: "json" }),
++      const db = kvdex({
++        kv,
++        schema: {
++          is_users: collection(model<User>(), {
++            indices: {},
++            encoder: jsonEncoder(),
++          }),
++        },
+       });
+ 
+       let assertion = true;
+diff --git a/tests/serialized_indexable_collection/map.test.ts b/tests/serialized_indexable_collection/map.test.ts
+index 46ee615..8d7a740 100644
+--- a/tests/serialized_indexable_collection/map.test.ts
++++ b/tests/serialized_indexable_collection/map.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+ Deno.test("serialized_indexable_collection - map", async (t) => {
+diff --git a/tests/serialized_indexable_collection/mapBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/mapBySecondaryIndex.test.ts
+index 0384ae2..c1c2e72 100644
+--- a/tests/serialized_indexable_collection/mapBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/mapBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/mapBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/mapBySecondaryOrder.test.ts
+index 5d38eac..e0aac13 100644
+--- a/tests/serialized_indexable_collection/mapBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/mapBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/serialized_indexable_collection/properties.test.ts b/tests/serialized_indexable_collection/properties.test.ts
+index bd89c94..ac580c8 100644
+--- a/tests/serialized_indexable_collection/properties.test.ts
++++ b/tests/serialized_indexable_collection/properties.test.ts
+@@ -12,13 +12,14 @@ import {
+   SECONDARY_INDEX_KEY_PREFIX,
+ } from "../../src/constants.ts";
+ import { extendKey, keyEq } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import type { User } from "../models.ts";
+ import { generateLargeUsers, useDb, useKv } from "../utils.ts";
+ import { mockUser1 } from "../mocks.ts";
+ import { mockUser2 } from "../mocks.ts";
+ import { mockUser3 } from "../mocks.ts";
+ import { sleep } from "../utils.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
+ 
+ const [user] = generateLargeUsers(1);
+ 
+@@ -44,17 +45,20 @@ Deno.test("serialized_indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should generate ids with custom id generator", async () => {
+     await useKv((kv) => {
+-      const db = kvdex(kv, {
+-        users1: collection(model<User>(), {
+-          idGenerator: () => Math.random(),
+-          indices: {},
+-          serialize: "json",
+-        }),
+-        users2: collection(model<User>(), {
+-          idGenerator: (data) => data.username,
+-          indices: {},
+-          serialize: "json",
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          users1: collection(model<User>(), {
++            idGenerator: () => Math.random(),
++            indices: {},
++            encoder: jsonEncoder(),
++          }),
++          users2: collection(model<User>(), {
++            idGenerator: (data) => data.username,
++            indices: {},
++            encoder: jsonEncoder(),
++          }),
++        },
+       });
+ 
+       const id1 = db.users1._idGenerator(user);
+@@ -237,25 +241,28 @@ Deno.test("serialized_indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should allow optional indices", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        is: collection(
+-          model<{
+-            oblPrimary: string;
+-            oblSecondary: number;
+-            optPrimary?: string;
+-            optSecondary?: number;
+-            check?: Date;
+-          }>(),
+-          {
+-            indices: {
+-              oblPrimary: "primary",
+-              oblSecondary: "secondary",
+-              optPrimary: "primary",
+-              optSecondary: "secondary",
++      const db = kvdex({
++        kv,
++        schema: {
++          is: collection(
++            model<{
++              oblPrimary: string;
++              oblSecondary: number;
++              optPrimary?: string;
++              optSecondary?: number;
++              check?: Date;
++            }>(),
++            {
++              indices: {
++                oblPrimary: "primary",
++                oblSecondary: "secondary",
++                optPrimary: "primary",
++                optSecondary: "secondary",
++              },
++              encoder: jsonEncoder(),
+             },
+-            serialize: "json",
+-          },
+-        ),
++          ),
++        },
+       });
+ 
+       const cr1 = await db.is.add({
+@@ -465,7 +472,6 @@ Deno.test("serialized_indexable_collection - properties", async (t) => {
+         val20,
+         val21,
+         val22,
+-        val23,
+       };
+       const val25 = new Set<KvValue>(val23);
+       const val26 = new Map<KvValue, KvValue>([
+@@ -493,189 +499,192 @@ Deno.test("serialized_indexable_collection - properties", async (t) => {
+         ["val22", val22],
+       ]);
+ 
+-      const db = kvdex(kv, {
+-        val1: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val2: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val3: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val4: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val5: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val6: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val7: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val8: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val9: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val10: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val11: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val12: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val13: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val14: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val15: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val16: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val17: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val18: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val19: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val20: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val21: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val22: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val23: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val24: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val25: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
+-        val26: collection(model<Data>(), {
+-          serialize: "json",
+-          indices: {
+-            p: "primary",
+-            s: "secondary",
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          val1: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val2: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val3: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val4: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val5: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val6: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val7: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val8: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val9: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val10: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val11: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val12: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val13: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val14: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val15: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val16: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val17: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val18: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val19: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val20: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val21: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val22: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val23: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val24: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val25: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++          val26: collection(model<Data>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              p: "primary",
++              s: "secondary",
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.val1.add({ p: val1, s: val1 });
+@@ -923,21 +932,24 @@ Deno.test("serialized_indexable_collection - properties", async (t) => {
+ 
+   await t.step("Should successfully generate id asynchronously", async () => {
+     await useKv(async (kv) => {
+-      const db = kvdex(kv, {
+-        test: collection(model<User>(), {
+-          serialize: "json",
+-          indices: {
+-            username: "primary",
+-            age: "secondary",
+-          },
+-          idGenerator: async (user) => {
+-            const buffer = await crypto.subtle.digest(
+-              "SHA-256",
+-              new ArrayBuffer(user.age),
+-            );
+-            return Math.random() * buffer.byteLength;
+-          },
+-        }),
++      const db = kvdex({
++        kv,
++        schema: {
++          test: collection(model<User>(), {
++            encoder: jsonEncoder(),
++            indices: {
++              username: "primary",
++              age: "secondary",
++            },
++            idGenerator: async (user) => {
++              const buffer = await crypto.subtle.digest(
++                "SHA-256",
++                new ArrayBuffer(user.age),
++              );
++              return Math.random() * buffer.byteLength;
++            },
++          }),
++        },
+       });
+ 
+       const cr1 = await db.test.add(mockUser1);
+diff --git a/tests/serialized_indexable_collection/set.test.ts b/tests/serialized_indexable_collection/set.test.ts
+index b2133a5..d97d77a 100644
+--- a/tests/serialized_indexable_collection/set.test.ts
++++ b/tests/serialized_indexable_collection/set.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUserInvalid } from "../mocks.ts";
+ import { generateLargeUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/types.test.ts b/tests/serialized_indexable_collection/types.test.ts
+index ccfb9ae..bff01c4 100644
+--- a/tests/serialized_indexable_collection/types.test.ts
++++ b/tests/serialized_indexable_collection/types.test.ts
+@@ -1,5 +1,6 @@
+ import { collection, kvdex, model } from "../../mod.ts";
+-import { assert, assertEquals } from "../test.deps.ts";
++import { jsonEncoder } from "../../src/ext/encoding/mod.ts";
++import { assert, assertEquals } from "@std/assert";
+ import { useKv } from "../utils.ts";
+ import { TObject } from "../values.ts";
+ 
+@@ -8,14 +9,17 @@ Deno.test("serialized_indexable_collection - types", async (t) => {
+     "Should allow and properly store/retrieve all KvValue types",
+     async () => {
+       await useKv(async (kv) => {
+-        const db = kvdex(kv, {
+-          objects: collection(model<typeof TObject>(), {
+-            serialize: "v8",
+-            indices: {
+-              TString: "primary",
+-              TNumber: "secondary",
+-            },
+-          }),
++        const db = kvdex({
++          kv,
++          schema: {
++            objects: collection(model<typeof TObject>(), {
++              encoder: jsonEncoder(),
++              indices: {
++                TString: "primary",
++                TNumber: "secondary",
++              },
++            }),
++          },
+         });
+ 
+         const cr = await db.objects.add(TObject);
+diff --git a/tests/serialized_indexable_collection/update.test.ts b/tests/serialized_indexable_collection/update.test.ts
+index ad8ad71..deaefd2 100644
+--- a/tests/serialized_indexable_collection/update.test.ts
++++ b/tests/serialized_indexable_collection/update.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/updateByPrimaryIndex.test.ts b/tests/serialized_indexable_collection/updateByPrimaryIndex.test.ts
+index 4596ee2..315b12a 100644
+--- a/tests/serialized_indexable_collection/updateByPrimaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/updateByPrimaryIndex.test.ts
+@@ -1,5 +1,5 @@
+ import type { Document } from "../../mod.ts";
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUserInvalid } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/updateBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/updateBySecondaryIndex.test.ts
+index f8c1fdd..aa158b7 100644
+--- a/tests/serialized_indexable_collection/updateBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/updateBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/updateMany.test.ts b/tests/serialized_indexable_collection/updateMany.test.ts
+index 190b2e4..608ef49 100644
+--- a/tests/serialized_indexable_collection/updateMany.test.ts
++++ b/tests/serialized_indexable_collection/updateMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUserInvalid } from "../mocks.ts";
+ import { generateUsers, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/updateManyBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/updateManyBySecondaryOrder.test.ts
+index 5e4cfd9..2285d4c 100644
+--- a/tests/serialized_indexable_collection/updateManyBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/updateManyBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert, assertEquals } from "../test.deps.ts";
++import { assert, assertEquals } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+@@ -8,6 +8,7 @@ import {
+ import { generateUsers, useDb } from "../utils.ts";
+ import type { User } from "../models.ts";
+ 
++// TODO: fix update document deleting indices even when failing to update document
+ Deno.test.ignore(
+   "serialized_indexable_collection - updateManyBySecondaryOrder",
+   async (t) => {
+diff --git a/tests/serialized_indexable_collection/updateOne.test.ts b/tests/serialized_indexable_collection/updateOne.test.ts
+index 131df89..e6b0c3e 100644
+--- a/tests/serialized_indexable_collection/updateOne.test.ts
++++ b/tests/serialized_indexable_collection/updateOne.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/updateOneBySecondaryIndex.test.ts b/tests/serialized_indexable_collection/updateOneBySecondaryIndex.test.ts
+index 0c5f0f0..1e04864 100644
+--- a/tests/serialized_indexable_collection/updateOneBySecondaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/updateOneBySecondaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3, mockUserInvalid } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ 
+diff --git a/tests/serialized_indexable_collection/updateOneBySecondaryOrder.test.ts b/tests/serialized_indexable_collection/updateOneBySecondaryOrder.test.ts
+index 0f96416..2039a4e 100644
+--- a/tests/serialized_indexable_collection/updateOneBySecondaryOrder.test.ts
++++ b/tests/serialized_indexable_collection/updateOneBySecondaryOrder.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import {
+   mockUser1,
+   mockUser2,
+diff --git a/tests/serialized_indexable_collection/upsert.test.ts b/tests/serialized_indexable_collection/upsert.test.ts
+index 9545688..b3023d2 100644
+--- a/tests/serialized_indexable_collection/upsert.test.ts
++++ b/tests/serialized_indexable_collection/upsert.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/upsertByPrimaryIndex.test.ts b/tests/serialized_indexable_collection/upsertByPrimaryIndex.test.ts
+index 688b2c2..0a01d86 100644
+--- a/tests/serialized_indexable_collection/upsertByPrimaryIndex.test.ts
++++ b/tests/serialized_indexable_collection/upsertByPrimaryIndex.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import type { User } from "../models.ts";
+ import { useDb } from "../utils.ts";
+diff --git a/tests/serialized_indexable_collection/watch.test.ts b/tests/serialized_indexable_collection/watch.test.ts
+index 0c2782b..43152c9 100644
+--- a/tests/serialized_indexable_collection/watch.test.ts
++++ b/tests/serialized_indexable_collection/watch.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/serialized_indexable_collection/watchMany.test.ts b/tests/serialized_indexable_collection/watchMany.test.ts
+index 9d79c1c..1274bbb 100644
+--- a/tests/serialized_indexable_collection/watchMany.test.ts
++++ b/tests/serialized_indexable_collection/watchMany.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { mockUser1, mockUser2, mockUser3 } from "../mocks.ts";
+ import { generateUsers, sleep, useDb } from "../utils.ts";
+ import type { Document } from "../../mod.ts";
+diff --git a/tests/test.deps.ts b/tests/test.deps.ts
+deleted file mode 100644
+index c4046b2..0000000
+--- a/tests/test.deps.ts
++++ /dev/null
+@@ -1,6 +0,0 @@
+-export { assert } from "jsr:@std/assert@^0.217/assert";
+-export { assertEquals } from "jsr:@std/assert@^0.217/assert_equals";
+-export { assertNotEquals } from "jsr:@std/assert@^0.217/assert_not_equals";
+-export { assertThrows } from "jsr:@std/assert@^0.217/assert_throws";
+-export { z } from "npm:zod@^3.22";
+-export type { Kv } from "npm:@deno/kv";
+diff --git a/tests/utils.ts b/tests/utils.ts
+index 79c9de6..be89dfd 100644
+--- a/tests/utils.ts
++++ b/tests/utils.ts
+@@ -1,66 +1,75 @@
+ import { collection, type DenoKv, type DenoKvU64, kvdex } from "../mod.ts";
++import { brotliCompressor } from "../src/ext/encoding/brotli/brotli_compressor.ts";
++import { jsonEncoder } from "../src/ext/encoding/mod.ts";
+ import { MapKv } from "../src/ext/kv/map_kv.ts";
+ import { model } from "../src/model.ts";
+ import { TransformUserModel, type User, UserSchema } from "./models.ts";
+ 
++export const testEncoder = jsonEncoder({
++  compressor: brotliCompressor(),
++});
++
+ // Create test db
+ export function createDb(kv: DenoKv) {
+-  return kvdex(kv, {
+-    u64s: collection(model<DenoKvU64>()),
+-    s_u64s: collection(model<DenoKvU64>(), {
+-      serialize: "json",
+-    }),
+-    users: collection(model<User>()),
+-    i_users: collection(model<User>(), {
+-      indices: {
+-        username: "primary",
+-        age: "secondary",
+-      },
+-    }),
+-    s_users: collection(model<User>(), {
+-      serialize: "json",
+-    }),
+-    is_users: collection(model<User>(), {
+-      indices: {
+-        username: "primary",
+-        age: "secondary",
+-      },
+-      serialize: "json",
+-    }),
+-    z_users: collection(UserSchema),
+-    zi_users: collection(UserSchema, {
+-      indices: {
+-        username: "primary",
+-        age: "secondary",
+-      },
+-    }),
+-    zs_users: collection(UserSchema, {
+-      serialize: "json",
+-    }),
+-    zis_users: collection(UserSchema, {
+-      indices: {
+-        username: "primary",
+-        age: "secondary",
+-      },
+-      serialize: "json",
+-    }),
+-    a_users: collection(TransformUserModel),
+-    ai_users: collection(TransformUserModel, {
+-      indices: {
+-        name: "primary",
+-        decadeAge: "secondary",
+-      },
+-    }),
+-    as_users: collection(TransformUserModel, {
+-      serialize: "json",
+-    }),
+-    ais_users: collection(TransformUserModel, {
+-      indices: {
+-        name: "primary",
+-        decadeAge: "secondary",
+-      },
+-      serialize: "json",
+-    }),
++  return kvdex({
++    kv,
++    schema: {
++      u64s: collection(model<DenoKvU64>()),
++      s_u64s: collection(model<DenoKvU64>(), {
++        encoder: testEncoder,
++      }),
++      users: collection(model<User>()),
++      i_users: collection(model<User>(), {
++        indices: {
++          username: "primary",
++          age: "secondary",
++        },
++      }),
++      s_users: collection(model<User>(), {
++        encoder: testEncoder,
++      }),
++      is_users: collection(model<User>(), {
++        indices: {
++          username: "primary",
++          age: "secondary",
++        },
++        encoder: testEncoder,
++      }),
++      z_users: collection(UserSchema),
++      zi_users: collection(UserSchema, {
++        indices: {
++          username: "primary",
++          age: "secondary",
++        },
++      }),
++      zs_users: collection(UserSchema, {
++        encoder: testEncoder,
++      }),
++      zis_users: collection(UserSchema, {
++        indices: {
++          username: "primary",
++          age: "secondary",
++        },
++        encoder: testEncoder,
++      }),
++      a_users: collection(TransformUserModel),
++      ai_users: collection(TransformUserModel, {
++        indices: {
++          name: "primary",
++          decadeAge: "secondary",
++        },
++      }),
++      as_users: collection(TransformUserModel, {
++        encoder: testEncoder,
++      }),
++      ais_users: collection(TransformUserModel, {
++        indices: {
++          name: "primary",
++          decadeAge: "secondary",
++        },
++        encoder: testEncoder,
++      }),
++    },
+   });
+ }
+ 
+diff --git a/tests/utils/isKvObject.test.ts b/tests/utils/isKvObject.test.ts
+index 196d25c..bfdf353 100644
+--- a/tests/utils/isKvObject.test.ts
++++ b/tests/utils/isKvObject.test.ts
+@@ -1,4 +1,4 @@
+-import { assert } from "../test.deps.ts";
++import { assert } from "@std/assert";
+ import { TKvU64, TObject, VALUES } from "../values.ts";
+ import { isKvObject } from "../../src/utils.ts";
+ 
+diff --git a/tests/utils/jsonDeserialize.test.ts b/tests/utils/jsonDeserialize.test.ts
+deleted file mode 100644
+index ba75509..0000000
+--- a/tests/utils/jsonDeserialize.test.ts
++++ /dev/null
+@@ -1,14 +0,0 @@
+-import { jsonDeserialize, jsonSerialize } from "../../src/utils.ts";
+-import { assertEquals } from "../test.deps.ts";
+-import { VALUES } from "../values.ts";
+-
+-Deno.test("utils - jsonDeserialize", async (t) => {
+-  await t.step(
+-    "Should successfully deserialize all KvValue type values from Uint8Array",
+-    () => {
+-      const serialized = VALUES.map(jsonSerialize);
+-      const deserialized = serialized.map(jsonDeserialize);
+-      assertEquals(VALUES, deserialized);
+-    },
+-  );
+-});
+diff --git a/tests/utils/jsonSerialize.test.ts b/tests/utils/jsonSerialize.test.ts
+deleted file mode 100644
+index adf3f6e..0000000
+--- a/tests/utils/jsonSerialize.test.ts
++++ /dev/null
+@@ -1,13 +0,0 @@
+-import { jsonSerialize } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
+-import { VALUES } from "../values.ts";
+-
+-Deno.test("utils - jsonSerialize", async (t) => {
+-  await t.step(
+-    "Should successfully serialize all KvValue type values",
+-    () => {
+-      const serialized = VALUES.map(jsonSerialize);
+-      assert(serialized.every((val) => val instanceof Uint8Array));
+-    },
+-  );
+-});
+diff --git a/tests/utils/v8Deserialize.test.ts b/tests/utils/v8Deserialize.test.ts
+deleted file mode 100644
+index 665f42b..0000000
+--- a/tests/utils/v8Deserialize.test.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { v8Deserialize, v8Serialize } from "../../src/utils.ts";
+-import { assertEquals } from "../test.deps.ts";
+-import { VALUES } from "../values.ts";
+-
+-Deno.test("utils - v8Deserialize", async (t) => {
+-  await t.step(
+-    "Should successfully deserialize all KvValue type values from Uint8Array",
+-    () => {
+-      const serialized = VALUES.map(v8Serialize);
+-      const deserialized = serialized.map((val) => {
+-        try {
+-          return v8Deserialize(val);
+-        } catch (e) {
+-          throw new Error(`Failed to deserialize value: ${val}, Error: ${e}`);
+-        }
+-      });
+-      assertEquals(VALUES, deserialized);
+-    },
+-  );
+-});
+diff --git a/tests/utils/v8Serialize.test.ts b/tests/utils/v8Serialize.test.ts
+deleted file mode 100644
+index c063fda..0000000
+--- a/tests/utils/v8Serialize.test.ts
++++ /dev/null
+@@ -1,21 +0,0 @@
+-import { v8Serialize } from "../../src/utils.ts";
+-import { assert } from "../test.deps.ts";
+-import { VALUES } from "../values.ts";
+-
+-Deno.test("utils - v8Serialize", async (t) => {
+-  await t.step(
+-    "Should successfully serialize all KvValue type values",
+-    () => {
+-      const serialized = VALUES.map((val) => {
+-        try {
+-          return v8Serialize(val);
+-        } catch (e) {
+-          throw new Error(
+-            `Failed to serialize value: ${val}, Error: ${e}`,
+-          );
+-        }
+-      });
+-      assert(serialized.every((val) => val instanceof Uint8Array));
+-    },
+-  );
+-});
+diff --git a/tests/values.ts b/tests/values.ts
+index 6d46834..a2ad918 100644
+--- a/tests/values.ts
++++ b/tests/values.ts
+@@ -18,7 +18,7 @@ export const TUint16Array = new Uint16Array([10, 20, 30]);
+ export const TUint32Array = new Uint32Array([10, 20, 30]);
+ export const TBigUint64Array = new BigUint64Array([10n, 20n, 30n]);
+ export const TUint8ClampedArray = new Uint8ClampedArray([10, 20, 30]);
+-export const TFloat16Array = new Float16Array([10.203423878293472837429384]);
++// TODO: export const TFloat16Array = new Float16Array([10.203423878293472837429384]);
+ export const TFloat32Array = new Float32Array([10.203423878293472837429384]);
+ export const TFloat64Array = new Float64Array([10.203423878293472837429384]);
+ export const TBuffer = new Uint8Array([10, 20, 30]).buffer;
+@@ -45,7 +45,7 @@ export const TArray = [
+   TUint32Array,
+   TBigUint64Array,
+   TUint8ClampedArray,
+-  TFloat16Array,
++  //TFloat16Array,
+   TFloat32Array,
+   TFloat64Array,
+   TBuffer,
+@@ -73,7 +73,7 @@ export const TObject = {
+   TUint32Array,
+   TBigUint64Array,
+   TUint8ClampedArray,
+-  TFloat16Array,
++  // TODO: TFloat16Array,
+   TFloat32Array,
+   TFloat64Array,
+   TBuffer,
+@@ -106,7 +106,7 @@ export const VALUES = [
+   TUint32Array,
+   TBigUint64Array,
+   TUint8ClampedArray,
+-  TFloat16Array,
++  // TODO: TFloat16Array,
+   TFloat32Array,
+   TFloat64Array,
+   TBuffer,

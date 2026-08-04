@@ -1,0 +1,281 @@
+---
+name: sentinel-task-check
+description: Verdict rules for a Sentinel Ultra (Harbor) task. Use when checking, reviewing, validating, or deciding Valid as-is / Fixable / Not Fixable, covering the four core principles, the fail-to-pass count, name derivability, git hygiene, task.toml limits, and packaging checks.
+---
+
+> **Mirror.** This skill and `.cursor/rules/sentinel-task-check.mdc` hold the same rules. Edit both together — Cursor loads the `.mdc`, Claude Code loads this file.
+
+
+# Sentinel 2.0 — Task Validity Check
+
+Use these rules whenever the user asks to check, review, validate, or give a verdict on a Sentinel task. Every finding must cite a file path and, where possible, a line number.
+
+**Scope of this phase:** the verdict analysis is a static document and logic review with read-only shell and git inspection. Building the image and running the oracle/NOP happen LATER — after the fixes on the Fixable path, and before submitting on the Valid as-is path (CLAUDE.md Step 5.5). Do not run them while forming the verdict.
+
+**Source of truth:** `docs/` is the local export of the Sentinel Ultra Hub. When this file disagrees with `docs/guidelines.md`, the docs win.
+
+---
+
+## 1. Read everything first
+
+Locate the `*_harborized/` task directory and read ALL of:
+
+- `task/instruction.md`
+- `problem_statement.md` — `diff` it against instruction.md, they must be byte-identical. Current spec puts it at `task/environment/problem_statement.md`; older bundles keep it at `task/problem_statement.md`
+- `task/task.toml` — `schema_version` plus `[environment]`, `[agent]`, `[verifier]`, `[metadata]`. Check every limit: cpus 2 or 4, memory_mb 2048–16384, storage_mb 5120–10240, gpus always 0, build_timeout_sec ≤ 1800, agent timeout_sec ≤ 7200, verifier timeout_sec ≤ 1800, and `network_mode` present in all three blocks (`"public"` / `"allowlist"` with `allowed_hosts = ["api.portkey.ai"]` / `"no-network"`). A stripped `network_mode` is a finding — the old "remove it" guidance is dead
+- `task/solution/solve.sh` and its patch — `golden.patch`, or `init_state.patch` in reverse-diff tasks. A bundle shipping `solution.patch` is using a dead draft name and must be renamed to `golden.patch`
+- `task/tests/test.sh`, `task/tests/tests.patch`, `config.json`. **`tests/` accepts only these four names: `config.json`, `grade.py`, `test.sh`, `tests.patch`.** A `tests/files/` directory is rejected by the static checker even though older layout docs list it, so finding one is a finding
+- `task/environment/Dockerfile`
+- Skim `task/environment/repo/` for the areas the instruction touches
+- `runs/*/*/result.json`, plus `verifier/test-stdout.txt` for ALL failing trials and at least one passing trial
+- Fetch the source PR from task.toml (`[metadata] source`, or `source_pr_url` on older tasks) and note its scope and diff
+
+Git-hygiene and packaging checks on the shipped repo (read-only):
+
+- `git -C task/environment/repo log --oneline -n 20` → history must not contain or describe the fix
+- `git -C task/environment/repo rev-list --all --not HEAD` → MUST be empty, any ref past HEAD can leak the fix
+- `git -C task/environment/repo remote -v` → no remotes should exist
+- `git -C task/environment/repo config --local --get-regexp '^filter\.'` → MUST be empty
+- `git -C task/environment/repo status --porcelain` → MUST be empty (clean tree)
+- `git -C task/environment/repo reflog` / `ls .git/logs` → no entries exposing the fix
+- `git -C task/environment/repo rev-parse HEAD` → must match the base commit pinned in task.toml (on mismatch the repo wins)
+- `du -sh task/environment/repo/.git` → must be under 100 MB
+- `git -C task/environment/repo fsck --unreachable --no-progress` → MUST print nothing. Unreachable objects are not covered by any line above: a repo with a clean tree, no reflog and no stray refs can still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p <sha>`. This check is not in the `docs/` checklist; the leakage rule it enforces is (`docs/tasking-guide.md` step 5 — no solution material readable from agent paths, and `.git` is one). See `learning/unreachable-git-blobs.md`
+- `git -C task/environment/repo apply --check ../../tests/tests.patch` → the f2p patch must apply at the base commit, otherwise every trial fails before any evidence is collected
+- Pre-existing test files must still be byte-identical to the base commit — the harness enforces it
+- Stray-artifact sweep: `__pycache__/`, `*.pyc`, `.DS_Store`, `.venv/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.idea/`, `.vscode/`, swap files, `*.orig`, `*.bak`, `node_modules/` — one of these shipping into the container hard-caps the packaging axis at 1
+
+---
+
+## 2. The three verdicts
+
+Exactly one verdict per task.
+
+### Valid as-is
+Instruction, tests, and oracle all align with each other AND with the source PR. No rewrite or edits are required.
+
+### Fixable
+The task has one or more of these issues (all correctable within the task):
+
+1. Instructions are overly prescriptive or expose verifier internals
+2. Instruction reads as templated or AI-generated
+3. Tests miss requirements stated in the instruction
+4. Tests grade behavior that is not in the instruction, or rely on arbitrary (non-derivable) names
+5. Fewer than 10 fail-to-pass tests → add tests to reach at least 10 (ideally 10–20)
+6. Task leaks solution information (PR URL in the instruction, environment spoilers, test-gaming shortcuts)
+7. Oracle does not implement the solution following the instructions
+8. Overall task is too easy → raise difficulty by adding to the PR scope (must remain the original PR plus additions, never a different task)
+9. A specific, listed Dockerfile issue (allowed-fix table in sentinel-task-fixing §4, mirrored from `docs/guidelines.md#environment-limited-fixes`)
+10. A git-hygiene issue in the shipped repo: leaked fix history, a configured remote, a HEAD/base-commit mismatch, reflog entries, an oversized .git
+11. A `task.toml` problem against the published limits: a value out of range, `gpus` not 0, a missing or stripped `network_mode` block, a missing `[environment] os`, an agent timeout too low for what runs/ shows, an inaccurate `category` / `difficulty_explanation` / source URL
+12. A packaging problem: `tests.patch` cut against the wrong base, a modified pre-existing test file, stray dev artifacts, `solution.patch` instead of `golden.patch`, `problem_statement.md` out of sync with `instruction.md`, a `0644` `test.sh` or `solve.sh`
+13. A verifier problem: a grader that awards reward `1.0` while the test command exited nonzero, an empty or ungraded `pass_to_pass` where existing tests cover the patched area, or unreachable solution/test blobs left in `environment/repo/.git`
+
+### Not Fixable
+Either of:
+
+1. PR scope needs to be changed or reduced — the only way to make the task valid is to reduce or replace the PR scope entirely
+2. Environment issues that ECs are not allowed to fix (per the Environment section) — a tangled toolchain/dependency build failure, an oracle timeout that bumping cannot resolve, an agent that genuinely cannot finish within the 7200 s ceiling, a heavy external-network dependency, or genuinely unrecoverable git corruption
+
+**Infra and platform failures are NOT a Not Fixable condition — ever.** A failed eval only feeds the verdict when the task caused it. `DaytonaRateLimitError` / `ApiRateLimitError`, sandbox auth or connection errors, a one-off `NonZeroAgentExitCode`, and a run returning blank feedback or "No evaluation information available" are all platform-side. The tell is inconsistency: the same task passes on one run and errors on another, or only 1 of N trials fails while the rest are clean. Retry rather than reworking, never burn a revision slot resubmitting blindly, and if it persists have the user flag it on Slack with the task/submission UID, the exact error, and whether it is intermittent. Separate this from a reproducible failure that merely looks like infra — `tests.patch did not apply` after an agent edited the tests fails identically every run and IS a task defect with a real fix.
+
+If Not Fixable, list every reason clearly and specifically so it can go into the submission form (Part B).
+
+**Environment list:** items Fixable-9 and Not-Fixable-2 are decided by the allowed/disallowed tables in sentinel-task-fixing §4 and `docs/guidelines.md#environment-limited-fixes`. Check every Dockerfile or environment issue against them. Note that a **build-time network install is NOT an issue** — the Dockerfile may use the network at build time; only run time is restricted (the agent reaches the model gateway only, the verifier is airgapped). When a case genuinely sits on the boundary, flag it and ask the user. Do not guess.
+
+---
+
+## 3. Principle 1 — Solvability
+
+A task is valid only if a competent engineer can solve it from the instruction alone, within the task's time and resource limits, and without guessing arbitrary implementation choices.
+
+Check:
+
+- Can the task be solved from instruction.md alone plus normal exploration of the repo?
+- Does the agent have to guess an arbitrary choice (a name, a format, a location) the instruction never gives and the codebase never implies?
+- **No unsupported claims:** every behavior, API, file, or repo structure the instruction references must actually exist in the pinned repository. If the instruction describes something that is not there, the task is not solvable as written.
+
+---
+
+## 4. Principle 2 — Clarity & No Leakage
+
+The instruction should give an engineer enough to solve the task without telling them how to implement it and without revealing the answer. Two failure modes: over-prescription and leakage. Together they are how most reward-hacking sneaks in.
+
+### Over-prescription signs (flag any of these)
+
+- Says "Where to look:" followed by a list of the relevant files
+- Names the exact hidden test, fixture, mock endpoint, cassette, or harness file used to grade the task
+- Explains how the verifier proves success instead of describing user- or API-visible behavior
+- Identifies exact internal functions, branches, comprehensions, or callbacks to edit when a behavioral description would do
+- Provides root-cause analysis that removes the need to inspect the code
+- Says "the tests reference this name" or "this file validates the fix"
+- Copies exact assertion strings, state paths, or fixture values from tests — unless they are a genuine public/API contract
+
+### Required output formats are NOT leakage
+
+If the task requires a specific output format, schema, or API response shape, the instruction (or a clearly referenced file in the environment) MUST state it. Describing the expected shape is necessary. Leaving it to guesswork is what breaks solvability. Flag missing format documentation as an issue, not the presence of it.
+
+### Leakage checks (flag any of these)
+
+- **PR leakage:** PR URLs, titles, numbers, or commit SHAs in the instruction that let an agent scrape the fix
+- **Environment spoilers:** commit messages, code comments, or docs in the base repo or Docker setup that describe the exact change
+- **Test-modification gaming:** loose test constraints that can be satisfied by editing the test files instead of the implementation
+
+---
+
+## 5. Principle 3 — Verifiability
+
+Tests are the ground truth. They must comprehensively and fairly verify the required behavior and must be impossible to game. An agentic rubric-panel judge scores `test_coverage` and `test_faithfulness` mechanically at eval time and a failing verdict blocks submission, so the static check must hold to at least that bar.
+
+**The judge blocks on instruction quality too.** Observed 2026-08-02: the Quality Check returned `2 must-have quality criteria failed (13/15 criteria pass)`, and both failures were `criterion: Instructions` — navigation hand-holding and leaking the exact strings the tests assert — while the test axes were fine. `docs/tasking-guide.md` still describes 10 axes of which only the two test ones flip the verdict. Do not treat instruction over-prescription or leakage as advisory because the separate prescriptiveness build check says it is non-blocking. See `learning/quality-check-criteria.md`.
+
+### Bidirectional 1:1 mapping
+
+- **Instruction → Tests:** every required behavior is tested
+- **Tests → Instruction:** every assertion maps to something stated or reasonably implied
+- **No hidden checks:** tests never grade behavior the instruction never asked for
+
+### Rewrite triggers
+
+Tests likely need a rewrite when they: enforce undescribed behavior, require non-derivable names/paths/formats, over-constrain the implementation, depend on verifier internals or hidden fixtures, can be passed by editing the tests, or miss / only partially cover major requirements.
+
+### Fail-to-pass test count
+
+- Every task must ship with **at least 10 fail-to-pass tests** (ideally 10–20). A fail-to-pass test fails on the pre-patch repo and passes after the fix.
+- If fewer than 10 → verdict is Fixable; the fix plan must add tests to reach at least 10
+- Added tests must cover requirements stated or reasonably implied in the instruction — never undescribed behavior
+- Count statically: enumerate the individual test cases in tests.patch / tests/files that exercise the changed behavior, and confirm the count against a passing trial's test-stdout.txt
+- The suite must include **at least one test that directly reproduces the failure described in the issue** — fails pre-patch, passes post-fix
+
+### Test mechanics
+
+- Tests must verify observable behavior by running code and checking results: invoking the corrected API, querying a service, inspecting runtime output
+- Tests must NOT grade by patch structure, diff format, line numbers, file names, or source-code keyword matching
+- Tests must NOT be satisfiable by hardcoding or special-casing expected values
+- Deterministic inputs, seeds, and assertions — no flaky or order-dependent behavior — and the suite finishes within the configured timeout (scope long suites to the relevant subset)
+- Tests must not import or call the golden solution, compare against files created only by the solution, or otherwise depend on solution-side artifacts
+- All fixtures and mock data must be committed into the verifier image so the agent cannot tamper with them
+
+### The grader itself — read `tests/test.sh`, do not skim it
+
+The reward logic is part of the test suite and gets audited like one. `docs/guidelines.md` states the invariant under its example script: **the exit code should match the reward it writes.**
+
+- **Fail-open grading:** if `test.sh` parses stdout for the graded test names, check whether it also gates on the test command's exit status. A grader satisfied by the *text* of a successful run awards `1.0` on a compile failure, a timeout, a crash or a partially executed suite. Recording the raw status without branching on it is the same defect wearing a disguise. Note that `$?` after a `| tee` is `tee`'s status — a grader reading `$?` there is fail-open even though it looks like it checks. **The stock harness has this defect as delivered** (`success = not missing_required and not unexpected`, with `raw_exit_code` recorded and unused), so assume every unedited `test.sh` is fail-open. Check `execution.commands` too: it is a list, so the runner's status is the last command's, and a suite-then-parser pair hides a failing suite behind a healthy parser. See `learning/verifier-fail-open.md`
+- **`pass_to_pass` empty or weak:** docs call it the regression guard. An empty list means existing behavior is ungraded. Not a documented violation on its own, but a real finding — and read it alongside `learning/stale-test-reports.md`, since a list a build-time report can satisfy guards nothing
+- **`allow_extra_failures`:** not in `docs/` at all. If the shipped config has it set to `true` while the run executes exactly the graded set, unexpected failures are being accepted — record it. If the field is absent, leave it absent
+
+### Tests that claim a constraint they cannot violate
+
+The coverage axis asks whether a broken or stub solution fails at least one test. A test can name a constraint and still use a fixture incapable of breaking it — iterator-category coverage built on a random-access container, "empty input" with a one-element fixture, "rejects oversized payloads" with a payload under the limit. For each assertion, name the implementation defect it would catch. If there is none, it is coverage on paper only.
+
+### Oracle shape
+
+- Diff the golden patch's file list against the source PR's. Extra files break the "no unnecessary changes" rule; files the PR touched but golden omits are the same defect inverted
+- If the instruction names a known library function as the behavioral standard, read the oracle against that function's real contract. Boundary cases are where a plausible oracle is wrong and the tests agree with it
+- `solve.sh` should be forward-only and idempotent. A reverse-apply fallback treated as success hides a golden patch that did not apply. This is about the fallback, not the flag — reverse-diff tasks shipping `init_state.patch` correctly run `patch -p1 -R` as their only path
+- `tests/test.sh` and `solution/solve.sh` should ship mode `0755` — the "non-executable scripts" row of the allowed-fix table
+
+### Name derivability rule
+
+A common alignment failure: tests expect a specific name the instruction never gave — a function/method/class name, exact error string, output format (JSON keys, log format), new module/file name, or CLI flag / config key.
+
+A name is derivable (and therefore acceptable) ONLY if it:
+
+1. already exists in the base codebase being modified (e.g. an existing `parsedate()`), or
+2. follows a standard language/framework convention (e.g. Python `str`, standard REST resource names), or
+3. is explicitly stated in the instruction
+
+Example — Invalid but Fixable: instruction says "Add a feature to validate emails" but the test asserts `validateemailaddress(email) == True`. The instruction never specified that name → add it in the rewrite.
+
+Detection procedure: list the names/formats the instruction explicitly specifies → scan the tests for every expected name → flag any that are not derivable under the three conditions above.
+
+---
+
+## 6. Principle 4 — Authenticity
+
+A valid task looks like real engineering work and reads like real engineering communication.
+
+### Substantial and agentic
+
+- Requires genuine code exploration, multi-step reasoning, and real changes — not a one-line edit or a zero-shot generation
+- Rule of thumb: the underlying fix is roughly **100+ lines across two or more files**
+- A task solvable by a trivial edit, or a contrived puzzle with no real-world analogue, is not authentic
+
+### Reads like a real engineering ask (one natural persona)
+
+- Casual/Slack-like — direct, assumes domain knowledge
+- Structured ticket — Summary / Steps to Reproduce / Expected Behavior
+- Technical memo — professional refactor/logic context
+- Prose/email — a peer or tech lead explaining context and impact
+- Acceptance criteria — bulleted "when X, the system should Y"
+
+Red flags: robotic phrasing ("The system shall…", "It is required that…"), tone that mismatches the persona, structure identical across many tasks, writing that reads like code documentation rather than a task assignment.
+
+### PR ↔ instruction alignment
+
+- The instruction must ask for the same change as the PR (bug X → describes bug X; feature Y → requests feature Y)
+- If scope was expanded, the task must still be the original PR plus the additions — not a different task
+- If the only way to make the task valid is to reduce or replace the PR scope entirely → **Not Fixable**
+
+---
+
+## 7. Verdict decision procedure
+
+1. Run every check in Sections 1 and 3–6. Record each finding with file:line evidence
+2. If any Not Fixable condition holds (PR scope must be replaced/reduced, or a disallowed environment issue) → verdict is **Not Fixable**. Stop and write the reasons for Part B. A failed eval on its own is never enough — confirm the failure is caused by the task and reproduces every run, because infra and platform failures never make a task Unfixable
+3. Otherwise, if any Fixable trigger (Section 2 list, items 1–13) holds → verdict is **Fixable**. Produce a numbered fix plan
+4. Otherwise → **Valid as-is** (all four principles pass, ≥10 fail-to-pass tests, and instruction/tests/oracle/PR are fully aligned)
+
+Multiple fixable issues still equal one Fixable verdict. A single Not Fixable condition overrides everything else, no matter how much is otherwise fixable.
+
+---
+
+## 8. Output format after a check
+
+```
+Verdict: [Valid as-is / Fixable / Not Fixable]
+
+Fail-to-pass test count: N
+(counted from: <files>, confirmed against <passing trial stdout>)
+
+Findings
+1. [Principle / category] — [file:line] — [what is wrong] — [maps to Fixable trigger #N or Not Fixable reason]
+2. ...
+
+Fix plan (Fixable only)
+1. [file] — [minimal change] — [which finding it resolves]
+2. ...
+
+Reasons for Part B (Not Fixable only)
+1. [specific reason with evidence]
+```
+
+Never claim a finding without evidence from the actual files. Never mark Fixable without a concrete fix plan for every finding.
+
+---
+
+## 9. Quick checklist
+
+- [ ] Solvable from the instruction alone, no guessing arbitrary choices
+- [ ] Instruction references only things that actually exist in the pinned repo
+- [ ] No "Where to look" file lists, no named hidden tests/fixtures, no verifier mechanics, no handed-over root cause
+- [ ] Required output formats / schemas ARE stated (their absence breaks solvability)
+- [ ] No PR URLs, titles, numbers, or SHAs in the instruction
+- [ ] No commit messages, comments, or docs spoiling the change
+- [ ] Tests cannot be passed by editing the tests
+- [ ] Every requirement → a test, every assertion → a stated or implied requirement, no hidden checks
+- [ ] At least 10 fail-to-pass tests (10–20 ideal), including one direct repro of the issue
+- [ ] Tests are outcome-based, deterministic, within timeout, independent of the golden solution
+- [ ] Every expected name is derivable (exists in base / standard convention / stated in instruction)
+- [ ] Roughly 100+ line fix across 2+ files, not a trivial edit or contrived puzzle
+- [ ] Instruction matches one natural persona, no robotic phrasing
+- [ ] Instruction scope equals PR scope (or original PR plus explicit additions)
+- [ ] Every assertion would catch a real implementation defect — no constraint claimed by a fixture that cannot violate it
+- [ ] `tests/test.sh` fails closed: reward 1.0 requires a zero exit from the test command, not just the expected lines in the log
+- [ ] `pass_to_pass` covers the patched area and actually grades something
+- [ ] Golden patch's file list matches the source PR's, in both directions; `solve.sh` is forward-only; both scripts are `0755`
+- [ ] Git hygiene clean: no fix history, no refs past HEAD, no remotes, no `filter.*`, clean tree, HEAD equals base commit, no reflog leak, .git under 100 MB, `git fsck --unreachable` silent
+- [ ] `tests.patch` applies at the base commit and no pre-existing test file was modified
+- [ ] `problem_statement.md` is byte-identical to `instruction.md`, and the solution patch is named `golden.patch`
+- [ ] `task.toml` inside every published limit, `gpus = 0`, `network_mode` present and correct in all three blocks
+- [ ] No stray dev artifacts anywhere in the bundle

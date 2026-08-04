@@ -1,0 +1,142 @@
+---
+description: Sentinel 2.0 PR scope and difficulty rules — apply when checking a task's difficulty, deciding how to raise it, or verifying that any edits stay within the source PR's scope.
+globs:
+alwaysApply: true
+---
+
+# Sentinel 2.0 — PR Scope & Difficulty Check
+
+Use these rules whenever assessing task difficulty, planning difficulty-raising edits, or verifying that changes stay anchored to the source PR. Companion to sentinel-task-check (verdicts, four principles) and sentinel-task-fixing (how to execute edits).
+
+**Source of truth:** `docs/` is the local export of the Sentinel Ultra Hub. When this file disagrees with `docs/guidelines.md#pr-scope-and-task-difficulty` or `docs/faq.md`, the docs win.
+
+---
+
+## 1. Difficulty baseline — what to assume on arrival
+
+- Sentinel tasks train and evaluate frontier coding agents, so they must be **genuinely hard** — an easy task gives no useful signal
+- The bar is a pass@k threshold: a frontier model solves a Medium task in at most 4 of 8 attempts, a Hard task in at most 2 of 8. Use the trial outcomes in `runs/` when a difficulty claim needs grounding
+- Every task that reaches this workflow has **already passed the difficulty checks**. Do NOT re-judge difficulty from scratch, and do not flag "seems easy" as a finding on its own
+- Difficulty evals do NOT re-run on tasks marked **Valid as-is** — which is exactly why the local oracle and NOP run is mandatory on that path
+- BUT: clearing the difficulty bar does not mean the task is free of other issues — and **fixing those issues can pull difficulty back below the benchmark**. When that happens, the platform's evals send the task back to raise it again
+- Practical consequence: after any edit that ADDS context to the instruction (a required name, an output format, clarified requirements), explicitly note that difficulty may have dropped and a bounce-back from the evals is possible
+
+---
+
+## 2. Troubleshooting difficulty (when a task is, or becomes, too easy)
+
+Work through these in order:
+
+**Step 1 — Check for over-prescriptive instructions first.**
+Often the instruction hands the agent context it should have discovered itself:
+
+- the files to touch
+- the root cause
+- a step-by-step approach
+
+Remove anything the agent could reasonably find by exploring the codebase, and remove any solution-revealing names or paths (those are also leakage). Describe the **behavior you expect**, not the how. (Full over-prescription sign list: sentinel-task-check §4. Rewrite patterns: sentinel-task-fixing §2.)
+
+**Step 2 — Apply the balancing principle.**
+This is the crux of the work: a task needs **enough context to be solvable, but not so much that it becomes instructional**. Every trim must be re-checked against solvability — never trim a genuine public contract or required output format.
+
+**Step 3 — If trimming isn't enough, expand the PR scope** (Section 3 rules).
+
+**Step 4 — Keep any added difficulty REAL.**
+
+- ✅ Good difficulty comes from the problem itself: complex debugging, root-cause analysis, a substantial feature, hard domain/security work
+- ❌ Difficulty must NOT come from vague or underspecified requirements, or from stapling unrelated changes together — those make a task **confusing, not difficult**, and a reviewer will flag them
+
+---
+
+## 3. PR scope rules (the anchor)
+
+When fixing a task you can change the instruction, tests, and oracle — but you **cannot change what the task is about**. The source PR anchors what the task is.
+
+### ✅ Allowed
+
+**Add to the scope of the PR to make the task harder.**
+
+- Example: original PR adds a `/health` endpoint → you extend it so the endpoint also handles auto-restart on failure
+- Example: original PR fixes a single edge case in a date parser → you extend it to handle three additional edge cases
+
+### ❌ Forbidden
+
+- **Reduce** the scope of the PR to make it more concise
+- **Replace** the PR with a different feature or task type entirely
+  - Example: original PR is a bug fix → it cannot be rewritten as a feature add
+  - Example: original PR is a refactor of module X → it cannot become a refactor of module Y
+
+### Worked example (from the FAQ)
+
+Source PR adds **CSV export** to a reports page:
+
+- ✅ **Adding complexity:** let the user pick which columns to export, or handle edge cases the PR missed (empty results, commas and quotes inside cell values, very large exports)
+- ❌ **Changing the scope:** swap it for PDF export, replace it with something unrelated, or strip it down to exporting only the current page
+
+Rule of thumb: if the task still clearly maps back to the original PR, just bigger or more thorough, that is adding complexity. If it no longer resembles the PR, or does *less* than the PR, the scope changed → Not Fixable.
+
+### Hard rule
+
+If the ONLY way to make a task solvable, difficult enough, or valid is to reduce or replace the PR scope → the task is **Not Fixable**.
+
+**Why this matters:** the task is anchored to a real PR via task.toml. If the task no longer resembles the PR, the link is misleading and the dataset loses its grounding in real-world engineering work.
+
+---
+
+## 4. Scope-check procedure
+
+Run this whenever edits are planned or reviewed:
+
+1. Fetch the source PR from task.toml (`[metadata] source`, or `source_pr_url` on older tasks). Summarize its intent in one line: type (bug fix / feature / refactor), module/area, and the behavior it changes
+2. Summarize the task's current intent the same way, from instruction.md plus the oracle
+3. Compare the two: same problem? same type? same module/area?
+4. If the scope was expanded, verify the **anchor is preserved**: the original PR's change must be fully contained in the expanded oracle, with the additions building on it — not parallel unrelated changes bolted alongside
+5. Classify the relationship as exactly one of:
+   - **Identical** — task matches PR, no scope change
+   - **Valid expansion** — original PR + additions, anchor intact
+   - **Scope reduction** — forbidden
+   - **Scope replacement** — forbidden (different type or different module/area)
+6. If a valid expansion happened: confirm the instruction and tests were updated in lockstep, the instruction still reads as one realistic ask, and the difficulty eval is re-run
+
+---
+
+## 5. Red flags to raise
+
+- Instruction hands over files to touch, the root cause, a stepwise plan, or solution-revealing names/paths → over-prescribed (fix by trimming, Step 1)
+- A planned "difficulty increase" that is really added vagueness, underspecification, or an unrelated bolt-on → reject the plan, find real difficulty or expand scope properly
+- An edit that adds names, formats, or clarifying context to the instruction → note possible difficulty drop and eval bounce-back
+- Any fix plan whose feasibility depends on shrinking or swapping the PR's behavior → stop, escalate to **Not Fixable**
+- An expanded task where the original PR's change is no longer recognizable inside the oracle → anchor broken, treat as scope replacement
+
+---
+
+## 6. Verdict interactions
+
+- Task too easy, fixable by trimming prescription → **Fixable** (instruction rewrite)
+- Task too easy, trimming insufficient → **Fixable** (scope expansion per Section 3, difficulty eval re-run)
+- Only path to solvable / difficult / valid requires reducing or replacing the PR → **Not Fixable**
+- Task marked Valid as-is → no difficulty re-judgment needed; evals do not re-run
+
+### Known conflict: the linter vs a difficulty downgrade
+
+If a task's measured difficulty comes back different from its declared metadata and the linter then rejects the task as "easy", the two demands pull in opposite directions — matching the metadata to the measurement is exactly what trips the linter. This is a **known platform issue**, not a task defect.
+
+- Do NOT hand-edit the pass-rate or difficulty fields in `task.toml` to satisfy a reviewer or the linter
+- Do NOT tune the values back and forth trying to satisfy both
+- Tell the user to flag it on the Slack channel with the task/submission UID and the two conflicting values (the linter's difficulty floor vs the measured/updated metadata)
+
+Separately, `stb submissions list` from the CLI is the source of truth for a submission's state — the GUI lags and can make a task flicker in and out. If the CLI and GUI disagree, or a submission is stuck, flag it on Slack with the UID.
+
+---
+
+## 7. Quick checklist
+
+- [ ] Did not re-judge arrival difficulty from scratch
+- [ ] Instruction hands over nothing the agent could discover by exploring the codebase
+- [ ] No files-to-touch lists, no root cause, no step-by-step approach in the instruction
+- [ ] Context balance holds: solvable, not instructional
+- [ ] Any added difficulty is real (debugging, root cause, substantial feature, domain/security) — not vagueness or unrelated bolt-ons
+- [ ] Any expansion = original PR + additions, with the anchor fully preserved
+- [ ] No scope reduction anywhere; no task-type or module replacement
+- [ ] If scope expanded: instruction and tests updated in lockstep, difficulty eval re-run
+- [ ] If shrinking/replacing the PR is the only viable path: task marked Not Fixable with reasons
