@@ -1,0 +1,656 @@
+# facts.yml — the single machine-readable source for every numeric and enumerated
+# fact in this workspace.
+#
+# Why this file exists: the same number lives in CLAUDE.md, in the three rule files,
+# in their three skill twins and in learning/. When one copy moves and the others do
+# not, the workspace ships a wrong number. That is this repo's most common defect
+# class. Every check script reads its thresholds from here instead of carrying its
+# own copy, and `bin/doclint.sh` compares the prose against these entries.
+#
+# EDIT RULE: change a number here FIRST, then run `bin/doclint.sh` and fix every
+# file it names. Never change a number in prose only.
+#
+# ── schema ───────────────────────────────────────────────────────────────────
+#   id           snake_case key. Stable. Other scripts index on it.
+#   value        the fact itself. Scalar, list, or a mapping of named bounds.
+#   statement    one sentence a human can read, stating the fact.
+#   source       where the fact was established. A docs/ path or a learning/ note.
+#                No line numbers: the notes churn and a stale line ref is worse
+#                than none.
+#   appears_in   repo files that state this fact in prose. doclint greps these.
+#                Never list docs/ here — that is an upstream export and is not
+#                ours to lint. Never list the source note either.
+#   pattern      regex that locates candidate lines inside appears_in files.
+#   kind         "rule"  = the platform enforces it, a violation fails something.
+#                "hint"  = local guidance, calibration, a target band. Never a gate.
+#   verified_on  date the fact was last confirmed against a real platform run.
+#   enforced_by  which check script or platform phase acts on it.
+#   contradicts  OPTIONAL. Curated regexes. A match inside an appears_in file is a
+#                FAIL: the line states this fact wrongly. Every regex here was
+#                tuned against the tree, so a hit is a real defect, not a guess.
+#   numeric_claim OPTIONAL. {locate: <regex with group 1 = a number>, equals: <n>}
+#                Every line matching `locate` must carry that number.
+# ─────────────────────────────────────────────────────────────────────────────
+
+meta:
+  version: 1
+  updated: 2026-08-04
+  precedence: >-
+    docs/ wins on policy and judgment. learning/ wins on observed platform
+    behaviour. This file wins on the number itself, because it is the only copy
+    that is machine-checked.
+
+facts:
+
+  # ── the test suite ────────────────────────────────────────────────────────
+  - id: fail_to_pass_range
+    value: {min: 10, max: 20, target_min: 11, target_max: 20}
+    statement: "The static check enforces a hard 10-20 range on grading.fail_to_pass; 21+ fails the build."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform static check "config"; bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'fail[_ -]to[_ -]pass|fail_to_pass'
+    contradicts:
+      - regex: '(?i)at least 10 fail.to.pass'
+        why: "states a floor with no ceiling; 21+ is rejected"
+      - regex: '(?i)reach at least 10'
+        why: "prescribes a floor as the bar; the bar is a range"
+      - regex: '(?i)ideally 10.20'
+        why: "the range is hard, not ideal"
+        unless: '(?i)hard|ceiling|rejected|both ends|reads as|floor'
+      - regex: '(?i)10.20 ideal'
+        why: "the range is hard, not ideal"
+        unless: '(?i)hard|ceiling|rejected|both ends|reads as|floor'
+      - regex: '(?i)count is\s*(?:>=|≥|at least)\s*10'
+        why: "no ceiling stated"
+      - regex: '(?i)treat 11\+ as the safe bar'
+        why: "11+ has no upper bound; the safe bar is 11-20"
+
+  - id: tests_dir_allowed_files
+    value: [config.json, grade.py, test.sh, tests.patch]
+    statement: "tests/ may contain only config.json, grade.py, test.sh and tests.patch. No subdirectories, no fixtures."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-08-02
+    enforced_by: platform static check "tests"; bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: 'config\.json.*grade\.py|grade\.py.*tests\.patch|tests/files'
+    contradicts:
+      - regex: '(?i)tests/files/?`?\s*(?:—|-|#)?\s*Optional test files'
+        why: "tests/files/ is rejected by the static checker; it is not optional, it is fatal"
+
+  - id: tests_patch_may_edit_preexisting_test_files
+    value: true
+    statement: "tests.patch MAY edit pre-existing test files. What must stay byte-identical is the shipped repo at base commit; the patch is how graded tests arrive."
+    source: learning/accepted-bundle-reference.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: none - this is a guard against a check nobody should write
+    appears_in:
+      - CLAUDE.md
+    pattern: 'pre-existing test file'
+
+  - id: allow_extra_failures_policy
+    value: {flip_to_false_when: "the field already ships AND the run executes exactly the graded set", never_add_when_absent: true}
+    statement: "Set allow_extra_failures to false only when the shipped config.json already carries it. Never add the field to a config that lacks it, and never require executed-test-count to equal len(fail_to_pass)."
+    source: learning/accepted-bundle-reference.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/40-grader.sh (WARN only, never FAIL)
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'allow_extra_failures'
+
+  - id: restore_shape_not_git
+    value: {allowed: [create-only tests.patch, base64 payload embedded in test.sh], forbidden: [any git-based restore]}
+    statement: "A test-tree restore inside test.sh must not be built on git; the verify-time workspace is not a git repository."
+    source: learning/tests-patch-vs-agent-edits.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/50-restore-shape.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'restore|tests\.patch'
+
+  # ── task.toml limits (docs/harbor-framework.md) ───────────────────────────
+  - id: cpus_allowed
+    value: [2, 4]
+    statement: "[environment] cpus is 2 or 4."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '`?cpus`?'
+
+  - id: memory_mb_range
+    value: {min: 2048, max: 16384}
+    statement: "[environment] memory_mb is at least 2048 and at most 16384."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'memory_mb'
+    numeric_claim:
+      locate: '(?i)memory_mb[^\n]{0,40}?max(?:imum)?[^\d\n]{0,10}`?(\d{3,6})'
+      equals: 16384
+
+  - id: storage_mb_range
+    value: {min: 5120, max: 10240}
+    statement: "[environment] storage_mb is at least 5120 and at most 10240."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'storage_mb'
+    numeric_claim:
+      locate: '(?i)storage_mb[^\n]{0,40}?max(?:imum)?[^\d\n]{0,10}`?(\d{3,6})'
+      equals: 10240
+
+  - id: gpus
+    value: 0
+    statement: "[environment] gpus is always 0."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '`?gpus`?'
+    numeric_claim:
+      locate: '(?i)gpus`?[^\n]{0,24}?(?:always|=|is)[^\d\n]{0,6}`?(\d)'
+      equals: 0
+
+  - id: build_timeout_sec_max
+    value: 1800
+    statement: "[environment] build_timeout_sec is at most 1800."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'build_timeout_sec'
+    numeric_claim:
+      locate: '(?i)build_timeout_sec[^\n]{0,30}?(?:max(?:imum)?|≤|<=|ceiling)[^\d\n]{0,10}`?(\d{3,5})'
+      equals: 1800
+
+  - id: agent_timeout_sec_max
+    value: 7200
+    statement: "[agent] timeout_sec is at most 7200. Raise it when runs/ show agent timeouts."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: platform static check "agent-timeout"; bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '(?i)agent[^\n]{0,40}timeout'
+    numeric_claim:
+      locate: '(?i)agent[^\n]{0,40}?timeout_sec[^\n]{0,30}?(?:max(?:imum)?|≤|<=|up to the)[^\d\n]{0,10}`?(\d{3,5})'
+      equals: 7200
+
+  - id: verifier_timeout_sec_max
+    value: 1800
+    statement: "[verifier] timeout_sec is at most 1800."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '(?i)verifier[^\n]{0,40}timeout|\[verifier\]'
+    numeric_claim:
+      locate: '(?i)verifier[^\n]{0,20}?timeout_sec[^\n]{0,20}?(?:max(?:imum)?|≤|<=)[^\d\n]{0,10}`?(\d{3,5})'
+      equals: 1800
+
+  - id: network_mode_environment
+    value: public
+    statement: "[environment] network_mode is \"public\"."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'network_mode'
+
+  - id: network_mode_agent
+    value: allowlist
+    statement: "[agent] network_mode is \"allowlist\"."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'allowlist'
+
+  - id: agent_allowed_hosts
+    value: ["api.portkey.ai"]
+    statement: "[agent] allowed_hosts is [\"api.portkey.ai\"]."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'allowed_hosts|portkey'
+
+  - id: network_mode_verifier
+    value: no-network
+    statement: "[verifier] network_mode is \"no-network\"; the verifier is airgapped."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'no-network'
+
+  - id: build_time_network_allowed
+    value: {build: allowed, agent_runtime: "model gateway only", verifier_runtime: airgapped}
+    statement: "The Dockerfile MAY use the network at build time. Only run time is restricted."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: none - this is a guard against flagging a build-time install as a defect
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '(?i)build[- ]time network|network at build'
+
+  - id: environment_os_required
+    value: true
+    statement: "[environment] os is a required field, e.g. \"linux\". A bundle missing it is a metadata finding."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '`os`|\[environment\] os'
+
+  - id: metadata_fields
+    value: [category, difficulty_explanation, source, repo_license]
+    statement: "[metadata] carries category (and subcategory), difficulty_explanation, source and repo_license."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'difficulty_explanation'
+
+  # ── bundle structure ──────────────────────────────────────────────────────
+  - id: bundle_required_dirs
+    value: ["environment/", "environment/repo/", "solution/", "tests/"]
+    statement: "The static checker requires four directories in the bundle."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform static check "structure"; bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+    pattern: 'environment/repo'
+
+  - id: bundle_required_files
+    value:
+      - task.toml
+      - instruction.md
+      - environment/Dockerfile
+      - environment/problem_statement.md
+      - solution/solve.sh
+      - solution/golden.patch
+      - tests/test.sh
+      - tests/tests.patch
+      - tests/config.json
+    statement: "The static checker requires nine files in the bundle, and instruction.md must match environment/problem_statement.md byte for byte."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform static checks "structure" and "prompt"; bin/checks/10-static.sh
+    appears_in:
+      - CLAUDE.md
+    pattern: 'golden\.patch|problem_statement\.md'
+
+  - id: static_check_count
+    value: 20
+    statement: "The platform runs 20 static checks on upload and any single failure fails the build."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform static check phase
+    appears_in:
+      - CLAUDE.md
+    pattern: '(?i)\b20 (?:static )?(?:upload )?checks|static check'
+
+  - id: zip_command
+    value: "zip -rXy"
+    statement: "Zip from inside the working copy with zip -rXy. -X keeps directory entries so an empty .git/refs/ survives, -y keeps symlinks as symlinks."
+    source: learning/dirty-repo-and-symlinks.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/30-package.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+      - learning/static-checks.md
+    pattern: 'zip -r'
+    contradicts:
+      - regex: 'zip\s+-rX(?![Xy])'
+        why: "-X without -y flattens symlinks into regular files at packaging time"
+      - regex: 'zip\s+-rD'
+        why: "-D drops directory entries and breaks .git/refs/ on the platform"
+        unless: '(?i)never|avoid|not use|instead|drop|break|silently'
+
+  - id: script_mode
+    value: "0755"
+    statement: "tests/test.sh and solution/solve.sh ship executable at 0755. A 0644 entrypoint fails at run time, not at build time."
+    source: CLAUDE.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/30-package.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '0755|mode 755'
+
+  - id: stray_artifacts
+    value:
+      - __pycache__/
+      - "*.pyc"
+      - .DS_Store
+      - .venv/
+      - .pytest_cache/
+      - .mypy_cache/
+      - .ruff_cache/
+      - .idea/
+      - .vscode/
+      - node_modules/
+      - .gradle/
+      - target/
+      - "*.orig"
+      - "*.bak"
+      - "*.swp"
+    statement: "One stray dev artifact shipping into the container hard-caps the packaging axis at 1."
+    source: docs/tasking-guide.md
+    kind: rule
+    verified_on: 2026-08-02
+    enforced_by: bin/checks/30-package.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: '__pycache__'
+
+  # ── git hygiene ───────────────────────────────────────────────────────────
+  - id: git_dir_max_mb
+    value: 100
+    statement: "environment/repo/.git must stay under 100 MB."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform static check "git"; bin/checks/20-git.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: '(?i)100 ?MB'
+    numeric_claim:
+      locate: '(?i)`?\.git`?[^\n]{0,40}?(?:under|below|<|within)[^\d\n]{0,12}(\d{2,4}) ?MB'
+      equals: 100
+
+  - id: git_dir_allowed_entries
+    value: [config, description, HEAD, hooks, index, info, objects, packed-refs, refs]
+    statement: "After the scrub, .git contains exactly config description HEAD hooks index info objects packed-refs refs. Anything else is cruft."
+    source: learning/static-checks.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: bin/checks/20-git.sh
+    appears_in:
+      - CLAUDE.md
+    pattern: 'packed-refs'
+
+  - id: git_forbidden_state
+    value: [reflog, remotes, "refs/remotes", ORIG_HEAD, FETCH_HEAD, "filter.*", "unreachable objects", "dirty worktree", "commits past HEAD"]
+    statement: "The shipped repo carries no reflog, no remote, no refs/remotes, no ORIG_HEAD or FETCH_HEAD, no filter.* driver, no unreachable objects and no commits past the base commit, with a clean worktree."
+    source: learning/unreachable-git-blobs.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: platform static check "git"; bin/checks/20-git.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: 'fsck --unreachable|no reflog|reflog expire'
+
+  # ── the oracle and the grader ─────────────────────────────────────────────
+  - id: oracle_runs_required
+    value: {runs: 3, must_pass: 3}
+    statement: "The platform runs the oracle three times and it must pass 3/3. A 0/3 or 2/3 is reported as \"Oracle did not pass all runs. Task may be flaky\"."
+    source: learning/solve-sh-idempotency.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: platform Oracle Check
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '3/3|three times|Oracle Check'
+
+  - id: solve_sh_3way_allowed
+    value: true
+    statement: "git apply --3way in solve.sh is the prescribed fix for a patch that will not apply cleanly, not a defect."
+    source: docs/guidelines.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: none - this is a guard against a check nobody should write
+    appears_in:
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: '3way|3-way'
+
+  - id: grader_fails_closed
+    value: {reward_on_nonzero_exit: 0.0, gate_inside: "success expression", never: "early infrastructure_error exit"}
+    statement: "Reward 1.0 requires the test command to have exited zero. Gate inside the grader's success expression, never with an early infrastructure_error exit, which reclassifies trials as invalid."
+    source: learning/verifier-fail-open.md
+    kind: rule
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/40-grader.sh
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-fixing.mdc
+      - .claude/skills/sentinel-task-fixing/SKILL.md
+    pattern: 'raw_exit_code|fail[- ]open|fails closed'
+
+  # ── the eval gates ────────────────────────────────────────────────────────
+  - id: quality_check_criteria
+    value: {total: 15, must_have_blocks: true, id_prefix: "Q"}
+    statement: "The Quality Check reports 15 numbered criteria and any failed must-have criterion blocks, including criterion: Instructions items."
+    source: learning/quality-check-criteria.md
+    kind: rule
+    verified_on: 2026-08-02
+    enforced_by: platform Quality Check
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: '(?i)must-have|Quality Check'
+
+  - id: quality_axis_thresholds
+    value: {axes: 10, judges: 2, adjudicate_delta: 2, remove_at_or_below: 2.0, discuss_at_or_below: 3.0, ok_above: 3.0}
+    statement: "Two judges score 10 axes. Only test_coverage and test_faithfulness flip the verdict: REMOVE at 2.0 or below, DISCUSS at 3.0 or below, OK above 3.0."
+    source: docs/tasking-guide.md
+    kind: rule
+    verified_on: 2026-08-02
+    enforced_by: platform Quality Check
+    appears_in:
+      - CLAUDE.md
+    pattern: 'test_coverage|test_faithfulness|REMOVE|DISCUSS'
+
+  - id: prescriptiveness_check
+    value: {threshold_above: 0.50, blocking: false, phase: "CodeBuild BUILD", id_prefix: "P"}
+    statement: "The prescriptiveness check scores instruction.md and passes above 0.50. It fails the build phase but is explicitly non-blocking for submission. It is a different check from the Quality Check's Instructions criteria, which do block."
+    source: learning/prescriptiveness-check.md
+    kind: rule
+    verified_on: 2026-08-02
+    enforced_by: platform BUILD phase
+    appears_in:
+      - CLAUDE.md
+    pattern: '(?i)prescriptiveness'
+
+  - id: difficulty_pass_at_k
+    value: {trials: 8, medium_max_solves: 4, hard_max_solves: 2}
+    statement: "A frontier model solves a Medium task in at most 4 of 8 attempts and a Hard task in at most 2 of 8."
+    source: docs/guidelines.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform Difficulty Check
+    appears_in:
+      - CLAUDE.md
+      - .cursor/rules/sentinel-difficulty-scope.mdc
+      - .claude/skills/sentinel-difficulty-scope/SKILL.md
+    pattern: '(?i)pass@k|4 of 8|2 of 8'
+
+  - id: pending_revision_limit
+    value: 2
+    statement: "At most two tasks may sit in pending-revision at once or the platform blocks a new claim."
+    source: docs/tasking-guide.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform claim flow
+    appears_in:
+      - CLAUDE.md
+    pattern: '(?i)pending.revision'
+
+  - id: inapp_check_runtime_limit_min
+    value: 5
+    statement: "In-app checks have a 5-minute runtime limit; iterate with Send to reviewer unchecked."
+    source: docs/tasking-guide.md
+    kind: rule
+    verified_on: 2026-07-31
+    enforced_by: platform
+    appears_in:
+      - CLAUDE.md
+    pattern: '(?i)5-minute|five-minute'
+
+  # ── local guidance, never a gate ──────────────────────────────────────────
+  - id: handling_time_total_band
+    value: {min: 180, max: 240, fields: [review, rewrite, form], excludes: revisions}
+    statement: "Total submission time is fields 1 + 2 + 3 and targets 180 to 240 minutes. The revision field is never part of it."
+    source: CLAUDE.md
+    kind: hint
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/60-answers.sh (WARN only - the accepted bundle shipped 260)
+    appears_in:
+      - CLAUDE.md
+    pattern: '180.{0,3}240'
+
+  - id: handling_time_revision_band
+    value: {min: 60, max: 120, zero_before_first_bounce: true, increment_per_round: [50, 70]}
+    statement: "The all-revisions field targets 60 to 120 minutes, is zero before the first bounce, and goes up 50 to 70 minutes per round."
+    source: CLAUDE.md
+    kind: hint
+    verified_on: 2026-08-04
+    enforced_by: bin/checks/60-answers.sh (WARN only - the accepted bundle shipped 195)
+    appears_in:
+      - CLAUDE.md
+    pattern: '60.{0,3}120'
+
+  - id: accepted_bundle_calibration
+    value:
+      task: 20260719_045042__oliver-oloughlin_kvdex__245
+      fail_to_pass: 20
+      pass_to_pass: 112
+      graded_ids: 132
+      graded_ids_outside_patched_files: 102
+      files_in_tests_patch: 45
+      preexisting_test_files_modified: 40
+      zip_entries: 309
+      git_size_mb: 1.6
+      handling_time_total: 260
+      handling_time_revisions: 195
+    statement: "Measured shape of the one bundle in this workspace that cleared every gate. Calibration, never a target."
+    source: learning/accepted-bundle-reference.md
+    kind: hint
+    verified_on: 2026-08-04
+    enforced_by: none
+    appears_in:
+      - CLAUDE.md
+    pattern: 'kvdex'

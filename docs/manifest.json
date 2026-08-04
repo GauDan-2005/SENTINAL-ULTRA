@@ -1,66 +1,137 @@
-[
+{
+ "schema": 2,
+ "source_site": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+ "manifest_generated": "2026-08-04",
+ "hub_bundle": "assets/index-77c1ec94.js",
+ "hub_bundle_checked": "2026-08-04",
+ "notes": [
+  "There is no single export date. Six tabs were exported 2026-07-31T13:51:23Z; faq.md and whats-new.md were refreshed 2026-08-01 and are current against the Hub.",
+  "hub_bundle is the content-hashed filename of the Hub's JS bundle, which holds all tab text. If the live filename differs from this one, the Hub has changed and this export is stale. See 'Staleness and refresh' in README.md.",
+  "sha256 covers the file exactly as it sits on disk, header comment included.",
+  "README.md and manifest.json are local scaffolding, not Hub tabs, and are not tracked here."
+ ],
+ "files": [
   {
-    "tab_id": "whatsnew",
-    "navigation_title": "What's New",
-    "local_path": "whats-new.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 42,
-    "character_count": 2311
+   "tab_id": "whatsnew",
+   "navigation_title": "What's New",
+   "local_path": "whats-new.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-08-01",
+   "verbatim": true,
+   "bytes": 3266,
+   "line_count": 51,
+   "character_count": 3221,
+   "sha256": "067d42223ed6f33fb3efbcbef953d4a3a7507a073c2434e5f8481941e30d39fb"
   },
   {
-    "tab_id": "guide",
-    "navigation_title": "Guidelines",
-    "local_path": "guidelines.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 368,
-    "character_count": 29657
+   "tab_id": "guide",
+   "navigation_title": "Guidelines",
+   "local_path": "guidelines.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": false,
+   "bytes": 31619,
+   "line_count": 388,
+   "character_count": 31367,
+   "sha256": "6e070722bdaacc30b22ea4a0650f546ebab66a4add3f673ad9c61ae3bf391312",
+   "local_edits": [
+    "Fixable-environment table: restored the Fix-column commands to valid shell (`apk add --no-cache`, `apt-get install -y`, `chmod +x`, `memory_mb`/`storage_mb`) and backticked them. The Hub itself stores the broken forms, so this is a correction of an upstream defect, not of the export. Two autocorrect rule names are left at the Hub's spelling. Verified against Hub bundle index-77c1ec94.js on 2026-08-04.",
+    "Added a top-of-file HTML comment and an inline note above the table recording the above. No guideline wording was changed."
+   ]
   },
   {
-    "tab_id": "tasking",
-    "navigation_title": "Tasking Guide",
-    "local_path": "tasking-guide.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 458,
-    "character_count": 39805
+   "tab_id": "tasking",
+   "navigation_title": "Tasking Guide",
+   "local_path": "tasking-guide.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": true,
+   "bytes": 40177,
+   "line_count": 459,
+   "character_count": 39892,
+   "sha256": "1737b3dc90a06218dd27395c621a1cdf86d1a93cc82a50ae2a6ba4d2816fe86f"
   },
   {
-    "tab_id": "harbor",
-    "navigation_title": "The Harbor Framework",
-    "local_path": "harbor-framework.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 110,
-    "character_count": 6546
+   "tab_id": "harbor",
+   "navigation_title": "The Harbor Framework",
+   "local_path": "harbor-framework.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": true,
+   "bytes": 7203,
+   "line_count": 111,
+   "character_count": 6641,
+   "sha256": "496defe7d5dd4c70b760c7dd30cc536fcc34bf1984ee16a11ce6cc9d122109e0"
   },
   {
-    "tab_id": "glossary",
-    "navigation_title": "Glossary",
-    "local_path": "glossary.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 58,
-    "character_count": 4955
+   "tab_id": "glossary",
+   "navigation_title": "Glossary",
+   "local_path": "glossary.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": true,
+   "bytes": 5062,
+   "line_count": 59,
+   "character_count": 5038,
+   "sha256": "031542a26060006baa30b9399384b3a1d7eedd60f55394b3cf15a96d031a0e10"
   },
   {
-    "tab_id": "faq",
-    "navigation_title": "FAQ",
-    "local_path": "faq.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 76,
-    "character_count": 8164
+   "tab_id": "faq",
+   "navigation_title": "FAQ",
+   "local_path": "faq.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-08-01",
+   "verbatim": true,
+   "bytes": 9875,
+   "line_count": 92,
+   "character_count": 9803,
+   "sha256": "4963baf736d438114d3f9d18efd4d3cad9bc952a4d410d03cd381833fb7a371d"
   },
   {
-    "tab_id": "quicklinks",
-    "navigation_title": "Quick Links",
-    "local_path": "quick-links.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 7,
-    "character_count": 380
+   "tab_id": "quicklinks",
+   "navigation_title": "Quick Links",
+   "local_path": "quick-links.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": true,
+   "bytes": 472,
+   "line_count": 8,
+   "character_count": 466,
+   "sha256": "f5ebd8d6196f94056f192b92a10d194a33729f83ad462ad67d7e070bb1609d81"
   },
   {
-    "tab_id": "changelog",
-    "navigation_title": "Changelog",
-    "local_path": "changelog.md",
-    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-    "line_count": 83,
-    "character_count": 10640
+   "tab_id": "changelog",
+   "navigation_title": "Changelog",
+   "local_path": "changelog.md",
+   "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
+   "exported": "2026-07-31",
+   "verbatim": true,
+   "bytes": 10784,
+   "line_count": 84,
+   "character_count": 10724,
+   "sha256": "b073010ad0b5b82ac772bc311f36105c2a9f9ac51ec3d0a82c1b46a251dc70dc"
   }
-]
+ ],
+ "derived": [
+  {
+   "local_path": "ALL_DOCUMENTATION.md",
+   "description": "All eight tabs concatenated in navigation order.",
+   "generated_from": [
+    "whats-new.md",
+    "guidelines.md",
+    "tasking-guide.md",
+    "harbor-framework.md",
+    "glossary.md",
+    "faq.md",
+    "quick-links.md",
+    "changelog.md"
+   ],
+   "note": "Content-identical to the eight tab files apart from each tab file's <!-- Source: --> header line and this file's added '# <Tab Name>' section headings (verified 2026-08-04). It predates the guidelines.md repair, so it still carries the broken Fixable-environment commands; prefer guidelines.md.",
+   "exported": "2026-08-01",
+   "bytes": 106652,
+   "line_count": 1273,
+   "character_count": 105360,
+   "sha256": "bdb2e9021b29411b98f17b7207c495f07fb3a49036c38fc8177c567b1a01532d"
+  }
+ ]
+}

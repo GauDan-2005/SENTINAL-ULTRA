@@ -1,3 +1,20 @@
+---
+id: accepted-bundle-reference
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+evidence: "The bundle as accepted on round 6, measured out of _archive/"
+applies_to:
+  languages: [typescript, any]
+  runners: [deno]
+  phases: [all]
+blocks_submission: false
+fails_gate: [none]
+supersedes: []
+contradicts: []
+---
+
 # What an accepted bundle actually looked like
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, accepted 2026-08-04 after six rounds.
@@ -22,10 +39,10 @@ merely did not get caught.
 | suite at oracle | 152 pass, 0 fail, 2 ignored |
 | `allow_extra_failures` | `false` |
 | files in `tests.patch` | 45 |
-| pre-existing test files modified | 40 |
+| pre-existing test files modified | 44 (42 `*.test.ts` plus `tests/utils.ts` and `tests/values.ts`) |
 | graded ids outside the patched files | 102 of 132 (this is what forced the full-tree restore) |
 | files changed vs the pristine extract | 7 |
-| zip | 309 entries, 1.8 MB, `zip -rX` |
+| zip | 309 entries, 1.8 MB, `zip -rX` (that repo has no symlinks, so `-y` was moot; the canonical command is now `zip -rXy`) |
 | `.git` | 1.6 MB, exactly `config description HEAD hooks index info objects packed-refs refs` |
 | `test.sh` | 93 KB, mode 755, carries a 70 KB base64 payload |
 | `solve.sh` | mode 755, forward-only and idempotent |
@@ -115,3 +132,27 @@ Not a hardening measure. Reading the round-over-round trend. 13 of 16 invalid, t
 then 15 of 16 is a flat line across two different locally-verified fixes, and a flat line
 means the fixes are not landing on the cause. That signal was free and available from round 4.
 See `diagnosing-platform-only-failures.md`.
+
+## One example is not a distribution: see `calibration.tsv`
+
+This note is a single worked bundle, and a single bundle cannot tell you which of its numbers
+are properties of an accepted task and which are properties of a Deno migration with 132 graded
+ids. [calibration.tsv](calibration.tsv) carries the same measurements for every task this
+workspace has handled, one row each, so the comparison is mechanical.
+
+What the four rows already show that this note on its own cannot:
+
+- `pass_to_pass` ranges from 21 to 1204 and the graded total from 38 to 1223. There is no normal
+  size. What is constant is that the guard is populated at all.
+- `graded ids outside the patched files` is above zero on all four, from 102 of 132 to 1124 of
+  1223. Nothing has measured zero, so the create-only `tests.patch` has never actually been the
+  right shape here. Read libcrux's row with its caveat: cargo ids carry no path, so the counting
+  script cannot resolve them and its 38 of 38 is the tool's answer rather than the truth.
+- Oracle runtime is 19 to 138 seconds against verifier timeouts of 900 or 1800. The headroom is
+  never close.
+- `fail_to_pass` sits at 17, 19, 20, 20 against a hard ceiling of 20. Three of the four are at
+  or one below the cap.
+
+**A column in that file is calibration and never a target.** It tells you whether a number you
+measured is ordinary or unusual, which is a reason to look again, not a number to move toward.
+Nothing is improved by pushing `fail_to_pass` to 20 because kvdex was 20.

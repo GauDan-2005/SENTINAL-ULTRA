@@ -1,3 +1,20 @@
+---
+id: dirty-repo-and-symlinks
+status: locally-verified
+last_verified: 2026-08-04
+verified_by:
+  - 20260723_030109__cryspen_libcrux__1165
+evidence: "git status --porcelain on the bundle as received: 35 modified tracked files, 28 mode-only and 7 flattened symlinks"
+applies_to:
+  languages: [any]
+  runners: [git, zip]
+  phases: [analysis, packaging]
+blocks_submission: false
+fails_gate: [peer-review]
+supersedes: []
+contradicts: []
+---
+
 # The shipped repo can arrive dirty, and `zip -rX` re-dirties it
 
 Source: `20260723_030109__cryspen_libcrux__1165`, 2026-08-02. Found in the Step 2 git sweep,
@@ -41,7 +58,8 @@ git status --porcelain      # must be empty
 
 **Then the zip has to preserve symlinks or the fix is undone at packaging time.** Plain `zip`
 follows symlinks and stores the file content, which is almost certainly how the bundle got this
-way. `CLAUDE.md` prescribes `zip -rX` and warns against `-rD`, and says nothing about symlinks:
+way. `CLAUDE.md` used to prescribe `zip -rX`, which warns against `-rD` and says nothing about
+symlinks. The canonical command became `zip -rXy` on 2026-08-04, on the strength of this note:
 
 ```bash
 cd work && zip -rXy "../upload/<name>.zip" . -x '*.DS_Store' '__MACOSX/*'

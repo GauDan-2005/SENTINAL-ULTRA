@@ -4,6 +4,8 @@ globs:
 alwaysApply: true
 ---
 
+> **Mirror.** This rule and `.claude/skills/sentinel-difficulty-scope/SKILL.md` hold the same content. Edit both together - Cursor loads the `.mdc`, Claude Code loads the skill.
+
 # Sentinel 2.0 — PR Scope & Difficulty Check
 
 Use these rules whenever assessing task difficulty, planning difficulty-raising edits, or verifying that changes stay anchored to the source PR. Companion to sentinel-task-check (verdicts, four principles) and sentinel-task-fixing (how to execute edits).

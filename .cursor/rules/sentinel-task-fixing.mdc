@@ -4,6 +4,8 @@ globs:
 alwaysApply: true
 ---
 
+> **Mirror.** This rule and `.claude/skills/sentinel-task-fixing/SKILL.md` hold the same content. Edit both together - Cursor loads the `.mdc`, Claude Code loads the skill.
+
 # Sentinel 2.0 — Fixable Task Editing Rules
 
 Use these rules when a task has been judged **Fixable** and the user asks to apply the corrections. This is the execution companion to the validity-check rules (sentinel-task-check). Every edit must trace back to a specific finding — no drive-by changes.
@@ -15,7 +17,10 @@ Use these rules when a task has been judged **Fixable** and the user asks to app
 ## 0. Hard boundaries (never violate)
 
 - **NEVER edit the tracked source files inside `environment/repo/`.** The task is anchored to the real base repository; changing its code breaks that grounding and is not allowed. Cleaning `.git` metadata and restoring the tree to the base commit IS allowed and expected — source edits are NOT.
-- **NEVER modify a test file that already existed at the base commit.** The harness checks pre-existing (pass-to-pass / regression) test files are byte-identical to base. If a fix seems to need a change there, add a new test through `tests/tests.patch` instead — new functions or new files only — and revert the existing file to its base-commit content.
+- **NEVER modify a test file inside the shipped `environment/repo`.** These are two separate rules and only the first one binds the repo:
+  1. The test tree shipped in `environment/repo` must be byte-identical to the base commit. That is what the harness checks. If you edited a test file in place, revert it to its base-commit content.
+  2. **`tests.patch` MAY edit pre-existing test files.** The patch is how graded tests arrive, and editing an existing file is a normal shape for it — the accepted kvdex bundle's `tests.patch` carries 45 diff headers of which only 1 is a `new file mode`, so 44 pre-existing test files are patched and it cleared every gate. Do not rewrite a working patch into a create-only shape unless the graded-id count in Section 6 tells you to.
+  Verify the first rule mechanically: `git -C environment/repo status --porcelain` prints nothing, and a diff of the shipped test paths against the base commit is empty.
 - The ONLY editable components are:
   1. `task/instruction.md` (and its exact copy `problem_statement.md`, which ships at `task/environment/problem_statement.md` in the current spec and at `task/problem_statement.md` on older bundles)
   2. Tests: `task/tests/test.sh`, `task/tests/tests.patch`, `config.json`. Those plus `grade.py` are the ONLY entries `tests/` may contain; a `tests/files/` directory is rejected at the static phase
@@ -82,7 +87,24 @@ When you do:
 ### Checks that catch a bad oracle before the evals do
 
 - **Diff the patch's file list against the PR's.** `grep '^diff --git' solution/golden.patch | sed 's|diff --git a/||;s| b/.*||'` next to the files the source PR actually changed. Extra files are the "no unnecessary changes" rule being broken; missing files (docs, changelogs the PR updated) are the same defect inverted. Test files are the exception — those belong in `tests.patch`
-- **`solve.sh` forward-only and idempotent.** Apply if needed, no-op if already applied, fail loudly on partial state. A reverse-apply fallback treated as success inverts a correctly applied tree on a second run and hides a golden patch that did not apply. This is about the fallback, not the flag: a reverse-diff task shipping `init_state.patch` correctly runs `patch -p1 -R` as its only path
+- **`solve.sh` forward-only and idempotent.** Apply if needed, no-op if already applied, fail loudly when nothing applies. The sanctioned shape is four steps in this order — a `git apply -p1 --reverse --check` probe that exits 0 because the patch is already in, a plain forward `git apply -p1`, a `git apply -p1 --3way` retry, then a loud nonzero failure. **The `--3way` retry is prescribed, not a defect**; it is the documented handling for a patch that will not apply cleanly, verified with three consecutive applies in one container (`learning/solve-sh-idempotency.md`). What is banned is a reverse-apply that counts as SUCCESS after the forward apply failed — that inverts a correctly applied tree on the second run and hides a golden patch that never applied. This is about the fallback, not the flag: a reverse-diff task shipping `init_state.patch` correctly runs `patch -p1 -R` as its only path
+
+```bash
+set -euo pipefail
+cd /app
+
+if git apply -p1 --reverse --check --whitespace=nowarn /solution/golden.patch 2>/dev/null; then
+  echo "golden.patch is already applied; nothing to do."
+  exit 0
+fi
+if git apply -p1 --whitespace=nowarn /solution/golden.patch 2>/dev/null; then exit 0; fi
+if git apply -p1 --3way --whitespace=nowarn /solution/golden.patch; then exit 0; fi
+
+echo "ERROR: golden.patch did not apply cleanly." >&2
+exit 1
+```
+
+- **The platform runs the oracle three times and the pass bar is 3/3.** Anything under 3/3 blocks Send to reviewer and is a task defect on the Fixable path, not flake. Read the number before theorising: `1/3` or `2/3` needs prior state to go wrong, so it points at state accumulation and reproduces by running `solve.sh` twice in one container; `0/3` says run one already failed, which rules out every state-accumulation theory in one step. Real per-test output alongside an N/3 line means task defect. Blank or null results with no verifier output means infra. So run `solve.sh` three times in one container during the local checks — runs two and three against the already-patched tree — and record all three rewards for Comments for Reviewer. See `learning/solve-sh-idempotency.md`
 - **Check the oracle against whatever standard the instruction names.** If the instruction says the API should behave like a known library function, read the implementation against that function's real contract rather than against the PR alone. Boundary cases are where a plausible-looking oracle is wrong and the tests agree with it
 - Both `solve.sh` and `tests/test.sh` ship mode `0755`
 
@@ -155,6 +177,10 @@ Check and fix every field against these limits:
 | `[verifier]` | `network_mode` | `"no-network"` |
 | | `timeout_sec` | max `1800` |
 | `[metadata]` | `category`, `difficulty_explanation`, `source` | accurate — the judge's packaging axis cross-checks metadata against actual task content |
+| | `repo_license` | a real SPDX id (`MIT`, `Apache-2.0`, …) matching the upstream repo — never empty. Undocumented in `docs/harbor-framework.md`, present in every shipped bundle, and an empty or wrong value comes back as a Metadata Issues revision tag |
+| | `repo_name` | the upstream repo's short name — same status: observed everywhere, documented nowhere |
+| | `base_commit_sha` | must equal `git -C environment/repo rev-parse HEAD`; on a mismatch the repo wins and this field gets realigned |
+| | `source_pr_url` | the source PR, and it must agree with `source` when both are present |
 
 - `network_mode` is a **per-block** field. Do NOT strip it or `allowed_hosts` — the older "remove them" guidance is dead
 - Separately, remove `network_mode = "none"` from `docker_compose.yaml` if present
@@ -190,11 +216,11 @@ The shipped repo is a real git checkout and **its HEAD is the source of truth** 
 ## 6. Editing the tests
 
 - Map tests **1:1** with the instruction's requirements
-- Ensure **at least 10 fail-to-pass tests** (ideally 10–20); if short, add tests covering requirements stated or reasonably implied in the instruction — never undescribed behavior
+- Keep the fail-to-pass count **inside 10–20 inclusive**, target 11–20. Both ends are hard: the platform's static check fails the build under 10 and equally at 21+ (`learning/static-checks.md`). If short, add tests covering requirements stated or reasonably implied in the instruction — never undescribed behavior. If a rewrite pushes the count over 20, regroup cases as sub-steps under fewer top-level tests rather than deleting assertions
 - Keep tests flexible enough to allow multiple valid implementations where appropriate
 - Do NOT introduce arbitrary names, strings, paths, or formats that are not derivable from the instruction
 - Validate **observable behavior**, not implementation details
-- NEVER modify a pre-existing test file — new tests arrive only as new functions or new files inside `tests.patch`
+- NEVER modify a test file in place inside `environment/repo`. Changes to pre-existing test files are legitimate when they arrive **through `tests.patch`** — see the two-rule split in Section 0
 - Regenerate `tests.patch` against the shipped repo HEAD and verify with `git apply --check`
 - Distinct contracts, not padding. The f2p count is a coverage floor, not a quota to fill — the same assertion repeated across N sizes or shapes adds count and no coverage
 - Test the wiring, not only the helper. If the PR's point is that some path now uses a new component, at least one f2p must go through that path
@@ -313,14 +339,55 @@ Pick the shape by counting where the graded ids actually live:
 ```bash
 python3 - <<'PY'
 import json, re
+
 patch = open('tests/tests.patch', encoding='utf-8', errors='replace').read()
 touched = set(re.findall(r'^diff --git a/(\S+)', patch, re.M))
+
+# A graded id names its owner in one of three schemes and none of them is a path
+# on its own, so map every patched file to every name it could be cited by:
+#   pytest / deno   tests/ext/encoder.test.ts::ext - encoder        -> a path
+#   junit           pkg.ClassTest#method, pkg.ClassTest::method     -> an FQCN
+#   cargo / go      mlkem512::packed_roundtrip, consistency_512     -> a module, no file
+paths, fqcns, classes = set(touched), set(), set()
+for t in touched:
+    seg = t.split('/')
+    classes.add(seg[-1].rsplit('.', 1)[0])
+    for root in ('java', 'kotlin'):                  # maven / gradle source layout
+        if root in seg:
+            fqcns.add('.'.join(seg[seg.index(root) + 1:]).rsplit('.', 1)[0])
+
 g = json.load(open('tests/config.json'))['grading']
-ids = g['fail_to_pass'] + g['pass_to_pass']
-outside = [i for i in ids if i.split('::')[0] not in touched]
-print(len(outside), 'of', len(ids), 'graded ids live in files tests.patch does not touch')
+ids = g['fail_to_pass'] + g.get('pass_to_pass', [])
+
+def owner(i):
+    if '#' in i:
+        return i.rsplit('#', 1)[0]
+    if '::' in i:
+        return i.rsplit('::', 1)[0]
+    return i
+
+inside, outside, unresolved = [], [], []
+for i in ids:
+    o = owner(i)
+    if '/' in o:                                             # path-shaped
+        (inside if o in paths else outside).append(i)
+    elif '.' in o and o.split('.')[-1][:1].isupper():        # FQCN
+        (inside if o in fqcns else outside).append(i)
+    elif o[:1].isupper() and o != i:                         # bare class name
+        (inside if o in classes else outside).append(i)
+    else:                                                    # cargo module, or bare
+        unresolved.append(i)
+
+if unresolved:
+    print('UNRESOLVED:', len(unresolved), 'of', len(ids),
+          'graded ids name no file (cargo/go style). Resolve those by hand from',
+          "execution.commands / selected_test_files_to_run before choosing a shape.")
+print(len(outside), 'of', len(ids) - len(unresolved),
+      'resolvable graded ids live in files tests.patch does not touch')
 PY
 ```
+
+Measured against the four bundles this workspace has on disk: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177, and `UNRESOLVED: 38 of 38` on libcrux 1165. **Never read a bare number as "outside" when the id scheme and the patched paths do not share a namespace.** Cargo, Go and Jest ids carry no path at all, so the old `i.split('::')[0]` form matched nothing and reported every id as outside — on libcrux that read `35 of 35`, which argues for a payload on a bundle whose f2p all live in a created file. Hand-resolved, libcrux is 21 of 38 outside: the 17 f2p all sit in the created `sentinel_pqcp_verifier.rs`, and the 21 p2p all sit in two files the patch does not touch. Still a payload, but for a reason the script never established.
 
 **Zero → create-only patch, no payload needed.** Regenerate `tests.patch` so every graded file is a create (`new file mode`, `--- /dev/null`) rather than a diff. A create has no context lines, so nothing can conflict. Delete those paths first in `test.sh`, reading the list out of the patch with `sed -n 's|^+++ b/||p' /tests/tests.patch`.
 
@@ -381,11 +448,11 @@ The `fsck` line is not in the `docs/` checklist and is the one that catches what
 Then verify at the task level:
 
 - `diff instruction.md environment/problem_statement.md` → no output (byte-identical). Use whichever location the bundle ships; if both exist, all copies must match
-- `fail_to_pass` in config.json is non-empty, ids match the actual tests, count is ≥ 10 (the form says "more than 10", so treat 11+ as the safe bar)
+- `fail_to_pass` in config.json is non-empty, ids match the actual tests, and the count sits **inside 10–20 inclusive** — target 11–20. This is a two-sided gate. The form checkbox says "more than 10" and the guidelines say "at least 10", but the static check also rejects 21+, so a count over 20 fails the build exactly like a count under 10 (`learning/static-checks.md`). If the rewrite pushed it past 20, regroup cases as sub-steps under fewer top-level tests instead of deleting assertions
 - Instruction ↔ tests ↔ oracle re-verified as a consistent trio after all edits
 - If PR scope was expanded: difficulty eval re-run and passing
 - `docker build environment/` succeeds and is reproducible — network at build time is allowed, run-time fetches are not
-- No pre-existing test file was modified
+- The test tree inside `environment/repo` is byte-identical to base (`git status --porcelain` empty plus a diff of the shipped test paths). `tests.patch` editing pre-existing test files is fine and is not what this line checks
 - Stray-artifact sweep is empty and no solution material is readable from agent paths. Intentional dotfiles (`.gitignore`, `.dockerignore`, `.gitattributes`, `.gitkeep`, `.github/`) are fine:
 
 ```bash
@@ -408,11 +475,15 @@ Zip the flat contents of `task/` — not the folder, not `runs/`. The archive mu
 
 ```bash
 cd task
-zip -rX ../<your_task>.zip . -x '*.DS_Store' '__MACOSX/*'
+zip -rXy ../<your_task>.zip . -x '*.DS_Store' '__MACOSX/*'
 unzip -l ../<your_task>.zip | grep 'refs/'    # empty git dirs must still be listed
+unzip -Z ../<your_task>.zip | grep -c '^l'    # symlinks stored as symlinks
+find . -type l | wc -l                        # ...must equal this
 ```
 
-Never use `zip -rD` or a GUI compress tool. `-D` skips directory entries, which silently drops the empty `.git/refs/` that `git gc` leaves behind — the repo then unpacks broken on the platform even though the local copy works fine.
+`-rXy` is the canonical form and every flag earns its place, but say what each one actually does - it is easy to get this backwards. `-r` recurses and writes directory entries **by default**, so it is the ABSENCE of `-D` that keeps the empty `.git/refs/` that `git gc` leaves behind (`docs/tasking-guide.md:104`). `-X` strips extra file attributes (resource forks, UID/GID) for a portable archive (`docs/tasking-guide.md:99`). `-y` stores symlinks as symlinks — without it zip follows each one and writes the target's contents in its place, which is how a repo carrying symlinks ships flattened and dirty. Run the two counts above and make them agree before uploading; a repo with no symlinks answers `0` on both sides, which is still a pass.
+
+Never use `zip -rD` or a GUI compress tool. `-D` skips directory entries, which silently drops the empty `.git/refs/` — the repo then unpacks broken on the platform even though the local copy works fine.
 
 ---
 

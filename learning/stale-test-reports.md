@@ -1,3 +1,20 @@
+---
+id: stale-test-reports
+status: locally-verified
+last_verified: 2026-08-01
+verified_by:
+  - 20260728_153118__jqno_equalsverifier__1166
+evidence: "NOP run in the task image: 2 of 21 fail-to-pass tests reported PASS on the unmodified repo"
+applies_to:
+  languages: [java, kotlin, any]
+  runners: [maven, gradle, surefire]
+  phases: [local-runs, oracle]
+blocks_submission: false
+fails_gate: [peer-review]
+supersedes: []
+contradicts: []
+---
+
 # Verifiers that read stale test results baked into the image
 
 Source: task `20260728_153118__jqno_equalsverifier__1166`, 2026-08-01. Found during the NOP

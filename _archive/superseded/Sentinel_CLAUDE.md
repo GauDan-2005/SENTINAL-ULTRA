@@ -1,3 +1,33 @@
+> # DEPRECATED — DO NOT FOLLOW THIS FILE
+>
+> **Superseded by `CLAUDE.md` at the workspace root, on 2026-08-04.** This was the predecessor
+> submitter manual. It sat at the workspace root until then, where it read as a second master
+> file, and it is kept here for history only.
+>
+> **It is specifically wrong on five points**, each of which is recorded with its refutation in
+> `learning/LEDGER.md` (rows L12 to L16):
+>
+> - `tests.patch` must only add new files and must never touch a pre-existing test file. The
+>   accepted kvdex 245 bundle patched 44 of them.
+> - Set `allow_extra_failures: false` on every task. Only set it when the shipped `config.json`
+>   already carries the field and the run executes exactly the graded set.
+> - Align the `task.toml` difficulty fields to the Difficulty Check result. `docs/faq.md` and
+>   `CLAUDE.md` section 8 both forbid hand-editing that metadata to satisfy a check.
+> - Delete the downloaded platform zip after extraction. `CLAUDE.md` keeps it, and it is what the
+>   pristine reference gets re-extracted from.
+> - `problem_statement.md` lives at the bundle root. The current spec puts the copy at
+>   `task/environment/problem_statement.md`.
+>
+> It also cites two rule files that do not exist in this workspace
+> (`.cursor/rules/humanizer-output.mdc`, `.cursor/rules/sentinel-form-answers.mdc`) and a
+> directory layout from a different machine (`extracts/`, `Fixable_tasks/`, `Tasks_zip/`,
+> `/home/adity/TERMINUS/...`).
+>
+> **Where its content went.** Section 9, the peer-review lessons from
+> `teslamotors/fixed-containers#67`, `foliojs/pdfkit#1002`, `d4vinci/scrapling#14` and
+> `datarecce/recce#1399`, is now `learning/peer-review-bounces.md`. Everything else was either
+> already in `CLAUDE.md` or is refuted above. Nothing else here needs mining.
+
 # Project Sentinel 2.0 — Claude Code Rules (Submitter Mode)
 
 This workspace — the `sentinel-ultra-submission` folder opened in Cursor (WSL: Ubuntu-22.04) — is used for **Project Sentinel 2.0** task submissions. Unpack platform zips into `extracts/<Original Directory Name>/` (not loose UUID folders at the root). Working edits live under `Fixable_tasks/`. Paths in this file are relative to this workspace root unless noted. See `README.md` for the folder map. Claude acts as the **submitter**: inspect the task, decide the verdict (**Valid as-is / Fixable / Invalid-Not Fixable**), apply corrections when Fixable, and produce every answer the submitter form asks for.

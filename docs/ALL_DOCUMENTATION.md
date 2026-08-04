@@ -363,14 +363,14 @@ You may make only specific, allowed fixes to the environment (chiefly `environme
 
 | Issue | What's happening | Fix |
 | --- | --- | --- |
-| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | apk add -no-cache bash. Has autocorrect: alpinebashautocorrect. |
+| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | `apk add --no-cache bash`. Has autocorrect: alpinebashautocorrect. |
 | Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent (saw 683x) | Generate it. Has autocorrect: frozenrequirementsautocorrect. |
-| `tmux` not installed in the task image | Harbor drives the agent/verifier inside a `tmux` pane; no tmux means the session never starts and the run errors before tests | apt-get install y tmux / apk add -no-cache tmux. Good autocorrect candidate. |
-| asciinema not installed | Harbor records the terminal session with asciinema; a missing binary breaks the run | apt-get install y asciinema / pip install asciinema / apk add asciinema |
+| `tmux` not installed in the task image | Harbor drives the agent/verifier inside a `tmux` pane; no tmux means the session never starts and the run errors before tests | `apt-get install -y tmux` / `apk add --no-cache tmux`. Good autocorrect candidate. |
+| asciinema not installed | Harbor records the terminal session with asciinema; a missing binary breaks the run | `apt-get install -y asciinema` / `pip install asciinema` / `apk add asciinema` |
 | Unpinned base image (FROM ...:latest) | Reproducibility failure | Pin to a concrete tag |
 | DownloadVerifierDirError / verifier-output-not-found | When caused by the above (bash/sh mismatch, missing artifact path, missing tmux/asciinema) | Fix the upstream cause |
-| Resource limits too low | Build OOM / disk-full from undersized cpus/memorymb/storagemb | Bump limits |
-| Bad shell/shebang, CRLF line endings, non-executable scripts | Script fails to exec | Normalize / chmod x |
+| Resource limits too low | Build OOM / disk-full from undersized `cpus`/`memory_mb`/`storage_mb` | Bump limits |
+| Bad shell/shebang, CRLF line endings, non-executable scripts | Script fails to exec | Normalize / `chmod +x` |
 | Stray pipeline artifacts / wrong metadata blocking build prep | e.g. metadata.json in root, cpp vs c++, missing language. Strictly metadata, but they gate the task before it builds. | Clean up |
 
 **Not Fixable environment issues**

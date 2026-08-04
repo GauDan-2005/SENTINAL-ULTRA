@@ -1,3 +1,20 @@
+---
+id: raising-difficulty-on-a-wrapper-task
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260723_030109__cryspen_libcrux__1165
+evidence: "Difficulty check scored both frontier models 8/8 against a Medium bar of at most 4 of 8"
+applies_to:
+  languages: [rust, any]
+  runners: [cargo]
+  phases: [difficulty, fixing]
+blocks_submission: true
+fails_gate: [difficulty]
+supersedes: []
+contradicts: []
+---
+
 # When a task is measured easy and the instruction cannot be trimmed
 
 Source: `20260723_030109__cryspen_libcrux__1165`, difficulty check 2026-08-03. Both frontier

@@ -1,3 +1,22 @@
+---
+id: prescriptiveness-check
+status: platform-confirmed
+last_verified: 2026-08-02
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+  - 20260728_153118__jqno_equalsverifier__1166
+  - 20260727_135618__AltBeacon_android-beacon-library__1177
+evidence: "CodeBuild BUILD-phase scores from three tasks: 0.25, 0.10, and 0.38 -> 0.45 -> pass"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [prescriptiveness, fixing]
+blocks_submission: false
+fails_gate: [prescriptiveness]
+supersedes: []
+contradicts: []
+---
+
 # The prescriptiveness check
 
 Sources: real CodeBuild logs from three tasks.

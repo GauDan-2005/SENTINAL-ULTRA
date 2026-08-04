@@ -8,25 +8,98 @@ of `docs/`. When a note here contradicts `docs/` or `CLAUDE.md`, the note wins o
 of fact about what the platform *does*, because it was verified against a real build log
 or a real container run. Follow `docs/` for policy and judgment.
 
+Two files are not notes and are read differently. [LEDGER.md](LEDGER.md) is the list of claims
+this workspace has **disproved**, so a wrong idea does not come back looking new.
+[calibration.tsv](calibration.tsv) is one row of measured numbers per task, for telling an
+ordinary figure from an unusual one.
+
+## Frontmatter
+
+Every note carries YAML frontmatter, so the mandatory session-start read can be sequenced and
+filtered instead of taken in file order.
+
+```yaml
+---
+id: static-checks                       # slug, matches the filename
+status: platform-confirmed              # see the vocabulary below
+last_verified: 2026-08-04               # the date this note's evidence was gathered
+verified_by:                            # the task or tasks it came from
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+evidence: "what was actually observed, one line"
+applies_to:
+  languages: [any]                      # or [java, kotlin], [rust], ...
+  runners: [any]                        # maven, gradle, cargo, deno, docker, git, zip, ...
+  phases: [packaging, static-checks]    # where in the workflow it bites
+blocks_submission: true                 # can this stop a submission by itself
+fails_gate: [static-checks]             # which gate has actually failed because of it
+supersedes: []                          # earlier positions this note retracts
+contradicts: []                         # what it disagrees with, in docs/ or in itself
+---
+```
+
+`status` vocabulary, strongest first:
+
+| Value | Means |
+|---|---|
+| `platform-confirmed` | The platform itself returned this. A build log, a check result, an acceptance |
+| `locally-verified` | Reproduced on this machine, usually in the task's own image |
+| `reported` | Second-hand: another EC, a sibling workspace, Slack. **Not reproduced here.** Earlier drafts called this `provisional` |
+| `superseded` | A later note replaced it. The row in `LEDGER.md` says what by |
+| `refuted` | Disproved. Kept so nobody re-derives it. Must have a `LEDGER.md` row |
+
+`blocks_submission: true` means an unfixed instance can stop a submission on its own, through a
+static check, a difficulty verdict or a must-have Quality criterion. `false` does not mean
+harmless: several `false` notes are things a peer reviewer bounced a green bundle for, and
+`fails_gate` names which gate that was.
+
 ## Index
 
-| File | What it saves you from |
+| File | Status | Verified | What it saves you from |
+|---|---|---|---|
+| [LEDGER.md](LEDGER.md) | locally-verified | 2026-08-04 | **Read this before designing a fix that resembles one already tried.** Every claim this workspace believed, shipped and then disproved, with what refuted it and what it cost. Seventeen rows, five of them a full round each |
+| [stock-bundle-defect-baseline.md](stock-bundle-defect-baseline.md) | locally-verified | 2026-08-04 | Six defects the stock Harbor scaffold ships, found independently on all four bundles here. A Step 2 table with a verdict and evidence per row, so they stop being rediscovered one task at a time |
+| [static-checks.md](static-checks.md) | platform-confirmed | 2026-08-04 | The 20 checks the platform runs on upload, the `fail_to_pass` range that is a hard cap rather than a preference, the four filenames `tests/` will accept (a `tests/files/` directory is rejected despite being in the layout docs), and the reflog that comes back every time you regenerate `tests.patch` |
+| [prescriptiveness-check.md](prescriptiveness-check.md) | platform-confirmed | 2026-08-02 | The second CodeBuild phase that scores `instruction.md`. How to actually make it pass, which took three uploads on one task, plus what it catches beyond the two documented rules, the symbol audit, and the floor below which cutting starts breaking the blocking checks |
+| [tests-patch-vs-agent-edits.md](tests-patch-vs-agent-edits.md) | platform-confirmed | 2026-08-04 | `tests.patch` failing to apply once an agent has edited the tests, which made the difficulty verdict untrustworthy three rounds running. **Three git-based restores shipped and none worked on the platform**, because the verify-time workspace is not a git repository. The restore that works is an archive of the base test tree embedded in `test.sh` itself (**not** `tests/files/`, which the static checker rejects), and it is **platform-confirmed** as of 2026-08-04. A clean oracle run does not catch any of it |
+| [stale-test-reports.md](stale-test-reports.md) | locally-verified | 2026-08-01 | Verifiers that read test results baked into the image at build time, which makes `pass_to_pass` an illusion and only shows up in the NOP run |
+| [local-runs.md](local-runs.md) | locally-verified | 2026-08-04 | Wedging the workspace filesystem while running local oracle and NOP checks. **The workspace moved to ext4 on 2026-08-04**, so read the update at the top before assuming NTFS |
+| [verify-in-the-image.md](verify-in-the-image.md) | locally-verified | 2026-08-04 | Static conclusions that were wrong: the host interpreter rejecting syntax the task's own Python accepts, a textbook-looking NOP whose collection aborted before grading anything, a NOP whose build tool refused the feature flag before compiling anything, and two hostile probes that "passed" because the break never landed |
+| [git-autofetch-watcher.md](git-autofetch-watcher.md) | locally-verified | 2026-08-04 | An editor's periodic `git fetch` rewrites `.git/FETCH_HEAD` in every task checkout on a three minute cycle, including inside `download/original/`. It undoes the pre-zip git scrub silently, and `tasks/` being gitignored means `git status` can never reveal it |
+| [unreachable-git-blobs.md](unreachable-git-blobs.md) | locally-verified | 2026-08-02 | Dangling blobs of the golden file and the patched test file surviving in `.git` after every documented git check passes. `gc --prune=now` alone does not clear them and nothing in `docs/` tells you to look |
+| [verifier-fail-open.md](verifier-fail-open.md) | locally-verified | 2026-08-02 | A grader that scans stdout for the graded test names and writes reward 1.0 even though the test command exited nonzero. Compile failures, timeouts and crashes all grade as success. **The stock harness ships this defect**, so it is your task's defect unless you edited `test.sh` |
+| [solve-sh-idempotency.md](solve-sh-idempotency.md) | locally-verified | 2026-08-04 | A `solve.sh` whose reverse-apply fallback undoes the solution on a second invocation, which reproduces on exactly zero local runs. Read the correction too: it was once blamed for an `Oracle 0/3` it did not cause |
+| [solve-sh-under-sh.md](solve-sh-under-sh.md) | reported | 2026-08-04 | A `solve.sh` full of bashisms that the harness runs under `sh`. Green under every local `bash` invocation, `Oracle 0/3` on the platform. **Imported from a sibling workspace, not reproduced here** |
+| [quality-check-criteria.md](quality-check-criteria.md) | platform-confirmed | 2026-08-04 | The Quality Check returns 15 must-have criteria rather than the 10 axes `docs/` describes, and **instruction leakage and navigation can block submission on their own**. The "it is advisory, keep the residual findings" reasoning belongs to the prescriptiveness check and does not transfer |
+| [raising-difficulty-on-a-wrapper-task.md](raising-difficulty-on-a-wrapper-task.md) | platform-confirmed | 2026-08-04 | A task the platform measures as easy where the instruction cannot be trimmed, because the API names are the deliverable. What earns agent failures, and two expansions killed by `deny(unsafe_code)` and by workspace-wide feature unification |
+| [dirty-repo-and-symlinks.md](dirty-repo-and-symlinks.md) | locally-verified | 2026-08-04 | A shipped `environment/repo` whose working tree is already dirty, 28 lost mode bits and 7 symlinks flattened into regular files, the `zip -y` flag that stops your fix being undone at packaging time, and the same damage reappearing when the workspace is moved between filesystems |
+| [source-pr-cross-check.md](source-pr-cross-check.md) | locally-verified | 2026-08-02 | A coverage finding that describes the upstream PR rather than your tests, where the fix belongs in the instruction and touching the oracle would be reducing PR scope. Plus the GitHub API paging trap that produced a confidently wrong answer off page 1 of 2 |
+| [diagnosing-platform-only-failures.md](diagnosing-platform-only-failures.md) | platform-confirmed | 2026-08-04 | **Three rounds spent fixing real defects that were not the defect.** How to work a failure that reproduces on the platform and nowhere else: the two-strikes rule, why a local reproduction proves sufficiency and never necessity, the round-over-round trend nobody read, and the evidence hierarchy that ends with a sibling task's report |
+| [peer-review-bounces.md](peer-review-bounces.md) | reported | 2026-08-01 | What peer reviewers sent back on four submissions that had cleared every eval: an unnameable API, a font registry that fell from three to one with all 16 tests green, a matcher demanding literal tokens the instruction said were optional. **Another EC's tasks, not reproduced here** |
+| [platform-announcements.md](platform-announcements.md) | reported | 2026-08-04 | Operating rules that reach ECs through Slack and never appear in `docs/`. The difficulty rerun ladder, and the fact that a failed Difficulty Check is never automatically a Not Fixable verdict. **Subordinate to `docs/` on policy and to the run-backed notes on behaviour** |
+| [accepted-bundle-reference.md](accepted-bundle-reference.md) | platform-confirmed | 2026-08-04 | The one bundle in this workspace that cleared every gate, with its measured numbers as a calibration target. Critically, it separates the hardening that acceptance **validated** from the hardening that merely was not caught, so advisory choices do not get quoted as proven practice |
+| [calibration.tsv](calibration.tsv) | locally-verified | 2026-08-04 | Judging bundle shape off one example. 36 measured columns for every task handled here, caveats included, so "is 1204 pass-to-pass ids a lot" has an answer |
+
+**Sequencing the mandatory read.** Take `LEDGER.md` and
+`stock-bundle-defect-baseline.md` first, then everything with
+`blocks_submission: true`, then the rest. Filter the rest by `applies_to.runners` against the
+task in front of you, and read the `reported` notes knowing they are second-hand.
+
+## Evidence sources
+
+Raw material the notes were written from lives in `chat_transcripts/` at the workspace root.
+It is not indexed here note by note because it is transcript, not conclusion, but it is where a
+claim gets checked when a note's summary is not enough:
+
+| File | What it is |
 |---|---|
-| [static-checks.md](static-checks.md) | The 20 checks the platform runs on upload, the `fail_to_pass` range that is a hard cap rather than a preference, the four filenames `tests/` will accept (a `tests/files/` directory is rejected despite being in the layout docs), and the reflog that comes back every time you regenerate `tests.patch` |
-| [prescriptiveness-check.md](prescriptiveness-check.md) | The second CodeBuild phase that scores `instruction.md`. How to actually make it pass, which took three uploads on one task, plus what it catches beyond the two documented rules, the symbol audit, and the floor below which cutting starts breaking the blocking checks |
-| [tests-patch-vs-agent-edits.md](tests-patch-vs-agent-edits.md) | `tests.patch` failing to apply once an agent has edited the tests, which made the difficulty verdict untrustworthy three rounds running. **Three git-based restores shipped and none worked on the platform**, because the verify-time workspace is not a git repository. Reproduced locally on kvdex, named outright by four codex trial analyses on equalsverifier. The restore that works is an archive of the base test tree embedded in `test.sh` itself (**not** `tests/files/`, which the static checker rejects), and it is **platform-confirmed** as of 2026-08-04. A clean oracle run does not catch any of it |
-| [stale-test-reports.md](stale-test-reports.md) | Verifiers that read test results baked into the image at build time, which makes `pass_to_pass` an illusion and only shows up in the NOP run |
-| [local-runs.md](local-runs.md) | Wedging the workspace filesystem while running local oracle and NOP checks. **The workspace moved to ext4 on 2026-08-04**, so read the update at the top before assuming NTFS |
-| [verify-in-the-image.md](verify-in-the-image.md) | Static conclusions that were wrong: the host interpreter rejecting syntax the task's own Python accepts, a textbook-looking NOP whose collection aborted before grading anything, a NOP whose build tool refused the feature flag before compiling anything, and two hostile probes that "passed" because the break never landed |
-| [unreachable-git-blobs.md](unreachable-git-blobs.md) | Dangling blobs of the golden file and the patched test file surviving in `.git` after every documented git check passes. `gc --prune=now` alone does not clear them and nothing in `docs/` tells you to look |
-| [verifier-fail-open.md](verifier-fail-open.md) | A grader that scans stdout for the graded test names and writes reward 1.0 even though the test command exited nonzero. Compile failures, timeouts and crashes all grade as success. **The stock harness ships this defect**, so it is your task's defect unless you edited `test.sh` |
-| [solve-sh-idempotency.md](solve-sh-idempotency.md) | A `solve.sh` whose reverse-apply fallback undoes the solution on a second invocation, which the platform reports as "Oracle did not pass all runs: 0/3. Task may be flaky" and which reproduces on exactly zero local runs |
-| [quality-check-criteria.md](quality-check-criteria.md) | The Quality Check returns 15 must-have criteria rather than the 10 axes `docs/` describes, and **instruction leakage and navigation can block submission on their own**. The "it is advisory, keep the residual findings" reasoning belongs to the prescriptiveness check and does not transfer |
-| [raising-difficulty-on-a-wrapper-task.md](raising-difficulty-on-a-wrapper-task.md) | A task the platform measures as easy where the instruction cannot be trimmed, because the API names are the deliverable. What earns agent failures, and two expansions killed by `deny(unsafe_code)` and by workspace-wide feature unification |
-| [dirty-repo-and-symlinks.md](dirty-repo-and-symlinks.md) | A shipped `environment/repo` whose working tree is already dirty, 28 lost mode bits and 7 symlinks flattened into regular files, the `zip -y` flag that stops your fix being undone at packaging time, and the same damage reappearing when the workspace is moved between filesystems |
-| [source-pr-cross-check.md](source-pr-cross-check.md) | A coverage finding that describes the upstream PR rather than your tests, where the fix belongs in the instruction and touching the oracle would be reducing PR scope. Plus the GitHub API paging trap that produced a confidently wrong answer off page 1 of 2 |
-| [diagnosing-platform-only-failures.md](diagnosing-platform-only-failures.md) | **Three rounds spent fixing real defects that were not the defect.** How to work a failure that reproduces on the platform and nowhere else: the two-strikes rule, why a local reproduction proves sufficiency and never necessity, the round-over-round trend nobody read, and the evidence hierarchy that ends with a sibling task's report |
-| [accepted-bundle-reference.md](accepted-bundle-reference.md) | The one bundle in this workspace that cleared every gate, with its measured numbers as a calibration target. Critically, it separates the hardening that acceptance **validated** from the hardening that merely was not caught, so advisory choices do not get quoted as proven practice |
+| `chat_transcripts/cursor_etlcpp.md` | Another EC's session on `20260716_114438__ETLCPP_etl__1466`, including the peer reviewer's findings. **Primary evidence** for `unreachable-git-blobs.md`, `verifier-fail-open.md`, the graded-test-naming half of `tests-patch-vs-agent-edits.md`, and `CLAUDE.md` section 10 |
+| `chat_transcripts/oliver.txt` | The kvdex 245 sessions, six rounds to acceptance |
+| `chat_transcripts/cryspen.txt` | The libcrux 1165 sessions |
+| `chat_transcripts/alt.txt` | The android-beacon 1177 sessions |
+| `chat_transcripts/jqno.txt` | The equalsverifier 1166 sessions |
+
+Do not delete anything in there as an unexplained loose file. Three notes and a `CLAUDE.md`
+section rest on the first row alone.
 
 `unreachable-git-blobs.md` and `verifier-fail-open.md` started as a peer reviewer's notes on
 another EC's bundle rather than a run on this machine. Both have since been reproduced here,
@@ -156,6 +229,18 @@ Habits that come out of these notes and are worth doing on every task:
   zipping without `-y`. Re-run the git sweep in `work/` after any move, sync or archive
   round-trip, and check the shipped zip separately rather than inferring one from the other.
 
+- Assume all six stock-scaffold defects are present on an arriving bundle and fill the
+  baseline table with a verdict and a command per row. Four tasks, four languages, and the same
+  six findings every time.
+- On a failed Difficulty Check with an unchanged bundle and green local checks, rerun once, then
+  a second time, and only then diagnose or escalate. Reruns come before any fix has shipped;
+  two strikes applies after one has.
+- Run `solve.sh` under `sh` at least once, not only under `bash`. A shebang is ignored when the
+  file is passed to an interpreter, so `bash /solution/solve.sh` hides every bashism in it.
+- Preserve symlinks at packaging time and prove it: `unzip -Z <zip> | grep -c '^l'` has to equal
+  `find work -type l | wc -l`. Both sides print 0 on a repo with no symlinks and the check costs
+  nothing.
+
 ## How to add to this log
 
 Add a note when something cost real time and would cost it again. Each note should say:
@@ -164,6 +249,16 @@ Add a note when something cost real time and would cost it again. Each note shou
 2. **Why** it happened.
 3. **The rule** to apply next time, stated so it can be followed without re-deriving it.
 4. **Date and task** it came from, so a stale note can be spotted later.
+
+Plus the frontmatter block described at the top of this file, and a row in the index table with
+its `status` and `last_verified`. A note with no frontmatter cannot be sequenced or filtered,
+which is the whole reason the mandatory read is expensive.
+
+**When you retract something, `LEDGER.md` gets a row in the same edit.** That covers flipping a
+note's `status` to `refuted` or `superseded`, and it also covers retracting a single claim
+inside a note that otherwise stands. A retraction that lives only in prose gets skimmed past,
+and the wrong idea comes back looking new. Fill in every column: what was believed, why it was
+believable, what refuted it with the evidence, what replaced it, and what it cost in rounds.
 
 Do not log things already covered by `docs/` or `CLAUDE.md`. Log the gap between what
 those say and what actually happens.

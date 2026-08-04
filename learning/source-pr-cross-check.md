@@ -1,3 +1,20 @@
+---
+id: source-pr-cross-check
+status: locally-verified
+last_verified: 2026-08-02
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+evidence: "Three Quality Check coverage findings traced back to the upstream PR and to the base commit"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [quality-check, analysis]
+blocks_submission: false
+fails_gate: [quality-check]
+supersedes: []
+contradicts: []
+---
+
 # Cross-checking a judge finding against the source PR
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, revision 3, 2026-08-02. The Quality

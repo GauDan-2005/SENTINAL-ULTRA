@@ -1,3 +1,23 @@
+---
+id: static-checks
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+  - 20260728_153118__jqno_equalsverifier__1166
+evidence: "CodeBuild static-check logs from real uploads, plus the rejected tests/files/ upload"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [packaging, static-checks]
+blocks_submission: true
+fails_gate: [static-checks]
+supersedes: []
+contradicts:
+  - "docs/harbor-framework.md — lists tests/files/ in the layout; the static checker rejects that directory"
+  - "docs/guidelines.md — reads fail_to_pass as a floor of 10; the check enforces a hard 10-20 range"
+---
+
 # Platform static checks on upload
 
 Source: CodeBuild log from a real upload, 2026-07-31, task
@@ -136,11 +156,22 @@ git apply --check ../../solution/golden.patch
 packed-refs refs`. Anything else is cruft.
 
 Because `git gc` packs refs, `.git/refs/heads/` ends up empty, which is exactly the case
-`zip -rD` and GUI compress tools break. Always `zip -rX` and confirm afterwards:
+`zip -rD` and GUI compress tools break. Always `zip -rXy` and confirm afterwards. `-X` keeps
+the directory entries an empty `.git/refs/` needs, and `-y` stores symlinks as symlinks instead
+of following them and writing the target's bytes into a regular file:
 
 ```bash
-unzip -l <task>.zip | grep 'refs/'   # must list refs/ and refs/heads/
+unzip -l <task>.zip | grep 'refs/'          # must list refs/ and refs/heads/
+
+# symlinks survived: both sides must print the same number
+unzip -Z <task>.zip | grep -c '^l'
+find work -type l | wc -l
 ```
+
+The symlink assertion is not theoretical. libcrux 1165 ships 7 symlinks in
+`environment/repo`, and a zip without `-y` flattens every one of them, which is the same damage
+the bundle arrived with. See [dirty-repo-and-symlinks.md](dirty-repo-and-symlinks.md). On a repo
+with no symlinks both sides print `0` and the check is free.
 
 ## The form asks more than the docs say
 

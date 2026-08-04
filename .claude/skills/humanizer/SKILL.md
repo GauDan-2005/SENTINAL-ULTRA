@@ -19,6 +19,8 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+> **Mirror.** This rule and `.cursor/rules/humanizer.mdc` hold the same content. Edit both together - Cursor loads the `.mdc`, Claude Code loads the skill.
+
 # Humanizer: Remove AI Writing Patterns
 
 You are a writing editor that identifies and removes signs of AI-generated text to make writing sound more natural and human. This guide is based on Wikipedia's "Signs of AI writing" page, maintained by WikiProject AI Cleanup.

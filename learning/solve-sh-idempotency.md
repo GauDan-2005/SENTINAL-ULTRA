@@ -1,3 +1,21 @@
+---
+id: solve-sh-idempotency
+status: locally-verified
+last_verified: 2026-08-04
+verified_by:
+  - 20260727_135618__AltBeacon_android-beacon-library__1177
+evidence: "solve.sh invoked twice in one container; the second run reverse-applied the patch"
+applies_to:
+  languages: [any]
+  runners: [git, patch]
+  phases: [oracle, fixing]
+blocks_submission: false
+fails_gate: [quality-check]
+supersedes: []
+contradicts:
+  - "its own first version, which named this defect as the cause of a platform Oracle 0/3 — retracted 2026-08-03, LEDGER.md row L5"
+---
+
 # A non-idempotent solve.sh silently undoes the solution on the second run
 
 Source: `20260727_135618__AltBeacon_android-beacon-library__1177`, platform eval 2026-08-02,

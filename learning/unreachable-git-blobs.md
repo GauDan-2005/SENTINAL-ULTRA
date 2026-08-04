@@ -1,9 +1,28 @@
+---
+id: unreachable-git-blobs
+status: locally-verified
+last_verified: 2026-08-02
+verified_by:
+  - 20260716_114438__ETLCPP_etl__1466 (peer review, second-hand)
+  - 20260723_030109__cryspen_libcrux__1165 (reproduced here)
+evidence: "chat_transcripts/cursor_etlcpp.md for the original bounce; git fsck --unreachable on this machine for the reproduction"
+applies_to:
+  languages: [any]
+  runners: [git]
+  phases: [packaging]
+blocks_submission: false
+fails_gate: [peer-review]
+supersedes: []
+contradicts: []
+---
+
 # Solution and test blobs surviving in `.git` after a clean-looking gc
 
 Source: peer-review notes on task `20260716_114438__ETLCPP_etl__1466` (ETLCPP/etl PR 1466),
 reviewed 2026-08-02. **Provenance:** originally a reviewer's finding on another EC's bundle,
-read from their session transcript. **Now machine-verified here** — see "Confirmed on this
-machine" below.
+read from their session transcript, which is kept in this workspace at
+[`chat_transcripts/cursor_etlcpp.md`](../chat_transcripts/cursor_etlcpp.md). **Now
+machine-verified here** — see "Confirmed on this machine" below.
 
 ## What happened
 

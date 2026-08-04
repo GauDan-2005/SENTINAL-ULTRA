@@ -1,3 +1,23 @@
+---
+id: tests-patch-vs-agent-edits
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+  - 20260728_153118__jqno_equalsverifier__1166
+evidence: "Difficulty-check trial logs across four rounds; the base64 restore was accepted on kvdex round 6"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [difficulty, packaging]
+blocks_submission: true
+fails_gate: [difficulty]
+supersedes:
+  - "three git-based restore designs — kvdex 245 rounds 4 and 5, equalsverifier 1166 round 1. LEDGER.md rows L1 to L3"
+  - "its own earlier claim that a create-only tests.patch needs no restore step — LEDGER.md row L9"
+contradicts: []
+---
+
 # tests.patch fails to apply after an agent edits the tests
 
 Source: difficulty check results for `20260719_045042__oliver-oloughlin_kvdex__245`,
@@ -548,8 +568,9 @@ the "patch does not apply" half. They overlap, which is the point. Ship both.
 ## The second half of the fix: give the graded tests their own file and prefix
 
 Source: peer-review notes on `20260716_114438__ETLCPP_etl__1466`, read from another EC's
-transcript 2026-08-02. Not reproduced here, but it is the same failure this note is about,
-caught from the other side.
+transcript 2026-08-02, kept at
+[`chat_transcripts/cursor_etlcpp.md`](../chat_transcripts/cursor_etlcpp.md). Not reproduced
+here, but it is the same failure this note is about, caught from the other side.
 
 That task's `tests.patch` injected the graded tests into the repo's existing public
 `test/test_algorithm.cpp` under ordinary names — `partition_move` among them. The reviewer's

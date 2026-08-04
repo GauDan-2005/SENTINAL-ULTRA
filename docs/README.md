@@ -2,17 +2,116 @@
 
 Source site: https://snorkel-ai.github.io/Sentinel_Ultra_Hub/
 
-Exported: 2026-07-31T13:51:23Z
+Exported: six tabs on 2026-07-31T13:51:23Z; `faq.md` and `whats-new.md` refreshed 2026-08-01.
+There is no single export date — `manifest.json` carries the real date, size and SHA-256 per
+file, and is the thing to trust.
 
 The Hub is a single-page app whose content is compiled into its JS bundle — there are no
 per-page Markdown endpoints. These files were produced by rendering each tab in a headless
 browser and converting the resulting DOM to Markdown, so they mirror the site exactly.
 
 Read [ALL_DOCUMENTATION.md](ALL_DOCUMENTATION.md) for a single combined copy, or browse the
-individual tabs below. `manifest.json` lists each file with its size.
+individual tabs below. `manifest.json` lists each file with its export date, byte size,
+SHA-256 and any local edit.
 
 > The **Changelog** tab is hidden in the live site's navigation (it only appears with the
 > `?changelog` query parameter); it is included here for completeness.
+
+## Staleness and refresh
+
+`docs/` is the declared source of truth for policy, so a stale copy is a silent correctness
+problem — the Jul 27 build-time-network correction is exactly the kind of Hub change that
+invalidates a rule written against the older text. Two things can go wrong, and they have
+different checks.
+
+**1. Has the Hub changed since this export?** The Hub ships its content inside a
+content-hashed JS bundle, so the bundle filename changes whenever any tab's text changes.
+That makes it a reliable one-request sentinel:
+
+```sh
+curl -s https://snorkel-ai.github.io/Sentinel_Ultra_Hub/ \
+  | grep -o 'assets/index-[0-9a-f]\{8\}\.js'
+```
+
+Compare the result against `hub_bundle` in [manifest.json](manifest.json). Same string means
+nothing on the Hub has changed and this export is current. A different string means at least
+one tab was edited and `docs/` needs re-exporting.
+
+**2. Has anything here been edited locally?** Verify the recorded hashes:
+
+```sh
+cd docs && python3 - <<'PY'
+import json, hashlib
+m = json.load(open('manifest.json'))
+bad = 0
+for e in m['files'] + m['derived']:
+    if hashlib.sha256(open(e['local_path'], 'rb').read()).hexdigest() != e['sha256']:
+        print('CHANGED', e['local_path']); bad += 1
+print('ok' if not bad else f'{bad} file(s) differ from the manifest')
+PY
+```
+
+`guidelines.md` is expected to carry a local edit (see its `local_edits` entry); anything else
+reporting CHANGED was modified without the manifest being updated.
+
+### Reapply after any re-export
+
+A re-export overwrites the file and silently loses these local repairs. Reapply each one, or
+the workspace goes back to prescribing broken shell. Both files carry the SAME table and both
+must be repaired - `ALL_DOCUMENTATION.md` is not manifest-tracked, so nothing detects it.
+
+In `guidelines.md` and `ALL_DOCUMENTATION.md`, "Fixable environment issues" table, Fix column:
+
+| Damaged in the Hub export | Correct command |
+|---|---|
+| `apk add -no-cache bash` | `apk add --no-cache bash` |
+| `apt-get install y tmux` / `apk add -no-cache tmux` | `apt-get install -y tmux` / `apk add --no-cache tmux` |
+| `apt-get install y asciinema` | `apt-get install -y asciinema` |
+| `cpus/memorymb/storagemb` | `cpus` / `memory_mb` / `storage_mb` |
+| `chmod x` | `chmod +x` |
+
+The damage is in the Hub's own page bundle, not in the export tooling, so it will come back
+every time. Verify the repair held by checking the TABLE ROWS, anchored on the leading pipe.
+A bare grep for the damaged strings does NOT work here and must not be used: both files carry
+a repair note that quotes the damaged strings on purpose, so a bare grep always reports hits
+and can never pass.
+
+```
+awk '/^\|/ && (/apk add -no-cache/||/install y /||/chmod x/||/memorymb/)' \
+    docs/guidelines.md docs/ALL_DOCUMENTATION.md
+```
+
+It must return nothing. Then confirm the repaired forms are actually present:
+
+```
+grep -c 'apk add --no-cache bash\|apt-get install -y tmux\|chmod +x' \
+    docs/guidelines.md docs/ALL_DOCUMENTATION.md
+```
+
+Both files must report 3. Checking only the first command would pass on a file where the
+whole table had been deleted, which is why the second one exists.
+
+**Re-exporting.** No exporter script is checked into this workspace, so this is a manual step:
+render each tab of the Hub in a headless browser, convert the DOM to Markdown, and write it
+over the matching file, keeping the `<!-- Source: ... -->` header line at the top. Then
+regenerate `manifest.json` (dates, sizes, hashes, `hub_bundle`) and re-concatenate
+`ALL_DOCUMENTATION.md`.
+
+**After any re-export, re-diff these before trusting the workspace rules**, because they are
+transcribed into `CLAUDE.md` and the `.cursor` / `.claude` rule files rather than read from
+`docs/` at run time:
+
+- the verdict table rows in [guidelines.md](guidelines.md#task-verdicts)
+- the `task.toml` field limits in [harbor-framework.md](harbor-framework.md#task-metadata)
+- the submitter and reviewer form question lists in
+  [tasking-guide.md](tasking-guide.md#step-by-step-submitter-form-questions)
+- the two compliance checklists, whose wording must stay byte-identical to the platform's
+
+**Known upstream defect.** The Fix column of the "Fixable environment issues" table in
+`guidelines.md` is mistyped on the Hub itself — flags lose a hyphen (`apk add -no-cache`,
+`apt-get install y`), `chmod +x` loses its `+`, and `memory_mb`/`storage_mb` lose their
+underscores. It is corrected in our copy and flagged there. A re-export will bring the broken
+commands back, so re-apply the correction.
 
 ## Contents
 
@@ -54,6 +153,7 @@ individual tabs below. `manifest.json` lists each file with its size.
   - [Which network_mode should my task.toml use?](faq.md#which-network-mode-should-my-task-toml-use)
   - [How should I set the agent timeout, and what if the task keeps timing out?](faq.md#how-should-i-set-the-agent-timeout-and-what-if-the-task-keeps-timing-out)
   - [How do I check the status of a submission?](faq.md#how-do-i-check-the-status-of-a-submission)
+  - [An eval failed with an infra/platform error, or came back with blank feedback — is my task broken?](faq.md#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)
   - [The linter rejects my task as "easy" after a difficulty downgrade — what do I do?](faq.md#the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do)
   - [Do I need to run the oracle and NOP tests locally?](faq.md#do-i-need-to-run-the-oracle-and-nop-tests-locally)
   - [What counts as "changing the PR scope" vs. "adding complexity"?](faq.md#what-counts-as-changing-the-pr-scope-vs-adding-complexity)

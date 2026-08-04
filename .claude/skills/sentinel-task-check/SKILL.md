@@ -22,7 +22,7 @@ Locate the `*_harborized/` task directory and read ALL of:
 
 - `task/instruction.md`
 - `problem_statement.md` — `diff` it against instruction.md, they must be byte-identical. Current spec puts it at `task/environment/problem_statement.md`; older bundles keep it at `task/problem_statement.md`
-- `task/task.toml` — `schema_version` plus `[environment]`, `[agent]`, `[verifier]`, `[metadata]`. Check every limit: cpus 2 or 4, memory_mb 2048–16384, storage_mb 5120–10240, gpus always 0, build_timeout_sec ≤ 1800, agent timeout_sec ≤ 7200, verifier timeout_sec ≤ 1800, and `network_mode` present in all three blocks (`"public"` / `"allowlist"` with `allowed_hosts = ["api.portkey.ai"]` / `"no-network"`). A stripped `network_mode` is a finding — the old "remove it" guidance is dead
+- `task/task.toml` — `schema_version` plus `[environment]`, `[agent]`, `[verifier]`, `[metadata]`. Check every limit: cpus 2 or 4, memory_mb 2048–16384, storage_mb 5120–10240, gpus always 0, build_timeout_sec ≤ 1800, agent timeout_sec ≤ 7200, verifier timeout_sec ≤ 1800, and `network_mode` present in all three blocks (`"public"` / `"allowlist"` with `allowed_hosts = ["api.portkey.ai"]` / `"no-network"`). A stripped `network_mode` is a finding — the old "remove it" guidance is dead. Under `[metadata]`, also cross-check `repo_license` (a real SPDX id, never empty), `repo_name`, `base_commit_sha` and `source_pr_url` — every shipped bundle carries them even though `docs/harbor-framework.md` does not list them
 - `task/solution/solve.sh` and its patch — `golden.patch`, or `init_state.patch` in reverse-diff tasks. A bundle shipping `solution.patch` is using a dead draft name and must be renamed to `golden.patch`
 - `task/tests/test.sh`, `task/tests/tests.patch`, `config.json`. **`tests/` accepts only these four names: `config.json`, `grade.py`, `test.sh`, `tests.patch`.** A `tests/files/` directory is rejected by the static checker even though older layout docs list it, so finding one is a finding
 - `task/environment/Dockerfile`
@@ -42,7 +42,7 @@ Git-hygiene and packaging checks on the shipped repo (read-only):
 - `du -sh task/environment/repo/.git` → must be under 100 MB
 - `git -C task/environment/repo fsck --unreachable --no-progress` → MUST print nothing. Unreachable objects are not covered by any line above: a repo with a clean tree, no reflog and no stray refs can still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p <sha>`. This check is not in the `docs/` checklist; the leakage rule it enforces is (`docs/tasking-guide.md` step 5 — no solution material readable from agent paths, and `.git` is one). See `learning/unreachable-git-blobs.md`
 - `git -C task/environment/repo apply --check ../../tests/tests.patch` → the f2p patch must apply at the base commit, otherwise every trial fails before any evidence is collected
-- Pre-existing test files must still be byte-identical to the base commit — the harness enforces it
+- The test files **shipped inside `environment/repo`** must be byte-identical to the base commit — that is the rule the harness enforces. It is NOT a rule about `tests.patch`: the patch is how graded tests arrive and it MAY edit pre-existing test files. The accepted kvdex bundle's `tests.patch` has 45 diff headers of which only 1 is a `new file mode`, so 44 pre-existing test files are edited by the patch and the bundle passed every gate. Check the shipped tree, not the patch: `git -C task/environment/repo status --porcelain` empty, plus a diff of the shipped test paths against the base commit
 - Stray-artifact sweep: `__pycache__/`, `*.pyc`, `.DS_Store`, `.venv/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.idea/`, `.vscode/`, swap files, `*.orig`, `*.bak`, `node_modules/` — one of these shipping into the container hard-caps the packaging axis at 1
 
 ---
@@ -61,14 +61,14 @@ The task has one or more of these issues (all correctable within the task):
 2. Instruction reads as templated or AI-generated
 3. Tests miss requirements stated in the instruction
 4. Tests grade behavior that is not in the instruction, or rely on arbitrary (non-derivable) names
-5. Fewer than 10 fail-to-pass tests → add tests to reach at least 10 (ideally 10–20)
+5. The fail-to-pass count sits outside **10–20 inclusive** → bring it back into range. Target 11–20. The platform's static check rejects both ends: under 10 fails the build and 21+ fails it too (`learning/static-checks.md`)
 6. Task leaks solution information (PR URL in the instruction, environment spoilers, test-gaming shortcuts)
 7. Oracle does not implement the solution following the instructions
 8. Overall task is too easy → raise difficulty by adding to the PR scope (must remain the original PR plus additions, never a different task)
 9. A specific, listed Dockerfile issue (allowed-fix table in sentinel-task-fixing §4, mirrored from `docs/guidelines.md#environment-limited-fixes`)
 10. A git-hygiene issue in the shipped repo: leaked fix history, a configured remote, a HEAD/base-commit mismatch, reflog entries, an oversized .git
 11. A `task.toml` problem against the published limits: a value out of range, `gpus` not 0, a missing or stripped `network_mode` block, a missing `[environment] os`, an agent timeout too low for what runs/ shows, an inaccurate `category` / `difficulty_explanation` / source URL
-12. A packaging problem: `tests.patch` cut against the wrong base, a modified pre-existing test file, stray dev artifacts, `solution.patch` instead of `golden.patch`, `problem_statement.md` out of sync with `instruction.md`, a `0644` `test.sh` or `solve.sh`
+12. A packaging problem: `tests.patch` cut against the wrong base, a pre-existing test file modified **inside the shipped repo** (a pre-existing test file edited by `tests.patch` is allowed and normal), stray dev artifacts, `solution.patch` instead of `golden.patch`, `problem_statement.md` out of sync with `instruction.md`, a `0644` `test.sh` or `solve.sh`
 13. A verifier problem: a grader that awards reward `1.0` while the test command exited nonzero, an empty or ungraded `pass_to_pass` where existing tests cover the patched area, or unreachable solution/test blobs left in `environment/repo/.git`
 
 ### Not Fixable
@@ -141,10 +141,11 @@ Tests likely need a rewrite when they: enforce undescribed behavior, require non
 
 ### Fail-to-pass test count
 
-- Every task must ship with **at least 10 fail-to-pass tests** (ideally 10–20). A fail-to-pass test fails on the pre-patch repo and passes after the fix.
-- If fewer than 10 → verdict is Fixable; the fix plan must add tests to reach at least 10
+- Every task must ship **between 10 and 20 fail-to-pass tests inclusive** — target 11–20. A fail-to-pass test fails on the pre-patch repo and passes after the fix.
+- **Both ends are hard.** The platform's static check enforces the 10–20 range and fails the build outside it, so 21+ is rejected exactly like 9 (`learning/static-checks.md`). The guidelines wording ("at least 10, ideally 10–20") and the form checkbox ("more than 10") both read as floors and neither mentions the ceiling
+- Outside the range → verdict is Fixable. Too few, add tests. Too many, regroup cases as sub-steps under fewer top-level tests rather than deleting assertions
 - Added tests must cover requirements stated or reasonably implied in the instruction — never undescribed behavior
-- Count statically: enumerate the individual test cases in tests.patch / tests/files that exercise the changed behavior, and confirm the count against a passing trial's test-stdout.txt
+- Count statically: enumerate the individual test cases in tests.patch that exercise the changed behavior, cross-check `grading.fail_to_pass` in config.json, and confirm the count against a passing trial's test-stdout.txt
 - The suite must include **at least one test that directly reproduces the failure described in the issue** — fails pre-patch, passes post-fix
 
 ### Test mechanics
@@ -172,7 +173,8 @@ The coverage axis asks whether a broken or stub solution fails at least one test
 
 - Diff the golden patch's file list against the source PR's. Extra files break the "no unnecessary changes" rule; files the PR touched but golden omits are the same defect inverted
 - If the instruction names a known library function as the behavioral standard, read the oracle against that function's real contract. Boundary cases are where a plausible oracle is wrong and the tests agree with it
-- `solve.sh` should be forward-only and idempotent. A reverse-apply fallback treated as success hides a golden patch that did not apply. This is about the fallback, not the flag — reverse-diff tasks shipping `init_state.patch` correctly run `patch -p1 -R` as their only path
+- `solve.sh` should be forward-only and idempotent, in four steps: a `git apply --reverse --check` probe that exits 0 when the patch is already in, a plain forward apply, a `git apply --3way` retry, then a loud failure. The `--3way` retry is the **prescribed** handling for a patch that will not apply cleanly, not a defect. What is banned is a reverse-apply that counts as SUCCESS after the forward apply failed — that inverts a correct tree on the second run and hides a golden patch that never applied. Reverse-diff tasks shipping `init_state.patch` correctly run `patch -p1 -R` as their only path. Verified shape in `learning/solve-sh-idempotency.md`
+- The platform runs the golden solution **three times and the bar is 3/3**. Read the number before theorising: 1/3 or 2/3 points at state accumulation (reproduce it by running solve.sh twice in one container), while 0/3 says run one already failed, which rules out every state-accumulation theory in one step. Real per-test output next to an N/3 line is a task defect; blank or null results with no verifier output is infra
 - `tests/test.sh` and `solution/solve.sh` should ship mode `0755` — the "non-executable scripts" row of the allowed-fix table
 
 ### Name derivability rule
@@ -224,7 +226,7 @@ Red flags: robotic phrasing ("The system shall…", "It is required that…"), t
 1. Run every check in Sections 1 and 3–6. Record each finding with file:line evidence
 2. If any Not Fixable condition holds (PR scope must be replaced/reduced, or a disallowed environment issue) → verdict is **Not Fixable**. Stop and write the reasons for Part B. A failed eval on its own is never enough — confirm the failure is caused by the task and reproduces every run, because infra and platform failures never make a task Unfixable
 3. Otherwise, if any Fixable trigger (Section 2 list, items 1–13) holds → verdict is **Fixable**. Produce a numbered fix plan
-4. Otherwise → **Valid as-is** (all four principles pass, ≥10 fail-to-pass tests, and instruction/tests/oracle/PR are fully aligned)
+4. Otherwise → **Valid as-is** (all four principles pass, the fail-to-pass count sits inside 10–20, and instruction/tests/oracle/PR are fully aligned)
 
 Multiple fixable issues still equal one Fixable verdict. A single Not Fixable condition overrides everything else, no matter how much is otherwise fixable.
 
@@ -264,7 +266,7 @@ Never claim a finding without evidence from the actual files. Never mark Fixable
 - [ ] No commit messages, comments, or docs spoiling the change
 - [ ] Tests cannot be passed by editing the tests
 - [ ] Every requirement → a test, every assertion → a stated or implied requirement, no hidden checks
-- [ ] At least 10 fail-to-pass tests (10–20 ideal), including one direct repro of the issue
+- [ ] Fail-to-pass count inside 10–20 inclusive (target 11–20; 21+ fails the static check), including one direct repro of the issue
 - [ ] Tests are outcome-based, deterministic, within timeout, independent of the golden solution
 - [ ] Every expected name is derivable (exists in base / standard convention / stated in instruction)
 - [ ] Roughly 100+ line fix across 2+ files, not a trivial edit or contrived puzzle
@@ -275,7 +277,7 @@ Never claim a finding without evidence from the actual files. Never mark Fixable
 - [ ] `pass_to_pass` covers the patched area and actually grades something
 - [ ] Golden patch's file list matches the source PR's, in both directions; `solve.sh` is forward-only; both scripts are `0755`
 - [ ] Git hygiene clean: no fix history, no refs past HEAD, no remotes, no `filter.*`, clean tree, HEAD equals base commit, no reflog leak, .git under 100 MB, `git fsck --unreachable` silent
-- [ ] `tests.patch` applies at the base commit and no pre-existing test file was modified
+- [ ] `tests.patch` applies at the base commit, and the test files inside the shipped repo are byte-identical to base (the patch itself editing pre-existing test files is fine)
 - [ ] `problem_statement.md` is byte-identical to `instruction.md`, and the solution patch is named `golden.patch`
 - [ ] `task.toml` inside every published limit, `gpus = 0`, `network_mode` present and correct in all three blocks
 - [ ] No stray dev artifacts anywhere in the bundle

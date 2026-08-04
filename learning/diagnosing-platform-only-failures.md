@@ -1,3 +1,20 @@
+---
+id: diagnosing-platform-only-failures
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+evidence: "Rounds 3 to 6 of kvdex 245: three locally-verified fixes to three real defects, none of which was the defect"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [difficulty, oracle, process]
+blocks_submission: false
+fails_gate: [difficulty]
+supersedes: []
+contradicts: []
+---
+
 # Diagnosing a failure you can only see on the platform
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, rounds 3 to 6, 2026-08-01 to 08-04.

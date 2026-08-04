@@ -1,3 +1,23 @@
+---
+id: quality-check-criteria
+status: platform-confirmed
+last_verified: 2026-08-04
+verified_by:
+  - 20260728_153118__jqno_equalsverifier__1166
+  - 20260723_030109__cryspen_libcrux__1165
+evidence: "Quality Check feedback text quoted verbatim across three rounds"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [quality-check, fixing]
+blocks_submission: true
+fails_gate: [quality-check]
+supersedes:
+  - "its own round-1 rule 3, which said placement relative to a class existing at base is safe — see 'Q9 rejects the replacement too'"
+contradicts:
+  - "docs/tasking-guide.md — describes 10 scored axes; the check returns 15 must-have criteria and instruction criteria block on their own"
+---
+
 # The Quality Check runs 15 must-have criteria, and instruction criteria block
 
 Source: platform evaluation of `20260728_153118__jqno_equalsverifier__1166`, 2026-08-02.
@@ -234,11 +254,36 @@ Check it mechanically before shipping: for each fragment the tests assert, `grep
 `instruction.md`. A count above zero is fine when the fragment is a content word inside a stated
 requirement, and a red flag when it is a quoted message string.
 
-## Still unknown
+## Criteria observed elsewhere, not yet seen in our own reports
 
-What the other 13 criteria are, which of the 15 are must-have, and whether the criterion groups
-beyond `Instructions` also block. Only the two failures were shown. Paste a fuller report in
-here the first time one appears.
+A report only prints the criteria that **failed**, so `13/15 criteria pass` tells you nothing
+about what the other 13 are. What follows is second-hand: criterion numbers reported by other
+ECs and by a sibling workspace, with no report in this workspace confirming the number, the
+wording or whether the criterion is must-have.
+
+**Every row here is unverified.** Treat a row as a thing worth checking your bundle against, not
+as a criterion you know exists. If a real report ever prints one of these numbers, replace the
+row with the quoted text and move it into the verified section above.
+
+| Criterion | Reported wording | Group | Must-have? | Source | Status |
+|---|---|---|---|---|---|
+| Q13 | `solve.sh` mutates tracked files outside `golden.patch`, e.g. deleting or renaming paths directly in the script | Oracle | unknown | sibling workspace, relayed | **unverified** |
+| Q15 | Dockerfile dependencies are unpinned, so the image is not reproducible | Environment | unknown | sibling workspace, relayed | **unverified** |
+| Q9 | Instruction gives explicit navigation hand-holding | Instructions | **yes** | our own report, 2026-08-02 | verified, see above |
+| Q10 | Instruction leaks hidden test information | Instructions | **yes** | our own report, 2026-08-02 | verified, see above |
+
+Q13 is worth acting on whether or not the criterion is real, because the underlying rule stands
+on its own: **`solve.sh` applies `golden.patch` and does nothing else.** Every delete, rename and
+edit of a tracked path belongs inside the patch. A script that `rm`s a file directly passes every
+check this workspace runs, and it means the golden patch is not the solution, which breaks the
+one thing a reviewer can check by reading.
+
+Q15 overlaps the reproducibility requirement in `docs/tasking-guide.md`, so pinning the base
+image to a concrete tag and baking test dependencies into the image covers it either way.
+
+Still genuinely unknown: what the remaining criteria are, how many of the 15 are must-have, and
+whether any group other than `Instructions` blocks on its own. Paste a fuller report in here the
+first time one appears.
 
 ## A judge's mechanical claim can simply be wrong. Measure it
 

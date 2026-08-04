@@ -1,5 +1,14 @@
 <!-- Source: https://snorkel-ai.github.io/Sentinel_Ultra_Hub/ — tab: Guidelines -->
 
+<!-- LOCAL REPAIR NOTE. The shell commands in the "Fixable environment issues" table below are
+     broken IN THE LIVE HUB, not in this export. Checked against the Hub's own bundle
+     (assets/index-77c1ec94.js) on 2026-08-04: it stores "apk add -no-cache bash",
+     "apt-get install y tmux", "chmod x" and "cpus/memorymb/storagemb" as literal strings, so the
+     export mirrored the site correctly and a re-export will reproduce the same broken commands.
+     Those cells have been corrected here to valid shell and backticked. This is the one place
+     docs/ deliberately departs from the Hub; every other file is a faithful mirror. See
+     docs/README.md "Staleness and refresh" and docs/manifest.json ("local_edits"). -->
+
 # Sentinel Ultra Contributor Guidelines
 
 Last updated: July 22, 2026
@@ -294,16 +303,26 @@ You may make only specific, allowed fixes to the environment (chiefly `environme
 
 **Fixable environment issues**
 
+> **Local repair note (this workspace, not the Hub):** the commands in the **Fix** column are
+> mistyped *in the Hub itself*, not by this export. The Hub's own page bundle stores them as
+> `apk add -no-cache bash`, `apt-get install y tmux`, `chmod x` and `cpus/memorymb/storagemb`,
+> so copying them straight off the site gives you a command that does not run. They have been
+> corrected below and backticked. Two autocorrect rule names, `alpinebashautocorrect` and
+> `frozenrequirementsautocorrect`, are left exactly as the Hub writes them - they look like
+> identifiers that lost their separators, but nothing in the Hub or in this export shows the
+> real spelling, so they are quoted rather than guessed. Wording is otherwise untouched, and
+> this table is the only place `docs/` departs from the live site.
+
 | Issue | What's happening | Fix |
 | --- | --- | --- |
-| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | apk add -no-cache bash. Has autocorrect: alpinebashautocorrect. |
-| Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent (saw 683x) | Generate it. Has autocorrect: frozenrequirementsautocorrect. |
-| `tmux` not installed in the task image | Harbor drives the agent/verifier inside a `tmux` pane; no tmux means the session never starts and the run errors before tests | apt-get install y tmux / apk add -no-cache tmux. Good autocorrect candidate. |
-| asciinema not installed | Harbor records the terminal session with asciinema; a missing binary breaks the run | apt-get install y asciinema / pip install asciinema / apk add asciinema |
+| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | `apk add --no-cache bash`. Has autocorrect: `alpinebashautocorrect` (Hub spelling, verbatim). |
+| Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent (saw 683x) | Generate it. Has autocorrect: `frozenrequirementsautocorrect` (Hub spelling, verbatim). |
+| `tmux` not installed in the task image | Harbor drives the agent/verifier inside a `tmux` pane; no tmux means the session never starts and the run errors before tests | `apt-get install -y tmux` / `apk add --no-cache tmux`. Good autocorrect candidate. |
+| asciinema not installed | Harbor records the terminal session with asciinema; a missing binary breaks the run | `apt-get install -y asciinema` / `pip install asciinema` / `apk add asciinema` |
 | Unpinned base image (FROM ...:latest) | Reproducibility failure | Pin to a concrete tag |
 | DownloadVerifierDirError / verifier-output-not-found | When caused by the above (bash/sh mismatch, missing artifact path, missing tmux/asciinema) | Fix the upstream cause |
-| Resource limits too low | Build OOM / disk-full from undersized cpus/memorymb/storagemb | Bump limits |
-| Bad shell/shebang, CRLF line endings, non-executable scripts | Script fails to exec | Normalize / chmod x |
+| Resource limits too low | Build OOM / disk-full from undersized `cpus`/`memory_mb`/`storage_mb` | Bump limits |
+| Bad shell/shebang, CRLF line endings, non-executable scripts | Script fails to exec | Normalize / `chmod +x` |
 | Stray pipeline artifacts / wrong metadata blocking build prep | e.g. metadata.json in root, cpp vs c++, missing language. Strictly metadata, but they gate the task before it builds. | Clean up |
 
 **Not Fixable environment issues**

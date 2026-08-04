@@ -1,3 +1,22 @@
+---
+id: local-runs
+status: locally-verified
+last_verified: 2026-08-04
+verified_by:
+  - 20260719_045042__oliver-oloughlin_kvdex__245
+  - 20260723_030109__cryspen_libcrux__1165
+evidence: "Docker oracle and NOP runs on this machine; filesystem confirmed ext4 on 2026-08-04"
+applies_to:
+  languages: [any]
+  runners: [docker]
+  phases: [local-runs]
+blocks_submission: false
+fails_gate: [none]
+supersedes:
+  - "its own ntfs3 sections — the workspace moved to ext4 on 2026-08-04, see the UPDATE at the top"
+contradicts: []
+---
+
 # Running the local oracle and NOP checks on this machine
 
 Source: session of 2026-07-31, task `20260719_045042__oliver-oloughlin_kvdex__245`.
@@ -67,7 +86,19 @@ docker run --rm --network none --cpus=4 --memory=8g \
   -v "$SP/run/tests:/tests:ro" -v "$SP/run/solution:/solution:ro" \
   -v "$SP/run/logs-oracle:/logs/verifier" \
   task:v1 bash -c 'bash /solution/solve.sh && bash /tests/test.sh'
+
+# Oracle again, invoked the way the harness might: sh, not bash.
+# Do at least one run this way. A bashism in solve.sh is invisible under the line above.
+docker run --rm --network none --cpus=4 --memory=8g \
+  -v "$SP/run/tests:/tests:ro" -v "$SP/run/solution:/solution:ro" \
+  -v "$SP/run/logs-oracle-sh:/logs/verifier" \
+  task:v1 bash -c 'sh /solution/solve.sh && bash /tests/test.sh'
 ```
+
+The `sh` run is not redundant. A shebang is only honoured when the file is executed directly, so
+`bash /solution/solve.sh` runs the script under bash whatever the first line says, and every
+array, `[[ ... ]]` and `set -o pipefail` in it passes. Under dash the same script can die at
+parse time and produce almost no output. See [solve-sh-under-sh.md](solve-sh-under-sh.md).
 
 Mount `tests` and `solution` read-only. Then the scripts cannot mutate anything outside
 the container and the "never run these in the working copy" rule is satisfied structurally

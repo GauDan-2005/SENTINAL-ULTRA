@@ -1,8 +1,29 @@
+---
+id: verifier-fail-open
+status: locally-verified
+last_verified: 2026-08-02
+verified_by:
+  - 20260716_114438__ETLCPP_etl__1466 (peer review, second-hand)
+  - 20260719_045042__oliver-oloughlin_kvdex__245 (measured on this bundle)
+evidence: "chat_transcripts/cursor_etlcpp.md for the reviewer's finding; kvdex NOP showing raw_exit_code 0 with zero tests run"
+applies_to:
+  languages: [any]
+  runners: [any]
+  phases: [fixing, local-runs, peer-review]
+blocks_submission: false
+fails_gate: [peer-review]
+supersedes: []
+contradicts: []
+---
+
 # Graders that award reward 1.0 while the test command exited nonzero
 
 Source: peer-review notes on task `20260716_114438__ETLCPP_etl__1466` (ETLCPP/etl PR 1466),
 reviewed 2026-08-02. **Provenance:** a reviewer's finding on another EC's bundle, read from
-their session transcript, not reproduced on this machine. The reviewer says they reproduced
+their session transcript, kept in this workspace at
+[`chat_transcripts/cursor_etlcpp.md`](../chat_transcripts/cursor_etlcpp.md). The finding
+itself was not reproduced on that bundle here, though the same fail-open shape was later
+measured directly on kvdex 245. The reviewer says they reproduced
 it directly, and the shape is easy to check on any task, so treat it as a standing audit
 step rather than a one-off.
 

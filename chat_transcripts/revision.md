@@ -1,3 +1,25 @@
+<!--
+RETIRED 2026-08-04. Moved here from the workspace root.
+
+WHAT THIS IS. Raw pasted platform and reviewer feedback from real revision rounds.
+It is EVIDENCE, not a record and not a rule document. Nothing here is authoritative.
+The authoritative record of a round is that task's own task.md.
+
+THREE HAZARDS, all of them live in the text below.
+  1. Every path inside points at the dead /media/gaurav-s-ubuntu/COLLEGE MATERIAL/...
+     workspace. None of them resolve. Do not follow a path out of this file.
+  2. Directory names arrived with `__` rendered as markdown bold, so
+     20260728_153118__jqno_equalsverifier__1166 reads as
+     20260728_153118**jqno_equalsverifier**1166. That is exactly the wrong-task
+     hazard CLAUDE.md Step 10 item 0 exists to prevent - identify the task from the
+     report's own citations, never from a path pasted beside it.
+  3. Feedback here is interleaved across several tasks. Confirm which task a block
+     belongs to before acting on it.
+
+WHERE FEEDBACK BELONGS NOW. Paste a round's feedback verbatim into that task's
+task.md under a dated revision heading. See CLAUDE.md Step 10 item 1.
+-->
+
 Analyze this repo completely.
 
 # JQNO

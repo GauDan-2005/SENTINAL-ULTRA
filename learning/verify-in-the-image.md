@@ -1,3 +1,22 @@
+---
+id: verify-in-the-image
+status: locally-verified
+last_verified: 2026-08-04
+verified_by:
+  - 20260718_044820__alishahryar1_free-claude-code__929
+  - 20260727_135618__AltBeacon_android-beacon-library__1177
+  - 20260723_030109__cryspen_libcrux__1165
+evidence: "Four static conclusions overturned by re-running the same check inside the task's own container"
+applies_to:
+  languages: [any]
+  runners: [docker]
+  phases: [analysis, local-runs]
+blocks_submission: false
+fails_gate: [peer-review]
+supersedes: []
+contradicts: []
+---
+
 # Verify in the task's image, not on the host
 
 Source: 2026-08-01, task `20260718_044820__alishahryar1_free-claude-code__929`
