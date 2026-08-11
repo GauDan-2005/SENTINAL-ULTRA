@@ -18,6 +18,27 @@ contradicts: []
 
 # The difficulty you need is often an ungraded clause in the instruction you already shipped
 
+## Confirmed by a peer reviewer, statrs 315, 2026-08-07
+
+The strongest version of this note's point, because it was found by someone else after every
+local gate passed. On the round in question the board read: agentic judge OK, oracle 3/3 at 1.0
+with 128 of 128, NOP 0 with raw exit 101, seven hostile probes each naming its catching test, 90
+assertions, the Q9 navigation detector at 0 candidates and the Q10 leak detector at 0 of 0.
+Nothing local had anything left to say.
+
+A peer reviewer then found that the exact Mann-Whitney one-sided p-values were on the wrong tail
+whenever the first sample was not the larger one, a defect still present on the project's master
+branch today. **No gate in this battery could have caught it**, because every graded assertion had
+been written from the oracle's own observed behaviour, so the tests agreed with the bug by
+construction. One block even carried a comment stating the opposite of what its assertion checked,
+and the bug is what made the assertion pass.
+
+The transferable rule is the one this note already argues, arriving from the outside: an
+assertion whose expected value was read off a run tests only that the run is reproducible. Where
+the instruction names an external standard, implement that standard separately and compare. See
+[[oracle-bug-vs-pr-scope]] for the full case and the authorisation to fix the oracle when it comes
+to that.
+
 ## The pattern
 
 When a task comes back `FAIL EASY`, the instinct is to add something: a new requirement, a lever

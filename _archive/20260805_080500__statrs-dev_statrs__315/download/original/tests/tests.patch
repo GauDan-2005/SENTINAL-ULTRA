@@ -1,0 +1,209 @@
+diff --git a/tests/stats_tests_pr315.rs b/tests/stats_tests_pr315.rs
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/stats_tests_pr315.rs
+@@ -0,0 +1,203 @@
++//! Integration tests for the hypothesis test functions added in PR #315:
++//! Mann-Whitney U test, one-way ANOVA F-test, one-sample t-test, chi-square
++//! test, and skewtest. Expected values are taken from the scipy-validated
++//! examples used in the PR.
++
++use statrs::prec;
++use statrs::stats_tests::chisquare::{chisquare, ChiSquareTestError};
++use statrs::stats_tests::f_oneway::{f_oneway, FOneWayTestError};
++use statrs::stats_tests::mannwhitneyu::{mannwhitneyu, MannWhitneyUError, MannWhitneyUMethod};
++use statrs::stats_tests::skewtest::{skewtest, SkewTestError};
++use statrs::stats_tests::ttest_onesample::{ttest_onesample, TTestOneSampleError};
++use statrs::stats_tests::{Alternative, NaNPolicy};
++
++#[test]
++fn chisquare_scipy_example() {
++    let (statistic, pvalue) = chisquare(&[16, 18, 16, 14, 12, 12], None, None).unwrap();
++    assert!(prec::almost_eq(statistic, 2.0, 1e-1));
++    assert!(prec::almost_eq(pvalue, 0.84914503608460956, 1e-9));
++
++    let (statistic, pvalue) = chisquare(
++        &[16, 18, 16, 14, 12, 12],
++        Some(&[16.0, 16.0, 16.0, 16.0, 16.0, 8.0]),
++        None,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(statistic, 3.5, 1e-1));
++    assert!(prec::almost_eq(pvalue, 0.62338762774958223, 1e-9));
++}
++
++#[test]
++fn chisquare_invalid_inputs() {
++    assert_eq!(
++        chisquare(&[16], None, None),
++        Err(ChiSquareTestError::FObsInvalid)
++    );
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], None, Some(5)),
++        Err(ChiSquareTestError::DdofInvalid)
++    );
++}
++
++#[test]
++fn chisquare_fexp_invalid() {
++    // wrong length
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[1.0, 2.0, 3.0]), None),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++    // correct length but wrong sum (96 != 88)
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[16.0; 6]), None),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++}
++
++#[test]
++fn f_oneway_scipy_example() {
++    let a1 = Vec::from([6f64, 8f64, 4f64, 5f64, 3f64, 4f64]);
++    let a2 = Vec::from([8f64, 12f64, 9f64, 11f64, 6f64, 8f64]);
++    let a3 = Vec::from([13f64, 9f64, 11f64, 8f64, 7f64, 12f64]);
++    let sample_input = Vec::from([a1, a2, a3]);
++    let (statistic, pvalue) = f_oneway(sample_input, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 9.3, 1e-1));
++    assert!(prec::almost_eq(pvalue, 0.002, 1e-3));
++}
++
++#[test]
++fn f_oneway_error_cases() {
++    // fewer than two groups
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 2.0, 3.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::NotEnoughSamples)
++    );
++    // NaN input with NaNPolicy::Error
++    assert_eq!(
++        f_oneway(
++            vec![vec![1.0, f64::NAN, 3.0], vec![4.0, 5.0, 6.0]],
++            NaNPolicy::Error
++        ),
++        Err(FOneWayTestError::SampleContainsNaN)
++    );
++    // all values the same in a group
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 1.0], vec![2.0, 2.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++}
++
++#[test]
++fn mannwhitneyu_scipy_example() {
++    let male = Vec::from([19, 22, 16, 29, 24]);
++    let female = Vec::from([20, 11, 17, 12]);
++
++    let (statistic, pvalue) = mannwhitneyu(
++        &male,
++        &female,
++        MannWhitneyUMethod::Automatic,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    assert_eq!(statistic, 17.0);
++    assert!(prec::almost_eq(pvalue, 0.1111111111111111, 1e-9));
++}
++
++#[test]
++fn mannwhitneyu_error_cases() {
++    // empty x
++    assert_eq!(
++        mannwhitneyu(
++            &[] as &[i32],
++            &[1, 2, 3],
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::SampleTooSmall)
++    );
++    // empty y
++    assert_eq!(
++        mannwhitneyu(
++            &[1, 2, 3],
++            &[] as &[i32],
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::SampleTooSmall)
++    );
++    // Exact method with ties
++    assert_eq!(
++        mannwhitneyu(
++            &[1, 2],
++            &[1, 2, 3],
++            MannWhitneyUMethod::Exact,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::ExactMethodWithTiesInData)
++    );
++}
++
++#[test]
++fn ttest_onesample_jmp_example() {
++    let data = Vec::from([
++        20.70f64, 27.46f64, 22.15f64, 19.85f64, 21.29f64, 24.75f64, 20.75f64, 22.91f64, 25.34f64,
++        20.33f64, 21.54f64, 21.08f64, 22.14f64, 19.56f64, 21.10f64, 18.04f64, 24.12f64, 19.95f64,
++        19.72f64, 18.28f64, 16.26f64, 17.46f64, 20.53f64, 22.12f64, 25.06f64, 22.44f64, 19.08f64,
++        19.88f64, 21.39f64, 22.33f64, 25.79f64,
++    ]);
++    let (statistic, pvalue) =
++        ttest_onesample(data, 20.0, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 3.066831635284081, 1e-1));
++    assert!(prec::almost_eq(pvalue, 0.004552621060635401, 1e-12));
++}
++
++#[test]
++fn ttest_onesample_error_cases() {
++    // sample too small (length 1)
++    assert_eq!(
++        ttest_onesample(vec![5.0], 5.0, Alternative::TwoSided, NaNPolicy::Error),
++        Err(TTestOneSampleError::SampleTooSmall)
++    );
++    // NaN with NaNPolicy::Error
++    assert_eq!(
++        ttest_onesample(
++            vec![1.0, f64::NAN, 3.0],
++            2.0,
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(TTestOneSampleError::SampleContainsNaN)
++    );
++}
++
++#[test]
++fn skewtest_scipy_example() {
++    let data = Vec::from([
++        148.0f64, 154.0f64, 158.0f64, 160.0f64, 161.0f64, 162.0f64, 166.0f64, 170.0f64, 182.0f64,
++        195.0f64, 236.0f64,
++    ]);
++    let (statistic, pvalue) = skewtest(data, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 2.7788579769903414, 1e-1));
++    assert!(prec::almost_eq(pvalue, 0.005455036974740185, 1e-9));
++}
++
++#[test]
++fn skewtest_error_cases() {
++    // fewer than 8 observations
++    assert_eq!(
++        skewtest(
++            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(SkewTestError::SampleTooSmall)
++    );
++    // NaN with NaNPolicy::Error
++    assert_eq!(
++        skewtest(
++            vec![1.0, 2.0, f64::NAN, 4.0, 5.0, 6.0, 7.0, 8.0],
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(SkewTestError::SampleContainsNaN)
++    );
++}

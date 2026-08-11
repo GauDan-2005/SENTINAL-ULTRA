@@ -4,6 +4,7 @@ status: platform-confirmed
 last_verified: 2026-08-11
 verified_by:
   - 20260719_045042__oliver-oloughlin_kvdex__245
+  - 20260805_080500__statrs-dev_statrs__315
 evidence: "The bundle as accepted on round 6, measured out of _archive/"
 applies_to:
   languages: [typescript, any]
@@ -18,6 +19,19 @@ contradicts: []
 # What an accepted bundle actually looked like
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, accepted 2026-08-04 after six rounds.
+
+**There are now two accepted bundles.** `20260805_080500__statrs-dev_statrs__315` was accepted
+2026-08-11 after five uploads across rounds 0 to 4. Its measurements are in
+[calibration.tsv](calibration.tsv) and its full record in
+`_archive/20260805_080500__statrs-dev_statrs__315/task.md`. Where the two agree, the number is
+worth something; where they differ, there is no normal. They agree on: an instruction whose
+longest prose paragraph sits under 800 characters (kvdex 717, statrs 769), a populated
+`pass_to_pass` guard, script modes at 0755, a silent `git fsck`, and an oracle whose runtime has
+large headroom against the verifier timeout. They differ on nearly everything else, including the
+`tests.patch` shape, the graded totals and the number of rounds. statrs is also the first accepted
+bundle here whose `golden.patch` was **edited** rather than shipped as received, under
+`docs/guidelines.md:286` case 1 and then again to expand scope, so it is the reference for what an
+accepted oracle edit looks like.
 Deno/TypeScript, `evolution_and_maintenance / migration`, difficulty hard, verdict Fixable
 throughout, PR scope never touched.
 
@@ -224,10 +238,15 @@ What the four rows already show that this note on its own cannot:
 
 - `pass_to_pass` ranges from 21 to 1204 and the graded total from 38 to 1223. There is no normal
   size. What is constant is that the guard is populated at all.
-- `graded ids outside the patched files` is above zero on all four, from 102 of 132 to 1124 of
-  1223. Nothing has measured zero, so the create-only `tests.patch` has never actually been the
-  right shape here. Read libcrux's row with its caveat: cargo ids carry no path, so the counting
-  script cannot resolve them and its 38 of 38 is the tool's answer rather than the truth.
+- `graded ids outside the patched files` **was** above zero on all four, from 102 of 132 to 1124
+  of 1223, and this note used to say the create-only `tests.patch` had never been the right shape
+  here. **statrs 315 closes that open question**: it measured **0 of 127** outside the patched
+  file, shipped the create-only shape with a git-independent pre-delete in `test.sh`, and was
+  accepted. So the shape is now validated by an outcome rather than only reasoned about, and the
+  rule in [[tests-patch-vs-agent-edits]] stands as written: measure where the graded ids live,
+  and let the number pick the shape. Read libcrux's row with its caveat: cargo ids carry no path,
+  so the counting script cannot resolve them and its 38 of 38 is the tool's answer rather than
+  the truth.
 - Oracle runtime is 19 to 138 seconds against verifier timeouts of 900 or 1800. The headroom is
   never close.
 - `fail_to_pass` sits at 17, 19, 20, 20 against a hard ceiling of 20. Three of the four are at

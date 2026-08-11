@@ -4,6 +4,7 @@ status: locally-verified
 last_verified: 2026-08-07
 verified_by:
   - 20260803_111822__xlwings_xlwings__2719
+  - 20260805_080500__statrs-dev_statrs__315
 evidence: "15 candidate behaviours run against 6 independent implementations of the same feature. 13 produced identical results everywhere and were discarded. The 2 that separated implementations were shipped, and one of them is a bug the upstream PR author wrote"
 applies_to:
   languages: [any]
@@ -94,6 +95,39 @@ nothing else that discriminates and filling it would re-add the padding just rem
 
 **Check the existing f2p list for padding before concluding you have no budget.** A cap of 20 is not
 a cap of 20 useful contracts.
+
+## The matrix is a ceiling, not a forecast, and statrs 315 measured the gap
+
+This note's method says ship the rows that disagree, and that a lever you cannot make anything
+fail is not a lever. Both halves still hold. What statrs 315 added is the other direction:
+**a lever can pass the whole control and still convert zero agents.**
+
+Round 3 added an Anderson-Darling test and pre-measured it exactly as prescribed. Four wrong but
+reasonable implementations, scored against the correct A squared of `0.162246714297`: no index
+reversal gave `11.86`, both terms reversed gave `22.76`, weighting by `2i` gave `2.12`, returning
+the adjusted figure gave `0.175`. The p-value moved from `0.925` to `0.000`. Every one was caught
+by the new test, and the hostile-delete gate named it. By this note's standard that is a real
+lever.
+
+**It converted nobody.** The next screen returned byte-identical numbers, 7 of 8, and the agent
+trajectories show the new test mentioned 14 to 33 times per run with all 8 trials implementing it
+correctly.
+
+**Why the control passed and the lever did not.** Look at whose implementations the two matrices
+used. The xlwings matrix ran `oracle as shipped, v1, v2, v3, v5, vmin` - five honest builds of the
+feature plus one deliberately partial one. The statrs matrix ran the oracle against four
+implementations **written specifically to be wrong**. Those two measure different things. Breaking
+a correct implementation on purpose proves an assertion has teeth; it says nothing about whether a
+competent agent would ever write that mistake. Step 1 of The method says to collect *independent
+implementations of the feature*, and honest is the load-bearing word.
+
+So the matrix bounds difficulty from above. A row where every honest implementation agrees cannot
+discriminate, which is what it is for. A row where hand-broken implementations disagree may still
+discriminate nothing, because no agent writes hand-broken code. **Where an honest independent
+build is unavailable, the closest substitute is the failing agent's own transcript from a previous
+screen artifact**, which is a real implementation written without knowing the answer. See
+[[difficulty-is-divergence-not-volume]] for the lever class that did convert on statrs, and
+[[difficulty-screen-unit-table]] for how to get the artifact that carries those transcripts.
 
 ## The control that stops this from happening again
 

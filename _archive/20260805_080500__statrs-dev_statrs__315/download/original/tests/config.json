@@ -1,0 +1,46 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test --test stats_tests_pr315"
+    ],
+    "selected_test_files_to_run": [
+      "tests/stats_tests_pr315.rs"
+    ],
+    "env": {
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "chisquare_scipy_example",
+      "chisquare_invalid_inputs",
+      "chisquare_fexp_invalid",
+      "f_oneway_scipy_example",
+      "f_oneway_error_cases",
+      "mannwhitneyu_scipy_example",
+      "mannwhitneyu_error_cases",
+      "ttest_onesample_jmp_example",
+      "ttest_onesample_error_cases",
+      "skewtest_scipy_example",
+      "skewtest_error_cases"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^test (?P<name>\\S+) \\.\\.\\. ok",
+      "fail_regex": "^test (?P<name>\\S+) \\.\\.\\. FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

@@ -1,0 +1,796 @@
+diff --git a/tests/stats_tests_pr315.rs b/tests/stats_tests_pr315.rs
+new file mode 100644
+index 0000000..dba635c
+--- /dev/null
++++ b/tests/stats_tests_pr315.rs
+@@ -0,0 +1,790 @@
++//! Integration tests for the hypothesis test functions added in PR #315:
++//! Mann-Whitney U test, one-way ANOVA F-test, one-sample t-test, chi-square
++//! test, and skewtest. Expected values are taken from the scipy-validated
++//! examples used in the PR.
++
++use statrs::distribution::Normal;
++use statrs::prec;
++use statrs::stats_tests::anderson_darling::{anderson_darling, AndersonDarlingError};
++use statrs::stats_tests::chisquare::{chisquare, ChiSquareTestError};
++use statrs::stats_tests::f_oneway::{f_oneway, FOneWayTestError};
++use statrs::stats_tests::mannwhitneyu::{mannwhitneyu, MannWhitneyUError, MannWhitneyUMethod};
++use statrs::stats_tests::skewtest::{skewtest, SkewTestError};
++use statrs::stats_tests::ttest_onesample::{ttest_onesample, TTestOneSampleError};
++use statrs::stats_tests::{Alternative, NaNPolicy};
++
++#[test]
++fn chisquare_scipy_example() {
++    let (statistic, pvalue) = chisquare(&[16, 18, 16, 14, 12, 12], None, None).unwrap();
++    assert!(prec::almost_eq(statistic, 2.0, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.84914503608460956, 1e-9));
++
++    let (statistic, pvalue) = chisquare(
++        &[16, 18, 16, 14, 12, 12],
++        Some(&[16.0, 16.0, 16.0, 16.0, 16.0, 8.0]),
++        None,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(statistic, 3.5, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.62338762774958223, 1e-9));
++}
++
++#[test]
++fn chisquare_invalid_inputs() {
++    assert_eq!(
++        chisquare(&[16], None, None),
++        Err(ChiSquareTestError::FObsInvalid)
++    );
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], None, Some(5)),
++        Err(ChiSquareTestError::DdofInvalid)
++    );
++
++    // Precedence. Every input below breaks more than one rule at once, so the variant that
++    // comes back pins the order the checks run in rather than just one check on its own.
++    // f_obs comes first, ahead of both a bad f_exp and a bad ddof.
++    assert_eq!(
++        chisquare(&[16], Some(&[1.0, 2.0, 3.0]), Some(99)),
++        Err(ChiSquareTestError::FObsInvalid)
++    );
++    // f_exp comes ahead of ddof, on a length mismatch ...
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[1.0, 2.0]), Some(99)),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++    // ... and on a total mismatch.
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[16.0; 6]), Some(99)),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++    // ddof is only reported once f_obs and f_exp are both good.
++    assert_eq!(
++        chisquare(
++            &[16, 18, 16, 14, 12, 12],
++            Some(&[16.0, 16.0, 16.0, 16.0, 16.0, 8.0]),
++            Some(5)
++        ),
++        Err(ChiSquareTestError::DdofInvalid)
++    );
++
++    // f_exp validation, folded in from the separate case it used to have.
++    // wrong length
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[1.0, 2.0, 3.0]), None),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++    // correct length but wrong sum (96 != 88)
++    assert_eq!(
++        chisquare(&[16, 18, 16, 14, 12, 12], Some(&[16.0; 6]), None),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++    // Totals are compared as whole numbers. f_obs sums to 88, so an f_exp summing to 88.7 is
++    // accepted because it is still 88 once the fraction is dropped ...
++    assert!(chisquare(
++        &[16, 18, 16, 14, 12, 12],
++        Some(&[16.7, 16.0, 16.0, 16.0, 16.0, 8.0]),
++        None
++    )
++    .is_ok());
++    // ... while one summing to 87.9 falls into the whole number below and is rejected.
++    assert_eq!(
++        chisquare(
++            &[16, 18, 16, 14, 12, 12],
++            Some(&[15.9, 16.0, 16.0, 16.0, 16.0, 8.0]),
++            None
++        ),
++        Err(ChiSquareTestError::FExpInvalid)
++    );
++}
++
++
++#[test]
++fn f_oneway_scipy_example() {
++    let a1 = Vec::from([6f64, 8f64, 4f64, 5f64, 3f64, 4f64]);
++    let a2 = Vec::from([8f64, 12f64, 9f64, 11f64, 6f64, 8f64]);
++    let a3 = Vec::from([13f64, 9f64, 11f64, 8f64, 7f64, 12f64]);
++    let sample_input = Vec::from([a1, a2, a3]);
++    let (statistic, pvalue) = f_oneway(sample_input, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 9.264705882352942, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.00239877732939298, 1e-9));
++}
++
++#[test]
++fn f_oneway_error_cases() {
++    // fewer than two groups
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 2.0, 3.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::NotEnoughSamples)
++    );
++    // NaN input with NaNPolicy::Error
++    assert_eq!(
++        f_oneway(
++            vec![vec![1.0, f64::NAN, 3.0], vec![4.0, 5.0, 6.0]],
++            NaNPolicy::Error
++        ),
++        Err(FOneWayTestError::SampleContainsNaN)
++    );
++    // all values the same in a group
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 1.0], vec![2.0, 2.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++
++    // Sample size rules, folded in from the separate case they used to have.
++    // one group is empty
++    assert_eq!(
++        f_oneway(vec![vec![], vec![1.0, 2.0, 3.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleTooSmall)
++    );
++    // two groups, but no group holds at least two values
++    assert_eq!(
++        f_oneway(vec![vec![1.0], vec![2.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleTooSmall)
++    );
++    // fewer than two groups outranks the size rule
++    assert_eq!(
++        f_oneway(vec![vec![]], NaNPolicy::Error),
++        Err(FOneWayTestError::NotEnoughSamples)
++    );
++}
++
++#[test]
++fn mannwhitneyu_scipy_example() {
++    let male = Vec::from([19, 22, 16, 29, 24]);
++    let female = Vec::from([20, 11, 17, 12]);
++
++    let (statistic, pvalue) = mannwhitneyu(
++        &male,
++        &female,
++        MannWhitneyUMethod::Automatic,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    assert_eq!(statistic, 17.0);
++    assert!(prec::almost_eq(pvalue, 0.1111111111111111, 1e-9));
++}
++
++#[test]
++fn mannwhitneyu_error_cases() {
++    // empty x
++    assert_eq!(
++        mannwhitneyu(
++            &[] as &[i32],
++            &[1, 2, 3],
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::SampleTooSmall)
++    );
++    // empty y
++    assert_eq!(
++        mannwhitneyu(
++            &[1, 2, 3],
++            &[] as &[i32],
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::SampleTooSmall)
++    );
++    // Exact method with ties
++    assert_eq!(
++        mannwhitneyu(
++            &[1, 2],
++            &[1, 2, 3],
++            MannWhitneyUMethod::Exact,
++            Alternative::TwoSided,
++        ),
++        Err(MannWhitneyUError::ExactMethodWithTiesInData)
++    );
++
++    // Unorderable data and the precedence of an empty sample, folded in from the
++    // separate case they used to have.
++    let with_nan = [1.0f64, 2.0, f64::NAN, 4.0];
++    let plain = [3.0f64, 5.0, 6.0];
++
++    // A NaN makes a pair of values unorderable, whichever sample it sits in.
++    assert_eq!(
++        mannwhitneyu(
++            &with_nan,
++            &plain,
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided
++        ),
++        Err(MannWhitneyUError::UncomparableData)
++    );
++    assert_eq!(
++        mannwhitneyu(
++            &plain,
++            &with_nan,
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided
++        ),
++        Err(MannWhitneyUError::UncomparableData)
++    );
++
++    // An empty sample is named ahead of the unorderable data.
++    assert_eq!(
++        mannwhitneyu(
++            &[] as &[f64],
++            &with_nan,
++            MannWhitneyUMethod::Automatic,
++            Alternative::TwoSided
++        ),
++        Err(MannWhitneyUError::SampleTooSmall)
++    );
++}
++
++#[test]
++fn ttest_onesample_jmp_example() {
++    let data = Vec::from([
++        20.70f64, 27.46f64, 22.15f64, 19.85f64, 21.29f64, 24.75f64, 20.75f64, 22.91f64, 25.34f64,
++        20.33f64, 21.54f64, 21.08f64, 22.14f64, 19.56f64, 21.10f64, 18.04f64, 24.12f64, 19.95f64,
++        19.72f64, 18.28f64, 16.26f64, 17.46f64, 20.53f64, 22.12f64, 25.06f64, 22.44f64, 19.08f64,
++        19.88f64, 21.39f64, 22.33f64, 25.79f64,
++    ]);
++    let (statistic, pvalue) =
++        ttest_onesample(data, 20.0, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 3.066831635284081, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.004552621060635401, 1e-9));
++}
++
++#[test]
++fn ttest_onesample_error_cases() {
++    // sample too small (length 1)
++    assert_eq!(
++        ttest_onesample(vec![5.0], 5.0, Alternative::TwoSided, NaNPolicy::Error),
++        Err(TTestOneSampleError::SampleTooSmall)
++    );
++    // NaN with NaNPolicy::Error
++    assert_eq!(
++        ttest_onesample(
++            vec![1.0, f64::NAN, 3.0],
++            2.0,
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(TTestOneSampleError::SampleContainsNaN)
++    );
++}
++
++#[test]
++fn skewtest_scipy_example() {
++    let data = Vec::from([
++        148.0f64, 154.0f64, 158.0f64, 160.0f64, 161.0f64, 162.0f64, 166.0f64, 170.0f64, 182.0f64,
++        195.0f64, 236.0f64,
++    ]);
++    let (statistic, pvalue) = skewtest(data, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 2.7788579769903414, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.005455036974740185, 1e-9));
++
++    // A perfectly symmetric sample has exactly zero skew, which is degenerate for the
++    // transform. The call still succeeds and returns a finite, non-zero z score rather than
++    // collapsing to zero, and the same result whichever symmetric sample is used.
++    let symmetric = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
++    let (z_sym, p_sym) = skewtest(symmetric, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(z_sym.is_finite());
++    assert!(p_sym.is_finite());
++    assert!(z_sym != 0.0);
++    assert!(p_sym > 0.0 && p_sym < 1.0);
++    let shifted = vec![-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0];
++    let (z_shifted, _) = skewtest(shifted, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(z_sym, z_shifted, 1e-12));
++}
++
++#[test]
++fn skewtest_error_cases() {
++    // fewer than 8 observations
++    assert_eq!(
++        skewtest(
++            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(SkewTestError::SampleTooSmall)
++    );
++    // NaN with NaNPolicy::Error
++    assert_eq!(
++        skewtest(
++            vec![1.0, 2.0, f64::NAN, 4.0, 5.0, 6.0, 7.0, 8.0],
++            Alternative::TwoSided,
++            NaNPolicy::Error,
++        ),
++        Err(SkewTestError::SampleContainsNaN)
++    );
++}
++
++#[test]
++fn nan_policy_propogate_returns_nan_results() {
++    // Propogate keeps the call successful and hands back NaN for both outputs.
++    let groups = vec![vec![0.0571, 0.0813, f64::NAN, 0.0836], vec![0.0873, 0.0662, 0.0672]];
++    let (statistic, pvalue) = f_oneway(groups, NaNPolicy::Propogate).unwrap();
++    assert!(statistic.is_nan());
++    assert!(pvalue.is_nan());
++
++    let (statistic, pvalue) =
++        ttest_onesample(vec![1.0, 2.0, f64::NAN, 4.0], 2.0, Alternative::TwoSided, NaNPolicy::Propogate)
++            .unwrap();
++    assert!(statistic.is_nan());
++    assert!(pvalue.is_nan());
++
++    let (statistic, pvalue) = skewtest(
++        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, f64::NAN],
++        Alternative::TwoSided,
++        NaNPolicy::Propogate,
++    )
++    .unwrap();
++    assert!(statistic.is_nan());
++    assert!(pvalue.is_nan());
++}
++
++#[test]
++fn nan_policy_emit_drops_nans_before_computing() {
++    // Emit on data containing NaN must equal the same call on data with the NaNs removed
++    // by hand. No expected constant is needed: the oracle is its own reference here.
++    let dirty = vec![vec![6.0, 8.0, f64::NAN, 4.0, 5.0], vec![8.0, 12.0, 9.0, f64::NAN, 11.0]];
++    let clean = vec![vec![6.0, 8.0, 4.0, 5.0], vec![8.0, 12.0, 9.0, 11.0]];
++    let (s_emit, p_emit) = f_oneway(dirty, NaNPolicy::Emit).unwrap();
++    let (s_clean, p_clean) = f_oneway(clean, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(s_emit, s_clean, 1e-12));
++    assert!(prec::almost_eq(p_emit, p_clean, 1e-12));
++
++    let dirty = vec![20.70, 27.46, f64::NAN, 22.15, 19.85, 21.29];
++    let clean = vec![20.70, 27.46, 22.15, 19.85, 21.29];
++    let (s_emit, p_emit) =
++        ttest_onesample(dirty, 20.0, Alternative::TwoSided, NaNPolicy::Emit).unwrap();
++    let (s_clean, p_clean) =
++        ttest_onesample(clean, 20.0, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(s_emit, s_clean, 1e-12));
++    assert!(prec::almost_eq(p_emit, p_clean, 1e-12));
++
++    let dirty = vec![148.0, 154.0, 158.0, f64::NAN, 160.0, 161.0, 162.0, 166.0, 170.0, 182.0];
++    let clean = vec![148.0, 154.0, 158.0, 160.0, 161.0, 162.0, 166.0, 170.0, 182.0];
++    let (s_emit, p_emit) = skewtest(dirty, Alternative::TwoSided, NaNPolicy::Emit).unwrap();
++    let (s_clean, p_clean) = skewtest(clean, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(s_emit, s_clean, 1e-12));
++    assert!(prec::almost_eq(p_emit, p_clean, 1e-12));
++
++    // Filtering runs before the size and constant rules, so Emit decides which of the two
++    // fires. Dropping every value out of a group leaves it empty, which is SampleTooSmall ...
++    assert_eq!(
++        f_oneway(
++            vec![vec![f64::NAN, f64::NAN], vec![2.0, 3.0]],
++            NaNPolicy::Emit
++        ),
++        Err(FOneWayTestError::SampleTooSmall)
++    );
++    // ... while leaving a group that repeats a single value is SampleContainsSameConstants.
++    assert_eq!(
++        f_oneway(
++            vec![vec![1.0, 1.0, f64::NAN], vec![2.0, 2.0]],
++            NaNPolicy::Emit
++        ),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++    // A group count below two outranks the NaN rules, so this is not SampleContainsNaN.
++    assert_eq!(
++        f_oneway(vec![vec![1.0, f64::NAN]], NaNPolicy::Error),
++        Err(FOneWayTestError::NotEnoughSamples)
++    );
++
++    // One repeated group is enough on its own. The other groups varying does not rescue it,
++    // and neither does the between-group spread being perfectly well defined.
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 2.0], vec![3.0, 3.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++    assert_eq!(
++        f_oneway(
++            vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 5.0]],
++            NaNPolicy::Error
++        ),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++    // Two constant groups holding DIFFERENT constants is still the same error, even though the
++    // groups plainly differ from one another.
++    assert_eq!(
++        f_oneway(vec![vec![1.0, 1.0], vec![2.0, 2.0]], NaNPolicy::Error),
++        Err(FOneWayTestError::SampleContainsSameConstants)
++    );
++    // A group of one value is not too small by itself. The rule is that some group has to hold
++    // at least two, not that every group does.
++    assert!(f_oneway(vec![vec![1.0], vec![2.0, 3.0]], NaNPolicy::Error).is_ok());
++    assert!(f_oneway(vec![vec![1.0], vec![2.0], vec![3.0, 5.0]], NaNPolicy::Error).is_ok());
++
++    // Because the filtering happens first, Emit can shrink a sample past the minimum the
++    // test needs and the size rule then fires on what is left.
++    assert_eq!(
++        ttest_onesample(
++            vec![1.0, f64::NAN, f64::NAN],
++            0.0,
++            Alternative::TwoSided,
++            NaNPolicy::Emit
++        ),
++        Err(TTestOneSampleError::SampleTooSmall)
++    );
++    // Seven real values survive, one short of the eight skewtest requires.
++    assert_eq!(
++        skewtest(
++            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, f64::NAN, f64::NAN],
++            Alternative::TwoSided,
++            NaNPolicy::Emit
++        ),
++        Err(SkewTestError::SampleTooSmall)
++    );
++}
++
++#[test]
++fn mannwhitneyu_asymptotic_variants_differ_by_the_continuity_correction() {
++    let x = [19, 22, 16, 29, 24, 28, 7, 10, 30];
++    let y = [20, 11, 17, 12, 5, 31, 18, 2, 34];
++
++    let (stat_incl, p_incl) = mannwhitneyu(
++        &x,
++        &y,
++        MannWhitneyUMethod::AsymptoticInclContinuityCorrection,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    let (stat_excl, p_excl) = mannwhitneyu(
++        &x,
++        &y,
++        MannWhitneyUMethod::AsymptoticExclContinuityCorrection,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++
++    // Same statistic either way; only the p-value moves.
++    assert_eq!(stat_incl, stat_excl);
++    // The continuity correction shrinks the absolute z score, so it raises the p-value.
++    assert!(p_incl > p_excl);
++
++    // Both samples hold more than eight values, so Automatic takes the corrected route.
++    let (stat_auto, p_auto) =
++        mannwhitneyu(&x, &y, MannWhitneyUMethod::Automatic, Alternative::TwoSided).unwrap();
++    assert_eq!(stat_auto, stat_incl);
++    assert!(prec::almost_eq(p_auto, p_incl, 1e-12));
++
++    // Reference values for the asymptotic branch, both continuity settings and all three
++    // alternatives. These come from the normal approximation with the tie correction, computed
++    // outside the crate, so they check agreement with the reference rather than the code
++    // against itself.
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticInclContinuityCorrection, Alternative::Less).unwrap();
++    assert!(prec::almost_eq(p, 0.78661163173350812, 1e-9));
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticInclContinuityCorrection, Alternative::Greater).unwrap();
++    assert!(prec::almost_eq(p, 0.23996434607297862, 1e-9));
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticInclContinuityCorrection, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p, 0.47992869214595724, 1e-9));
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticExclContinuityCorrection, Alternative::Less).unwrap();
++    assert!(prec::almost_eq(p, 0.77354375828754152, 1e-9));
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticExclContinuityCorrection, Alternative::Greater).unwrap();
++    assert!(prec::almost_eq(p, 0.22645624171245846, 1e-9));
++    let (_, p) = mannwhitneyu(&x, &y, MannWhitneyUMethod::AsymptoticExclContinuityCorrection, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p, 0.45291248342491691, 1e-9));
++
++    // Pooled ties send Automatic to the asymptotic branch even though both samples are well
++    // under the size threshold. Three against three, with one value shared across the two
++    // samples, so the pooled data has a tie while neither sample has one on its own.
++    let tie_x = [1, 2, 3];
++    let tie_y = [3, 4, 5];
++    let (stat_tie_auto, p_tie_auto) =
++        mannwhitneyu(&tie_x, &tie_y, MannWhitneyUMethod::Automatic, Alternative::TwoSided).unwrap();
++    let (stat_tie_incl, p_tie_incl) = mannwhitneyu(
++        &tie_x,
++        &tie_y,
++        MannWhitneyUMethod::AsymptoticInclContinuityCorrection,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    assert_eq!(stat_tie_auto, stat_tie_incl);
++    assert!(prec::almost_eq(p_tie_auto, p_tie_incl, 1e-12));
++    // ... and the reference value for that input, so this is not a comparison with itself.
++    assert!(prec::almost_eq(p_tie_auto, 0.12118327283746322, 1e-9));
++    let (_, p_tie_less) = mannwhitneyu(
++        &tie_x,
++        &tie_y,
++        MannWhitneyUMethod::AsymptoticInclContinuityCorrection,
++        Alternative::Less,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(p_tie_less, 0.06059163641873161, 1e-9));
++    let (_, p_tie_excl) = mannwhitneyu(
++        &tie_x,
++        &tie_y,
++        MannWhitneyUMethod::AsymptoticExclContinuityCorrection,
++        Alternative::Less,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(p_tie_excl, 0.03826125023752960, 1e-9));
++    // The exact method refuses the same input rather than falling back.
++    assert_eq!(
++        mannwhitneyu(&tie_x, &tie_y, MannWhitneyUMethod::Exact, Alternative::TwoSided),
++        Err(MannWhitneyUError::ExactMethodWithTiesInData)
++    );
++    // A tie-free pair of the same size still takes the exact route.
++    let free_x = [1, 2, 3];
++    let free_y = [4, 5, 6];
++    let (_, p_free_auto) =
++        mannwhitneyu(&free_x, &free_y, MannWhitneyUMethod::Automatic, Alternative::Less).unwrap();
++    let (_, p_free_exact) =
++        mannwhitneyu(&free_x, &free_y, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    assert!(prec::almost_eq(p_free_auto, p_free_exact, 1e-12));
++    assert!(prec::almost_eq(p_free_auto, 0.05, 1e-9));
++
++    // Exact has no size limit of its own. The size threshold belongs to Automatic, so asking
++    // for Exact on nine against nine has to give the exact answer rather than being refused or
++    // quietly downgraded to the approximation.
++    let nine_a = [1, 3, 5, 7, 9, 11, 13, 15, 17];
++    let nine_b = [2, 4, 6, 8, 10, 12, 14, 16, 18];
++    let (_, p_forced_exact) =
++        mannwhitneyu(&nine_a, &nine_b, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    let (_, p_auto_same) = mannwhitneyu(
++        &nine_a,
++        &nine_b,
++        MannWhitneyUMethod::Automatic,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(p_forced_exact, 0.7304401480872069, 1e-9));
++    // Automatic goes the other way on the same input, because both samples are over eight.
++    assert!((p_forced_exact - p_auto_same).abs() > 1e-6);
++
++    // Only one sample over the threshold is not enough to leave the exact route. Nine values
++    // against five, with no ties, still has to match Exact and not the approximation.
++    let nine = [1, 3, 5, 7, 9, 11, 13, 15, 17];
++    let five = [2, 4, 6, 8, 10];
++    let (_, p_mixed_auto) = mannwhitneyu(
++        &nine,
++        &five,
++        MannWhitneyUMethod::Automatic,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    let (_, p_mixed_exact) =
++        mannwhitneyu(&nine, &five, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    let (_, p_mixed_asym) = mannwhitneyu(
++        &nine,
++        &five,
++        MannWhitneyUMethod::AsymptoticInclContinuityCorrection,
++        Alternative::TwoSided,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(p_mixed_auto, p_mixed_exact, 1e-12));
++    assert!((p_mixed_auto - p_mixed_asym).abs() > 1e-6);
++}
++
++
++
++#[test]
++fn one_sided_alternatives_pick_the_requested_tail() {
++    // The two one-sided p-values partition the probability for a continuous statistic, but
++    // that identity on its own is symmetric: it holds just as well if an implementation has
++    // Less and Greater the wrong way round. Every block below also pins the direction.
++
++    // The sample mean sits well above the population mean, so Greater is the small tail.
++    let above = vec![10.0, 11.0, 12.0, 13.0, 14.0];
++    let (_, p_less) =
++        ttest_onesample(above.clone(), 5.0, Alternative::Less, NaNPolicy::Error).unwrap();
++    let (_, p_greater) =
++        ttest_onesample(above.clone(), 5.0, Alternative::Greater, NaNPolicy::Error).unwrap();
++    let (_, p_two) =
++        ttest_onesample(above, 5.0, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(p_less + p_greater, 1.0, 1e-12));
++    assert!(prec::almost_eq(p_two, 2.0 * p_less.min(p_greater), 1e-12));
++    assert!(p_greater < 0.001);
++    assert!(p_less > 0.999);
++
++    // The same sample against a population mean well above it flips which tail is small.
++    let below = vec![10.0, 11.0, 12.0, 13.0, 14.0];
++    let (_, p_less) =
++        ttest_onesample(below.clone(), 20.0, Alternative::Less, NaNPolicy::Error).unwrap();
++    let (_, p_greater) =
++        ttest_onesample(below, 20.0, Alternative::Greater, NaNPolicy::Error).unwrap();
++    assert!(p_less < 0.001);
++    assert!(p_greater > 0.999);
++
++    // Right-skewed data, so the skew z score is positive and Greater is the small tail.
++    let skewed = vec![148.0, 154.0, 158.0, 160.0, 161.0, 162.0, 166.0, 170.0, 182.0, 195.0, 236.0];
++    let (z, p_greater) = skewtest(skewed.clone(), Alternative::Greater, NaNPolicy::Error).unwrap();
++    let (_, p_less) = skewtest(skewed.clone(), Alternative::Less, NaNPolicy::Error).unwrap();
++    let (_, p_two) = skewtest(skewed, Alternative::TwoSided, NaNPolicy::Error).unwrap();
++    assert!(z > 0.0);
++    assert!(prec::almost_eq(p_less + p_greater, 1.0, 1e-12));
++    assert!(prec::almost_eq(p_two, 2.0 * p_less.min(p_greater), 1e-12));
++    assert!(p_greater < 0.01);
++    assert!(p_less > 0.99);
++
++    // Mann-Whitney offers the same two tails, and the exact method has to give the reference
++    // value for BOTH sample orders. Exchanging x and y exchanges the two tails, so a result
++    // that stays put under the swap is reporting the wrong tail for one of the two orders.
++    let x = [19, 22, 16, 29, 24];
++    let y = [20, 11, 17, 12];
++    let (_, p_less) =
++        mannwhitneyu(&x, &y, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    let (_, p_greater) =
++        mannwhitneyu(&x, &y, MannWhitneyUMethod::Exact, Alternative::Greater).unwrap();
++    let (_, p_two) =
++        mannwhitneyu(&x, &y, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p_less, 0.96825396825396826, 1e-9));
++    assert!(prec::almost_eq(p_greater, 0.05555555555555555, 1e-9));
++    assert!(prec::almost_eq(p_two, 0.11111111111111110, 1e-9));
++
++    let (_, p_less) =
++        mannwhitneyu(&y, &x, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    let (_, p_greater) =
++        mannwhitneyu(&y, &x, MannWhitneyUMethod::Exact, Alternative::Greater).unwrap();
++    let (_, p_two) =
++        mannwhitneyu(&y, &x, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p_less, 0.05555555555555555, 1e-9));
++    assert!(prec::almost_eq(p_greater, 0.96825396825396826, 1e-9));
++    assert!(prec::almost_eq(p_two, 0.11111111111111110, 1e-9));
++
++    // The smallest case that separates the two tails, with x the smaller sample and every
++    // value of x below every value of y. Less is the significant side here.
++    let small = [1, 2];
++    let large = [3, 4, 5];
++    let (_, p_less) =
++        mannwhitneyu(&small, &large, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    let (_, p_greater) =
++        mannwhitneyu(&small, &large, MannWhitneyUMethod::Exact, Alternative::Greater).unwrap();
++    let (_, p_two) =
++        mannwhitneyu(&small, &large, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p_less, 0.1, 1e-9));
++    assert!(prec::almost_eq(p_greater, 1.0, 1e-9));
++    assert!(prec::almost_eq(p_two, 0.2, 1e-9));
++
++    let (_, p_less) =
++        mannwhitneyu(&large, &small, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    let (_, p_greater) =
++        mannwhitneyu(&large, &small, MannWhitneyUMethod::Exact, Alternative::Greater).unwrap();
++    let (_, p_two) =
++        mannwhitneyu(&large, &small, MannWhitneyUMethod::Exact, Alternative::TwoSided).unwrap();
++    assert!(prec::almost_eq(p_less, 1.0, 1e-9));
++    assert!(prec::almost_eq(p_greater, 0.1, 1e-9));
++    assert!(prec::almost_eq(p_two, 0.2, 1e-9));
++
++    // Equal sample sizes, which is the other shape where a size-dependent tail choice shows up.
++    let eq_low = [1, 2, 3];
++    let eq_high = [4, 5, 6];
++    let (_, p_less) =
++        mannwhitneyu(&eq_low, &eq_high, MannWhitneyUMethod::Exact, Alternative::Less).unwrap();
++    let (_, p_greater) =
++        mannwhitneyu(&eq_low, &eq_high, MannWhitneyUMethod::Exact, Alternative::Greater).unwrap();
++    assert!(prec::almost_eq(p_less, 0.05, 1e-9));
++    assert!(prec::almost_eq(p_greater, 1.0, 1e-9));
++}
++
++#[test]
++fn error_enums_implement_display_and_the_error_trait() {
++    // Every error type has to be usable as a std::error::Error and print something.
++    fn check<E: std::error::Error>(e: E) {
++        assert!(!e.to_string().is_empty());
++        let as_dyn: &dyn std::error::Error = &e;
++        assert!(!format!("{as_dyn}").is_empty());
++        assert!(!format!("{e:?}").is_empty());
++    }
++    check(ChiSquareTestError::FObsInvalid);
++    check(ChiSquareTestError::FExpInvalid);
++    check(ChiSquareTestError::DdofInvalid);
++    check(FOneWayTestError::NotEnoughSamples);
++    check(FOneWayTestError::SampleTooSmall);
++    check(FOneWayTestError::SampleContainsSameConstants);
++    check(FOneWayTestError::SampleContainsNaN);
++    check(MannWhitneyUError::UncomparableData);
++    check(MannWhitneyUError::SampleTooSmall);
++    check(MannWhitneyUError::ExactMethodWithTiesInData);
++    check(TTestOneSampleError::SampleTooSmall);
++    check(TTestOneSampleError::SampleContainsNaN);
++    check(SkewTestError::SampleTooSmall);
++    check(SkewTestError::SampleContainsNaN);
++    check(AndersonDarlingError::SampleTooSmall);
++    check(AndersonDarlingError::SampleContainsNaN);
++}
++
++#[test]
++fn chisquare_ddof_reduces_the_degrees_of_freedom() {
++    let f_obs = [16, 18, 16, 14, 12, 12];
++
++    // Six categories, so the largest accepted ddof is four.
++    let (stat_default, p_default) = chisquare(&f_obs, None, None).unwrap();
++    let (stat_ddof, p_ddof) = chisquare(&f_obs, None, Some(4)).unwrap();
++
++    // ddof does not touch the statistic, only the reference distribution.
++    assert!(prec::almost_eq(stat_default, stat_ddof, 1e-12));
++    // Fewer degrees of freedom put the same statistic further into the tail.
++    assert!(p_ddof < p_default);
++    // Some(0) is the documented default.
++    let (_, p_zero) = chisquare(&f_obs, None, Some(0)).unwrap();
++    assert!(prec::almost_eq(p_zero, p_default, 1e-12));
++}
++
++#[test]
++fn anderson_darling_matches_the_reference_statistic() {
++    // A fully specified standard normal, so nothing is estimated from the sample and the
++    // expected values are fixed. The reference numbers were computed outside the crate.
++    let dist = Normal::new(0.0, 1.0).unwrap();
++    let sample = vec![-1.2, -0.4, 0.1, 0.35, 0.9, 1.6, -0.75, 0.25];
++    let (statistic, pvalue) = anderson_darling(sample, &dist, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, 0.19666521574821871, 1e-9));
++    assert!(prec::almost_eq(pvalue, 0.82983792335537543, 1e-9));
++
++    // The statistic handed back is the unadjusted one. The small sample adjustment is used
++    // for the p-value only, so the returned value must NOT be the adjusted figure.
++    assert!(!prec::almost_eq(statistic, 0.22201659121576253, 1e-9));
++
++    // The sample is given out of order on purpose. Sorting is the caller's problem to solve,
++    // and a re-ordered copy of the same observations has to give the same answer.
++    let sorted = vec![-1.2, -0.75, -0.4, 0.1, 0.25, 0.35, 0.9, 1.6];
++    let (statistic_sorted, pvalue_sorted) =
++        anderson_darling(sorted, &dist, NaNPolicy::Error).unwrap();
++    assert!(prec::almost_eq(statistic, statistic_sorted, 1e-12));
++    assert!(prec::almost_eq(pvalue, pvalue_sorted, 1e-12));
++
++    // A sample that sits badly against the distribution has to score worse than one that
++    // does not, on both the statistic and the p-value.
++    let poor = vec![4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5];
++    let (statistic_poor, pvalue_poor) = anderson_darling(poor, &dist, NaNPolicy::Error).unwrap();
++    assert!(statistic_poor > statistic);
++    assert!(pvalue_poor < pvalue);
++}
++
++#[test]
++fn anderson_darling_error_cases() {
++    let dist = Normal::new(0.0, 1.0).unwrap();
++    // Nothing to test at all.
++    assert_eq!(
++        anderson_darling(vec![], &dist, NaNPolicy::Error),
++        Err(AndersonDarlingError::SampleTooSmall)
++    );
++    // NaN under the Error policy.
++    assert_eq!(
++        anderson_darling(vec![0.1, f64::NAN, 0.4], &dist, NaNPolicy::Error),
++        Err(AndersonDarlingError::SampleContainsNaN)
++    );
++    // The NaN rules run before the size rule, so Emit can empty the sample and the size rule
++    // then fires on what is left.
++    assert_eq!(
++        anderson_darling(vec![f64::NAN, f64::NAN], &dist, NaNPolicy::Emit),
++        Err(AndersonDarlingError::SampleTooSmall)
++    );
++    // Propogate keeps the call successful and returns NaN for both outputs.
++    let (statistic, pvalue) =
++        anderson_darling(vec![0.1, f64::NAN, 0.4], &dist, NaNPolicy::Propogate).unwrap();
++    assert!(statistic.is_nan());
++    assert!(pvalue.is_nan());
++    // Emit on a sample that still has observations left agrees with the same call on data
++    // cleaned by hand.
++    let (s_emit, p_emit) = anderson_darling(
++        vec![-1.2, f64::NAN, -0.4, 0.1, 0.35, 0.9, 1.6, -0.75, 0.25, f64::NAN],
++        &dist,
++        NaNPolicy::Emit,
++    )
++    .unwrap();
++    let (s_clean, p_clean) = anderson_darling(
++        vec![-1.2, -0.4, 0.1, 0.35, 0.9, 1.6, -0.75, 0.25],
++        &dist,
++        NaNPolicy::Error,
++    )
++    .unwrap();
++    assert!(prec::almost_eq(s_emit, s_clean, 1e-12));
++    assert!(prec::almost_eq(p_emit, p_clean, 1e-12));
++}

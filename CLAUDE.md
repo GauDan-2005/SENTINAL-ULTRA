@@ -41,7 +41,9 @@ Two further pairs are tools rather than rules and so are not in the table above,
 - `learning/dirty-repo-and-symlinks.md` - a shipped repo already dirty, lost mode bits and flattened symlinks, and the `zip -y` flag
 - `learning/raising-difficulty-on-a-wrapper-task.md` - a task measured easy where the instruction cannot be trimmed because the API names are the deliverable
 - `learning/diagnosing-platform-only-failures.md` - **how to work a failure that reproduces on the platform and nowhere else.** The two-strikes rule, why a local reproduction proves sufficiency and never necessity, and the evidence hierarchy. Three rounds on kvdex 245 went to fixing real defects that were not the defect
-- `learning/accepted-bundle-reference.md` - the one bundle that cleared every gate, with measured numbers, separating what acceptance validated from what merely was not caught
+- `learning/difficulty-is-divergence-not-volume.md` - **`FAIL EASY` is not a size complaint.** A whole extra feature, adapted by the sanctioned related-PR route and pre-measured against four wrong implementations, converted zero of eight agents. The lever class that works is a documented behaviour that contradicts what a competent implementer naturally writes. Also: answering judge clarity findings quietly spends difficulty, and nothing measures that until the screen runs
+- `learning/answers-file-drift.md` - what many rounds of editing does to `submission_answer.txt`, the per-round grep checklist that catches it, and the one-write-per-edit rule that two silently-dropped edit batches earned
+- `learning/accepted-bundle-reference.md` - the two bundles that cleared every gate, with measured numbers, separating what acceptance validated from what merely was not caught
 
 **Operating constraints:**
 
@@ -88,7 +90,7 @@ The full text of each step is in the rule file named above. This is the sequence
 | **3** | Independent analysis: the four core principles plus the six auto-REMOVE patterns. Every finding gets a file:line, a Fixable trigger, and a minimal fix | Re-judge difficulty from scratch |
 | **4** | Decide the verdict. Both occurrences of the analysis question and the internal Validity field must agree | Give the two occurrences different answers |
 | **5** | Apply corrections, in `tasks/<name>/work/` only. Order: git hygiene, instruction, `problem_statement.md`, oracle, tests, allowed Dockerfile fixes, `task.toml`, pre-upload checklist | Edit the pristine extract, or run a build tool inside either tree |
-| **5.5** | Phase A: the 13 pre-upload gates on `work/`, then build the zip. Phase B: NOP, oracle three times, hostile delete, each on its own fresh extract of that zip | Run the battery on `work/`. Any edit after Phase B voids Phase B |
+| **5.5** | Phase A: the 14 pre-upload gates on `work/`, then build the zip. Phase B: NOP, oracle three times, hostile delete, each on its own fresh extract of that zip | Run the battery on `work/`. Any edit after Phase B voids Phase B |
 | **6** | Draft every answer. On the Fixable path, Phase 1 answers go into the platform before the zip upload field, Phase 2 after the evals pass | Write answers before the battery passes against the current zip |
 | **7** | The eval loop, then the eight-condition Send-to-reviewer gate | Check Send with a failing condition and no explanation |
 | **8** | Ask the user for the four handling-time numbers. The total is fields 1 + 2 + 3 | Invent any of the four |

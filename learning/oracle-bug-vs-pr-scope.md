@@ -35,6 +35,28 @@ definition.** The bug only surfaced when the on-disk format was read from the so
 it. The lesson generalises past statistics: when the instruction states a wire or file format as
 fact, go and read that format's own definition, not the code that claims to implement it.
 
+## Correcting the bug can cost the task its only difficulty discriminator
+
+Recorded 2026-08-11, after statrs 315 was accepted, because this is the bill that comes with a
+case-1 fix and nothing else here names it.
+
+Before the correction, the graded suite asserted Mann-Whitney thresholds that had been read off
+the **buggy** oracle, so an agent implementing the test correctly **failed**. That was doing the
+work of separating good answers from bad, illegitimately, by requiring agents to reproduce the
+author's mistake. Correcting it, which the reviewer was right to demand, let correct
+implementations pass and the discriminator vanished.
+
+The before and after is measured. The pre-fix bundle cleared every evaluation check including the
+review gate's difficulty screen and reached a human reviewer. The next bundle, differing by the
+correction and its pinned reference values, returned `Difficulty: FAIL EASY`. Two more rounds went
+into rebuilding difficulty honestly.
+
+**So budget a difficulty lever into the same round as a case-1 fix.** The fix is still correct and
+still mandatory. Just do not be surprised when the screen turns red immediately afterwards, and do
+not read that as a new defect: it is the old, illegitimate discriminator being removed. Say so in
+Comments for Reviewer, because a reviewer reading a red screen right after a fix they asked for
+deserves the causal chain rather than a coincidence.
+
 ## The situation
 
 The instruction said each function must agree with `scipy.stats` to an absolute 1e-9. The
