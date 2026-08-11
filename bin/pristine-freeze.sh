@@ -7,7 +7,9 @@
 #
 # What it does, in order:
 #   1. locate the shipped zip under <task-dir>/download/
-#   2. find the inner task tree inside it (flat, task/, or <id>/<name>_harborized/)
+#   2. find the inner task tree inside it, BY CONTENTS not by name - the prefix that carries
+#      task.toml next to instruction.md. Packaging varies and docs/harbor-framework.md says so:
+#      flat at the zip root, under task/, under seed/, or under <id>/<name>_harborized/
 #   3. write download/original.manifest.tsv from the zip's own central directory
 #   4. re-extract with unzip -X into a fresh download/original
 #   5. repair any mode or symlink the filesystem dropped, from the manifest

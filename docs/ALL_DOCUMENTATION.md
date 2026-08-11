@@ -2,8 +2,7 @@
 
 Source: https://snorkel-ai.github.io/Sentinel_Ultra_Hub/
 
-Exported: 2026-07-31T13:51:23Z
-Delta re-checked against the live Hub: 2026-08-01 (2 new What's New entries + 1 new FAQ entry, both dated Jul 31, 2026, merged in below)
+Exported: 2026-08-06T08:15:55Z
 
 Every tab of the Sentinel Ultra Hub, concatenated in navigation order.
 
@@ -18,17 +17,33 @@ Latest updates to the Sentinel Ultra contributor guidelines
 
 📢 Latest update
 
-Network fields in `task.toml` have changed
+Review-gate blocks now point you to the reason
 
-Network access is now set **per block** — `[environment]` `"public"`, `[agent]` `"allowlist"` with `allowed_hosts`, and `[verifier]` `"no-network"`. Also remove `network_mode = "none"` from `docker_compose.yaml` if present.
+When an eval says the **review gate** blocked at the **agentic judge**, the actual per-axis reasons (`DISCUSS`/`REMOVE` + cited axes/files) are in the **"Agentic Judge Quality Report"** field on your submission — it's collapsed and marked *optional*, lower down the form, so it's easy to miss. **Expand it** to see exactly what to fix. The gate runs in two stages (agentic judge, then a difficulty screen); `"Not run: difficulty screen"` just means the judge blocked first — expected, not a second error.
 
-[See the updated task.toml structure →](harbor-framework.md#task-metadata)
+[See the review-gate FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
 
 ## Recent updates <a id="recent-updates"></a>
 
+-   Aug 5, 2026
+
+    **Task came back too easy?** You can look at later PRs in the repo and adapt a change from a *related* one for inspiration to add complexity — just don't use unrelated PRs, don't copy a PR wholesale, and don't change the scope or feature of the original PR/task. [FAQ →](faq.md#a-task-came-back-too-easy-can-i-adapt-a-change-from-a-related-pr-to-add-complexity)
+
+-   Aug 5, 2026
+
+    **Reviewers: cite the Guidelines in revision notes.** When sending a task back for Needs Revision, point the submitter to the relevant Guidelines section for specific or easily-missed rules. It's not required for every note, but a pointer to the exact rule makes revisions faster and removes ambiguity. [Reviewer form questions →](tasking-guide.md#reviewer-form-questions)
+
+-   Aug 5, 2026
+
+    **Review-gate blocked at the agentic judge?** The one-line summary only names the stage — the reasons (`DISCUSS`/`REMOVE` + cited axes/files) live in the **"Agentic Judge Quality Report"** field on your submission. It's collapsed and marked optional, so expand it, fix what it flags, and resubmit. [FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
+
+-   Jul 27, 2026
+
+    **Network fields in `task.toml` changed.** Network access is now set **per block** — `[environment]` `"public"`, `[agent]` `"allowlist"` with `allowed_hosts`, and `[verifier]` `"no-network"`. Also remove `network_mode = "none"` from `docker_compose.yaml` if present. [task.toml structure →](harbor-framework.md#task-metadata)
+
 -   Jul 31, 2026
 
-    **Quality Check pass bar clarified.** On coverage and faithfulness (scored 1–5), a task must land **above 3** on both axes to pass — exactly 3 (or any single judge at 2 or below) sends it to needs-revision, and 2 or below is a hard fail. Don't ship borderline. [Quality Check judge →](tasking-guide.md#quality-check-agentic-judge)
+    **Quality Check pass bar clarified.** On coverage and faithfulness (scored 1–5), a task must land *above 3* on both axes to pass — exactly 3 (or any single judge at 2 or below) sends it to needs-revision, and 2 or below is a hard fail. Don't ship borderline. [Quality Check judge →](tasking-guide.md#quality-check-agentic-judge)
 
 -   Jul 31, 2026
 
@@ -361,10 +376,21 @@ You may make only specific, allowed fixes to the environment (chiefly `environme
 
 **Fixable environment issues**
 
+> **Local repair note (this workspace, not the Hub):** the commands in the **Fix** column are
+> mistyped *in the Hub itself*, not by this export. The Hub's own page bundle stores them as
+> `apk add -no-cache bash`, `apt-get install y tmux`, `chmod x` and `cpus/memorymb/storagemb`,
+> so copying them straight off the site gives you a command that does not run. They have been
+> corrected below and backticked. Two autocorrect rule names, `alpinebashautocorrect` and
+> `frozenrequirementsautocorrect`, are left exactly as the Hub writes them - they look like
+> identifiers that lost their separators, but nothing in the Hub or in this export shows the
+> real spelling, so they are quoted rather than guessed. Wording is otherwise untouched, and
+> this table is the only place `docs/` departs from the live site. Re-applied 2026-08-06 after
+> the re-export, which reintroduced the damage exactly as predicted.
+
 | Issue | What's happening | Fix |
 | --- | --- | --- |
-| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | `apk add --no-cache bash`. Has autocorrect: alpinebashautocorrect. |
-| Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent (saw 683x) | Generate it. Has autocorrect: frozenrequirementsautocorrect. |
+| Alpine image missing bash | solve.sh/test.sh use a bash shebang but Alpine ships only ash (saw 55x) | `apk add --no-cache bash`. Has autocorrect: `alpinebashautocorrect` (Hub spelling, verbatim). |
+| Missing `environment/frozen-requirements.txt` | Dockerfile COPYs it but it's absent (saw 683x) | Generate it. Has autocorrect: `frozenrequirementsautocorrect` (Hub spelling, verbatim). |
 | `tmux` not installed in the task image | Harbor drives the agent/verifier inside a `tmux` pane; no tmux means the session never starts and the run errors before tests | `apt-get install -y tmux` / `apk add --no-cache tmux`. Good autocorrect candidate. |
 | asciinema not installed | Harbor records the terminal session with asciinema; a missing binary breaks the run | `apt-get install -y asciinema` / `pip install asciinema` / `apk add asciinema` |
 | Unpinned base image (FROM ...:latest) | Reproducibility failure | Pin to a concrete tag |
@@ -449,7 +475,7 @@ Sentinel Ultra submission and review steps
 ## Submission Quick Start Guide <a id="submission-quick-start-guide"></a>
 
 1.  **Log in** — open the [Snorkel Experts platform](https://experts.snorkel-ai.com/home) and open the Submission task (search "Sentinel").
-2.  **Download your task zip** — it contains two folders: `task/` (the instruction, environment, solution, and tests you'll review) and `runs/` (agent attempt logs). Everything you'll inspect and edit is inside `task/`.
+2.  **Download your task zip** — it contains the task's files (`instruction.md`, `task.toml`, `environment/`, `solution/`, `tests/`), usually alongside a `runs/` folder of agent attempt logs. Packaging can vary — the files may be at the zip root, or inside a wrapping folder such as `task/` or `seed/` — so look for them wherever they land. You'll inspect and edit the task files, not `runs/`.
 3.  **Review** — decide Valid / Fixable / Not Fixable.
 4.  **If Fixable, rewrite** the instruction, tests, and/or oracle.
     4b. **Prepare your upload:** zip only the contents of the `task/` folder — not the folder itself, and not `runs/`. The zip should unpack directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, and `tests/`.
@@ -559,7 +585,7 @@ Download the task zip provided at the top of the form. It contains the task you'
 
 **What is your analysis of the Sentinel task you downloaded above?**
 
-> **Note:** **Note:** This question appears twice in the platform, and both are required. Please make sure that both answers are the same.
+> **Note:** This question appears twice in the platform, and both are required. Please make sure that both answers are the same.
 
 -   **Fixable** — The task has issues in the instructions, tests, and/or oracle, but you can correct all issues.
 -   **Invalid/Not Fixable** — The task is invalid and/or unfixable, as it requires changes outside of the instructions, tests, or oracle, or is invalid for other reasons.
@@ -726,7 +752,7 @@ The verdict logic:
 -   **DISCUSS** (fails, `NEEDS_REVISION`) — any single judge scored either test axis ≤ 2, or the adjudicated score on either axis is ≤ 3.0.
 -   **OK** (passes) — both test axes land above 3.0 with no judge at ≤ 2.
 
-> **Note:** **Practical bar:** both judges need to rate your test suite a solid 4+ on coverage and faithfulness. A single "3 with reservations" from one judge is enough to bounce the task. Borderline scores round down by design — don't argue with a 3, fix it.
+> **Note:** **Practical bar:** the judges score your test suite on coverage and faithfulness (1–5). A final score **above 3** on both axes passes. A final of **3 or below** on either axis sends the task to needs-revision (a single judge scoring **2 or below** on either axis also trips this). A final of **2 or below** on either axis is a hard fail. In short: aim comfortably above 3 — a task sitting right at 3 does not pass, so don't ship borderline; fix it.
 
 ##### The two questions the judge asks about your tests <a id="quality-check-two-questions"></a>
 
@@ -874,7 +900,7 @@ The reviewer should confirm that the submitter correctly identified fixable issu
     -   Environment
     -   PR Relevancy
     -   Other
-4.  **If Needs Revision:** Explain in more detail what revisions are needed from the submitter based on your selection(s) above.
+4.  **If Needs Revision:** Explain in more detail what revisions are needed from the submitter based on your selection(s) above. Where it helps, **cite the relevant section of the [Guidelines](guidelines.md)** in your notes. You don't need to do this for every point, but for specific or easily-missed rules, pointing the submitter to the exact section that backs your feedback makes revisions faster and removes ambiguity about what you're asking for.
 
 5.  **Acknowledgement of Submitter Rebuttal:** Before submitting, open the rebuttal comments in the left-hand panel and read the submitter's notes in full. Confirm one of the following:
 
@@ -922,7 +948,7 @@ Tasks follow the [Harbor format](https://harborframework.com/docs) and are evalu
 
 ## Task Structure & Components <a id="task-structure-components"></a>
 
-Each task follows the Harbor format and contains a task directory with the following structure:
+Each task follows the Harbor format and is built from the components shown below. **How your download is packaged can vary** — these files may sit at the zip root, or inside a wrapping folder such as `task/` or `seed/`, and a `runs/` logs folder may or may not be included. The layout below shows what a task is made of, not a guarantee of the download structure; locate these files wherever they land.
 
 ```
 <task-id>/
@@ -1135,9 +1161,7 @@ Use the `stb submissions list` command to see the current status of your submiss
 
 ## An eval failed with an infra/platform error, or came back with blank feedback — is my task broken? <a id="an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken"></a>
 
-**No — a platform failure is not a task defect.** Errors like `DaytonaRateLimitError` / `ApiRateLimitError`, sandbox auth/connection errors, a one-off `NonZeroAgentExitCode`, or a run that comes back with blank feedback / "No evaluation information available" are infra issues on our side, not something wrong with your task.
-
-The tell is **inconsistency**: the same task passes on one run and errors on another, or only 1 of N agent runs fails while the rest are clean.
+**No — a platform failure is not a task defect.** Errors like `DaytonaRateLimitError`, `ApiRateLimitError`, sandbox auth/connection errors, a one-off `NonZeroAgentExitCode`, or a run that comes back with **blank feedback / "No evaluation information available"** are infra issues on our side, not something wrong with your task. The tell is inconsistency: the same task passes on one run and errors on another, or only 1 of N agent runs fails while the rest are clean.
 
 What to do:
 
@@ -1147,6 +1171,18 @@ What to do:
 -   **If it persists,** flag it to the team on the Slack channel with the task/submission UID and the exact error. Include whether it's intermittent (passes sometimes) so we can tell an outage apart from a real defect.
 
 When in doubt, check the [submission status](#how-do-i-check-the-status-of-a-submission) — the CLI is the source of truth for where the task actually is.
+
+## My eval says "Review gate blocked at the agentic judge / difficulty screen" — what does that mean? <a id="my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean"></a>
+
+The **review gate** is a two-stage check that runs before your task reaches a reviewer: the **agentic judge** first, then a **difficulty screen** (a cheap single-arm rollout). The second stage only runs if the first passed, so a block names the stage that stopped it. This is **not** your task's final difficulty grade — the full difficulty rollout is a separate check that runs later, after a reviewer accepts.
+
+In almost every case a block is a **real, content-side result you need to act on**, not an infra failure:
+
+-   **"Blocked at the agentic judge"** — the judge returned a needs-work verdict. The one-line eval summary only names the stage; the actual reasons are in the **"Agentic Judge Quality Report"** field on your submission (it's collapsed and marked *optional*, lower down the form — expand it). It shows the `DISCUSS`/`REMOVE` status and cites the specific axes/files. Fix what it flags, and resubmit.
+-   **"Blocked at the difficulty screen (cheap single-arm rollout)"** — the screen found the task **trivially easy** (the model solved every attempt). Add difficulty per the [PR scope and difficulty](guidelines.md#pr-scope-and-task-difficulty) rules, then resubmit.
+-   **"Not run: difficulty screen"** in the summary just means the judge blocked first, so the later stage never ran — expected, not a second error.
+
+The **one** infra case is when the message explicitly says **"the difficulty screen failed with an infra error"** — that's a sandbox/platform crash, no verdict was produced, so retry (see the [infra-failure FAQ](#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)). If you get the *same* review-gate block repeatedly across different tasks, or several in a short window with otherwise-clean checks, flag it on Slack with the UIDs — a cluster can indicate a platform-side issue rather than a problem with each task.
 
 ## The linter rejects my task as "easy" after a difficulty downgrade — what do I do? <a id="the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do"></a>
 
@@ -1172,6 +1208,14 @@ Say the source PR adds **CSV export** to a reports page:
 
 Rule of thumb: if the task still clearly maps back to the original PR — just bigger or more thorough — that's adding complexity. If it no longer resembles the PR, or does *less* than the PR, you've changed the scope, which makes it **Not Fixable**. See [PR scope rules](guidelines.md#pr-scope-rules) in the Guidelines.
 
+## A task came back too easy — can I adapt a change from a related PR to add complexity? <a id="a-task-came-back-too-easy-can-i-adapt-a-change-from-a-related-pr-to-add-complexity"></a>
+
+**Yes.** You can look at later PRs in the repo and take inspiration from a *related* one to add complexity. Keep it within bounds:
+
+-   Don't pull from **unrelated** PRs.
+-   Don't copy a PR **wholesale** — adapt from it, don't lift it entirely.
+-   Don't change the **scope or feature** of the original PR/task — you're adding to it, not replacing it. See [adding complexity vs. changing scope](#what-counts-as-changing-the-pr-scope-vs-adding-complexity) above.
+
 
 ---
 
@@ -1192,6 +1236,11 @@ Handy shortcuts for Sentinel Ultra contributors
 # Changelog
 
 Sentinel Ultra Contributor Guidelines
+
+## Aug 5, 2026
+
+-   Added an FAQ entry clarifying that when a task comes back too easy, an EC may look at later PRs in the repo and adapt a change from a *related* PR for inspiration to add complexity — but must not pull from unrelated PRs, copy a PR wholesale, or change the scope/feature of the original PR/task.
+-   Tasking Guide (reviewer section): encouraged reviewers to cite the relevant section of the Guidelines in their Needs Revision notes — not required for every point, but recommended for specific or easily-missed rules so submitters can refer to the exact rule behind the feedback.
 
 ## Jul 27, 2026
 
@@ -1218,30 +1267,30 @@ Sentinel Ultra Contributor Guidelines
 
 ## Jul 13, 2026
 
--   Quality Check is now the agentic rubric-panel judge (blocking). Two LLM judges (Claude Opus + GPT-5.5) score every submission against four rubrics (instruction, tests, oracle, packaging — 10 axes), with a third adjudicator settling disagreements. The verdict is driven by test coverage and test faithfulness: tasks scoring ≤ 3 on either axis return \`NEEDS_REVISION\`, and six patterns (silent skips, no CLI invocation, existence-only checks, agent-controlled coverage, fail-open tests, hidden requirements) fail outright. Added a test-writing Do/Don't checklist under Tasking Guide → Section 3 · Run Evals.
+-   Quality Check is now the agentic rubric-panel judge (blocking). Two LLM judges (Claude Opus + GPT-5.5) score every submission against four rubrics (instruction, tests, oracle, packaging — 10 axes), with a third adjudicator settling disagreements. The verdict is driven by test coverage and test faithfulness: tasks scoring ≤ 3 on either axis return `NEEDS_REVISION`, and six patterns (silent skips, no CLI invocation, existence-only checks, agent-controlled coverage, fail-open tests, hidden requirements) fail outright. Added a test-writing Do/Don't checklist under Tasking Guide → Section 3 · Run Evals.
 -   Added a "Before You Upload" pre-submission hygiene checklist to the Tasking Guide (tests.patch applies to base, pre-existing regression tests untouched, offline Docker build, clean git history, no stray artifacts, task.toml sanity, full local dry run).
--   Detailed Tasking Steps now direct ECs to test in Harbor locally — build the environment (\`docker build environment/\`) and run the oracle (\`solve.sh\` → tests → reward 1.0) — replacing the earlier "you are not building or running the image" guidance. Local oracle/NOP runs are now recommended (not optional) for Fixable tasks.
+-   Detailed Tasking Steps now direct ECs to test in Harbor locally — build the environment (`docker build environment/`) and run the oracle (`solve.sh` → tests → reward 1.0) — replacing the earlier "you are not building or running the image" guidance. Local oracle/NOP runs are now recommended (not optional) for Fixable tasks.
 
 ## Jul 3, 2026
 
--   Reverted the solution patch file name back to \`golden.patch\` (it was briefly renamed to \`solution.patch\` on Jul 1). Updated across the task structure tree, Rewriting the Oracle, Harbor evaluation note, Tasking Guide step 4, and the Glossary. Added a note under the task structure tree telling ECs to rename \`solution.patch\` to \`golden.patch\` if they see it in a downloaded task.
+-   Reverted the solution patch file name back to `golden.patch` (it was briefly renamed to `solution.patch` on Jul 1). Updated across the task structure tree, Rewriting the Oracle, Harbor evaluation note, Tasking Guide step 4, and the Glossary. Added a note under the task structure tree telling ECs to rename `solution.patch` to `golden.patch` if they see it in a downloaded task.
 
 ## Jul 1, 2026
 
 -   Task difficulty: added guidance that an easy task is often overly prescriptive — remove context the agent should discover, and balance context so the task is passable but not instructional.
--   What you can edit: converted the section into collapsible per-component panels (Instructions, Tests, Solution & oracle, Environment, Repo files), with example \`config.json\` and \`test.sh\` inside the Tests panel and the Fixable / Not-Fixable environment tables folded into the Environment panel.
+-   What you can edit: converted the section into collapsible per-component panels (Instructions, Tests, Solution & oracle, Environment, Repo files), with example `config.json` and `test.sh` inside the Tests panel and the Fixable / Not-Fixable environment tables folded into the Environment panel.
 -   Verifiability: split into collapsible panels (alignment, 10+ fail-to-pass tests, outcome-based, regression, deterministic, oracle-independent, arbitrary naming) for easier scanning.
--   Environment: added a reminder that \`problem_statement.md\` must be an exact copy of \`instruction.md\` until packaging automates it.
+-   Environment: added a reminder that `problem_statement.md` must be an exact copy of `instruction.md` until packaging automates it.
 -   Clarified local runs: Valid as-is submissions should run the oracle and NOP locally before submitting; for Fixable it's optional since the evals run on submission.
 -   Added an FAQ tab (now in the top nav) with starter questions: daily task limits, choosing Valid as-is / Fixable / Not Fixable, broken environments, running the oracle/NOP locally, and PR scope vs. adding complexity. Removed the FAQ shortcut from Quick Links.
 -   Sprinkled a few small Dr. Bubbles across the site for fun (Harbor, FAQ, Guidelines, Tasking Guide, Glossary).
--   Renamed the solution patch to \`solution.patch\` (formerly \`init_state.patch\`) across the task structure, Rewriting the Oracle, and Glossary.
--   \`task.toml\`: updated the metadata reference and example to the current structure — dropped the \`\[task\]\` and \`\[solution\]\` sections, the \`docker_image\`/\`workdir\` fields, and the pass@k fields; documented the resource/timeout limits (cpus, memory, storage, gpus, build/agent/verifier timeouts); and noted that \`network_mode\`/\`allowed_hosts\` should be removed. Added a step to check \`task.toml\` on every task.
+-   Renamed the solution patch to `solution.patch` (formerly `init_state.patch`) across the task structure, Rewriting the Oracle, and Glossary.
+-   `task.toml`: updated the metadata reference and example to the current structure — dropped the `[task]` and `[solution]` sections, the `docker_image`/`workdir` fields, and the pass@k fields; documented the resource/timeout limits (cpus, memory, storage, gpus, build/agent/verifier timeouts); and noted that `network_mode`/`allowed_hosts` should be removed. Added a step to check `task.toml` on every task.
 
 ## Jun 30, 2026
 
--   Updated the task file layout to match the current client spec: \`solution/\` now holds \`solve.sh\` + \`solution.patch\`; \`tests/\` holds \`test.sh\`, \`tests.patch\`, \`config.json\`, and \`grade.py\` (fail-to-pass/pass-to-pass ids are declared in \`config.json\`); \`environment/\` adds \`problem_statement.md\`.
--   Reworked the \`task.toml\` metadata reference to the current schema (\`\[task\]\`, \`\[environment\]\` with pinned \`docker_image\` and \`no-network\`, \`\[agent\]\`, \`\[verifier\]\`, \`\[solution\]\`, \`\[metadata\]\` with \`category\`, \`difficulty_explanation\`, and \`pass_at_k_\*\`).
+-   Updated the task file layout to match the current client spec: `solution/` now holds `solve.sh` + `solution.patch`; `tests/` holds `test.sh`, `tests.patch`, `config.json`, and `grade.py` (fail-to-pass/pass-to-pass ids are declared in `config.json`); `environment/` adds `problem_statement.md`.
+-   Reworked the `task.toml` metadata reference to the current schema (`[task]`, `[environment]` with pinned `docker_image` and `no-network`, `[agent]`, `[verifier]`, `[solution]`, `[metadata]` with `category`, `difficulty_explanation`, and `pass_at_k_*`).
 -   Listed the exact git-hygiene criteria under the Dirty git history environment issue.
 -   Restructured the guide around its purpose: a lifecycle intro, a primed "Your Role" overview, a combined "PR Scope and Task Difficulty" section, and the core principles reorganized into four — Solvability, Clarity & No Leakage, Verifiability, and Authenticity.
 -   Added oracle expectations (match the canonical upstream fix; no unnecessary changes) and a new Glossary tab that cross-links each term to the section covering it.
@@ -1260,7 +1309,7 @@ Sentinel Ultra Contributor Guidelines
 -   Submitter form walkthrough fully restructured to match current platform form: added Valid as-is compliance checklist, Fixable issue checklist and post-fix confirmation, Invalid/Not Fixable primary category selection, and timing questions; removed questions no longer in the form
 -   Reviewer form walkthrough updated to include the Accept confirmation checklist
 -   Added note that the Task Analysis question appears twice in the platform and both responses must match
--   Upload format clarified: download contains \`task/\` + \`runs/\` folders; upload should be flat contents of \`task/\` only
+-   Upload format clarified: download contains `task/` + `runs/` folders; upload should be flat contents of `task/` only
 
 ## Jun 24, 2026
 
@@ -1269,5 +1318,5 @@ Sentinel Ultra Contributor Guidelines
 -   Removed duplicate info (test alignment table, some info about oracle writing/PR expansion)
 -   Removed reference to 2-hour time limits
 -   Added guidance that task validity question will be required twice in the EC form
--   Added new guidance for task uploads: upload should be flat contents of \`task/\` only — do not include \`runs/\` or the \`task/\` folder itself
+-   Added new guidance for task uploads: upload should be flat contents of `task/` only — do not include `runs/` or the `task/` folder itself
 -   Added references to new AHT questions

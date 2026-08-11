@@ -95,6 +95,38 @@ mention the symbol. Print a few lines either side before concluding anything abo
 `gh auth status` was already logged in on this machine, so `gh api` is available as an
 alternative and handles paging with `--paginate`.
 
+## When it is the fifth round, audit every claim at once
+
+Added 2026-08-05 from `20260727_135618__AltBeacon_android-beacon-library__1177`, rounds 2 to 6.
+
+The rule above tells you where a single finding belongs. It does not tell you what to do when the
+same *shape* of finding keeps coming back on different sentences. This task was sent back five
+consecutive rounds because `instruction.md` promised something PR 1177 does not deliver, and each
+round narrowed the one sentence that had been reported:
+
+| Round | The promise the PR did not keep |
+|---|---|
+| 2 | fields the instruction said were applied that the oracle never applied |
+| 4 | the transaction guarantee, against an async rebind |
+| 5 | a closed strategy set, Java-readable defaults, the foreground notification, `Identifier.parse` |
+| 6 | backward compatibility, and the `rssiFilterImplClass` type |
+
+Four correct fixes, four more rounds. **The two-strikes rule applies to the pattern, not to the
+sentence.** Fixing what was reported and re-uploading is itself the fix that has failed, so the
+move is to stop waiting for the judge to enumerate them.
+
+What that looks like in practice: take every absolute claim in `instruction.md` (`every`, `all`,
+`must`, `unchanged`, `never`, `always`, an exact type, an exact default) and check each one against
+`golden.patch` by hand, in one pass. On round 6 that took under an hour and found a gap no judge had
+reported, `ForegroundServiceScanStrategy` equality being identity-sensitive on the `Notification`
+because `android.app.Notification` does not override `equals`.
+
+**The audit also finds your own mistakes.** That same gap had been visible a round earlier as a
+graded assertion that disagreed with the instruction, and round 5 resolved the disagreement by
+deleting the assertion. See `LEDGER.md` L20. A test that contradicts the instruction is evidence
+about the instruction at least as often as the reverse, and the tiebreaker is always which of the
+two matches the patch.
+
 ## Related
 
 - `CLAUDE.md` Step 2 item 9 already requires diffing the golden patch's file list against the

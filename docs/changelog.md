@@ -4,6 +4,11 @@
 
 Sentinel Ultra Contributor Guidelines
 
+## Aug 5, 2026
+
+-   Added an FAQ entry clarifying that when a task comes back too easy, an EC may look at later PRs in the repo and adapt a change from a *related* PR for inspiration to add complexity — but must not pull from unrelated PRs, copy a PR wholesale, or change the scope/feature of the original PR/task.
+-   Tasking Guide (reviewer section): encouraged reviewers to cite the relevant section of the Guidelines in their Needs Revision notes — not required for every point, but recommended for specific or easily-missed rules so submitters can refer to the exact rule behind the feedback.
+
 ## Jul 27, 2026
 
 -   Added an FAQ entry on nonzero exit-code agent errors: after the usual troubleshooting (local Docker build, `tests.patch` applies to base, raising the agent timeout), removing the `curl` package install from `environment/Dockerfile` is the current workaround for a known Harbor edge-case bug affecting a small subset of tasks.
@@ -29,30 +34,30 @@ Sentinel Ultra Contributor Guidelines
 
 ## Jul 13, 2026
 
--   Quality Check is now the agentic rubric-panel judge (blocking). Two LLM judges (Claude Opus + GPT-5.5) score every submission against four rubrics (instruction, tests, oracle, packaging — 10 axes), with a third adjudicator settling disagreements. The verdict is driven by test coverage and test faithfulness: tasks scoring ≤ 3 on either axis return \`NEEDS_REVISION\`, and six patterns (silent skips, no CLI invocation, existence-only checks, agent-controlled coverage, fail-open tests, hidden requirements) fail outright. Added a test-writing Do/Don't checklist under Tasking Guide → Section 3 · Run Evals.
+-   Quality Check is now the agentic rubric-panel judge (blocking). Two LLM judges (Claude Opus + GPT-5.5) score every submission against four rubrics (instruction, tests, oracle, packaging — 10 axes), with a third adjudicator settling disagreements. The verdict is driven by test coverage and test faithfulness: tasks scoring ≤ 3 on either axis return `NEEDS_REVISION`, and six patterns (silent skips, no CLI invocation, existence-only checks, agent-controlled coverage, fail-open tests, hidden requirements) fail outright. Added a test-writing Do/Don't checklist under Tasking Guide → Section 3 · Run Evals.
 -   Added a "Before You Upload" pre-submission hygiene checklist to the Tasking Guide (tests.patch applies to base, pre-existing regression tests untouched, offline Docker build, clean git history, no stray artifacts, task.toml sanity, full local dry run).
--   Detailed Tasking Steps now direct ECs to test in Harbor locally — build the environment (\`docker build environment/\`) and run the oracle (\`solve.sh\` → tests → reward 1.0) — replacing the earlier "you are not building or running the image" guidance. Local oracle/NOP runs are now recommended (not optional) for Fixable tasks.
+-   Detailed Tasking Steps now direct ECs to test in Harbor locally — build the environment (`docker build environment/`) and run the oracle (`solve.sh` → tests → reward 1.0) — replacing the earlier "you are not building or running the image" guidance. Local oracle/NOP runs are now recommended (not optional) for Fixable tasks.
 
 ## Jul 3, 2026
 
--   Reverted the solution patch file name back to \`golden.patch\` (it was briefly renamed to \`solution.patch\` on Jul 1). Updated across the task structure tree, Rewriting the Oracle, Harbor evaluation note, Tasking Guide step 4, and the Glossary. Added a note under the task structure tree telling ECs to rename \`solution.patch\` to \`golden.patch\` if they see it in a downloaded task.
+-   Reverted the solution patch file name back to `golden.patch` (it was briefly renamed to `solution.patch` on Jul 1). Updated across the task structure tree, Rewriting the Oracle, Harbor evaluation note, Tasking Guide step 4, and the Glossary. Added a note under the task structure tree telling ECs to rename `solution.patch` to `golden.patch` if they see it in a downloaded task.
 
 ## Jul 1, 2026
 
 -   Task difficulty: added guidance that an easy task is often overly prescriptive — remove context the agent should discover, and balance context so the task is passable but not instructional.
--   What you can edit: converted the section into collapsible per-component panels (Instructions, Tests, Solution & oracle, Environment, Repo files), with example \`config.json\` and \`test.sh\` inside the Tests panel and the Fixable / Not-Fixable environment tables folded into the Environment panel.
+-   What you can edit: converted the section into collapsible per-component panels (Instructions, Tests, Solution & oracle, Environment, Repo files), with example `config.json` and `test.sh` inside the Tests panel and the Fixable / Not-Fixable environment tables folded into the Environment panel.
 -   Verifiability: split into collapsible panels (alignment, 10+ fail-to-pass tests, outcome-based, regression, deterministic, oracle-independent, arbitrary naming) for easier scanning.
--   Environment: added a reminder that \`problem_statement.md\` must be an exact copy of \`instruction.md\` until packaging automates it.
+-   Environment: added a reminder that `problem_statement.md` must be an exact copy of `instruction.md` until packaging automates it.
 -   Clarified local runs: Valid as-is submissions should run the oracle and NOP locally before submitting; for Fixable it's optional since the evals run on submission.
 -   Added an FAQ tab (now in the top nav) with starter questions: daily task limits, choosing Valid as-is / Fixable / Not Fixable, broken environments, running the oracle/NOP locally, and PR scope vs. adding complexity. Removed the FAQ shortcut from Quick Links.
 -   Sprinkled a few small Dr. Bubbles across the site for fun (Harbor, FAQ, Guidelines, Tasking Guide, Glossary).
--   Renamed the solution patch to \`solution.patch\` (formerly \`init_state.patch\`) across the task structure, Rewriting the Oracle, and Glossary.
--   \`task.toml\`: updated the metadata reference and example to the current structure — dropped the \`\[task\]\` and \`\[solution\]\` sections, the \`docker_image\`/\`workdir\` fields, and the pass@k fields; documented the resource/timeout limits (cpus, memory, storage, gpus, build/agent/verifier timeouts); and noted that \`network_mode\`/\`allowed_hosts\` should be removed. Added a step to check \`task.toml\` on every task.
+-   Renamed the solution patch to `solution.patch` (formerly `init_state.patch`) across the task structure, Rewriting the Oracle, and Glossary.
+-   `task.toml`: updated the metadata reference and example to the current structure — dropped the `[task]` and `[solution]` sections, the `docker_image`/`workdir` fields, and the pass@k fields; documented the resource/timeout limits (cpus, memory, storage, gpus, build/agent/verifier timeouts); and noted that `network_mode`/`allowed_hosts` should be removed. Added a step to check `task.toml` on every task.
 
 ## Jun 30, 2026
 
--   Updated the task file layout to match the current client spec: \`solution/\` now holds \`solve.sh\` + \`solution.patch\`; \`tests/\` holds \`test.sh\`, \`tests.patch\`, \`config.json\`, and \`grade.py\` (fail-to-pass/pass-to-pass ids are declared in \`config.json\`); \`environment/\` adds \`problem_statement.md\`.
--   Reworked the \`task.toml\` metadata reference to the current schema (\`\[task\]\`, \`\[environment\]\` with pinned \`docker_image\` and \`no-network\`, \`\[agent\]\`, \`\[verifier\]\`, \`\[solution\]\`, \`\[metadata\]\` with \`category\`, \`difficulty_explanation\`, and \`pass_at_k_\*\`).
+-   Updated the task file layout to match the current client spec: `solution/` now holds `solve.sh` + `solution.patch`; `tests/` holds `test.sh`, `tests.patch`, `config.json`, and `grade.py` (fail-to-pass/pass-to-pass ids are declared in `config.json`); `environment/` adds `problem_statement.md`.
+-   Reworked the `task.toml` metadata reference to the current schema (`[task]`, `[environment]` with pinned `docker_image` and `no-network`, `[agent]`, `[verifier]`, `[solution]`, `[metadata]` with `category`, `difficulty_explanation`, and `pass_at_k_*`).
 -   Listed the exact git-hygiene criteria under the Dirty git history environment issue.
 -   Restructured the guide around its purpose: a lifecycle intro, a primed "Your Role" overview, a combined "PR Scope and Task Difficulty" section, and the core principles reorganized into four — Solvability, Clarity & No Leakage, Verifiability, and Authenticity.
 -   Added oracle expectations (match the canonical upstream fix; no unnecessary changes) and a new Glossary tab that cross-links each term to the section covering it.
@@ -71,7 +76,7 @@ Sentinel Ultra Contributor Guidelines
 -   Submitter form walkthrough fully restructured to match current platform form: added Valid as-is compliance checklist, Fixable issue checklist and post-fix confirmation, Invalid/Not Fixable primary category selection, and timing questions; removed questions no longer in the form
 -   Reviewer form walkthrough updated to include the Accept confirmation checklist
 -   Added note that the Task Analysis question appears twice in the platform and both responses must match
--   Upload format clarified: download contains \`task/\` + \`runs/\` folders; upload should be flat contents of \`task/\` only
+-   Upload format clarified: download contains `task/` + `runs/` folders; upload should be flat contents of `task/` only
 
 ## Jun 24, 2026
 
@@ -80,5 +85,5 @@ Sentinel Ultra Contributor Guidelines
 -   Removed duplicate info (test alignment table, some info about oracle writing/PR expansion)
 -   Removed reference to 2-hour time limits
 -   Added guidance that task validity question will be required twice in the EC form
--   Added new guidance for task uploads: upload should be flat contents of \`task/\` only — do not include \`runs/\` or the \`task/\` folder itself
+-   Added new guidance for task uploads: upload should be flat contents of `task/` only — do not include `runs/` or the `task/` folder itself
 -   Added references to new AHT questions

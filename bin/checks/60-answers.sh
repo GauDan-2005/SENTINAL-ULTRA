@@ -69,7 +69,7 @@ REV_HI="$(fact revision_max 120)"
 
 OUT="$(mktempdir)/out"
 python3 - "$FILE" "$TOTAL_MIN_LO" "$TOTAL_MIN_HI" "$REV_LO" "$REV_HI" > "$OUT" <<'PY' || true
-import re, sys
+import re, sys, os, json
 
 path = sys.argv[1]
 tot_lo, tot_hi, rev_lo, rev_hi = (int(x) for x in sys.argv[2:6])
@@ -266,6 +266,82 @@ if stated is not None and t_rev not in (None, 0) and stated >= 0:
             emit("FAIL", "answers.time-arithmetic.revision",
                  "the stated total equals fields 1 + 2 + 3 + 4, so the revision time has been folded "
                  "into it. The revision field is tracked separately")
+
+# ------------------------------------------------- graded total vs config.json --
+# The answers file states the graded total in prose, spelled out as often as not
+# ("forty three of forty three", "twenty three guards"). Every round that changes
+# the test counts leaves one of those behind, and the repeated-count check below
+# only sees phrasings it already knows. This one goes to config.json instead, so
+# it does not depend on guessing the wording. Measured on xlwings 2719, where the
+# audit found "forty one of forty one" and "twenty two guards" surviving a round
+# that had moved them to 43 and 23.
+WORDS = {
+    "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "twenty one": 21, "twenty two": 22, "twenty three": 23,
+    "twenty four": 24, "forty": 40, "forty one": 41, "forty two": 42,
+    "forty three": 43, "forty four": 44,
+}
+_ans = os.path.dirname(os.path.abspath(path))            # .../<task>/answers
+cfgp = os.path.join(os.path.dirname(_ans), "work", "tests", "config.json")
+try:
+    _g = json.load(open(cfgp))["grading"]
+    _total = len(_g["fail_to_pass"]) + len(_g["pass_to_pass"])
+except Exception:
+    _total = None
+
+if _total is None:
+    emit("SKIP", "answers.graded-total", "could not read tests/config.json next to the answers file")
+else:
+    pat = r"\b(%s|\d+)\s+of\s+(?:the\s+)?(%s|\d+)\b" % ("|".join(sorted(WORDS, key=len, reverse=True)),
+                                                            "|".join(sorted(WORDS, key=len, reverse=True)))
+    bad = []
+    for m in re.finditer(pat, raw, re.I):
+        a, b = m.group(1).lower(), m.group(2).lower()
+        if a != b:
+            continue                                   # "2 of 22" is a score, not a total
+        n = WORDS.get(a, None)
+        if n is None:
+            try: n = int(a)
+            except ValueError: continue
+        if n > 30 and n != _total:                     # only the graded-total sized ones
+            bad.append(m.group(0))
+    if bad:
+        emit("FAIL", "answers.graded-total",
+             "an N of N total disagrees with tests/config.json (%d graded)" % _total,
+             ["found: " + ", ".join(sorted(set(bad))),
+              "a round changed the counts and one spelled-out total was left behind"])
+    else:
+        emit("PASS", "answers.graded-total", "every N of N total matches the %d graded ids" % _total)
+
+# ------------------------------------------------------- repeated-count drift --
+# A count that appears in several places in this file is a count that has already
+# drifted or will. Measured on xlwings 2719: the number of additions made to the
+# source PR lives in Files Changed, in the PR additions answer and in a Comments
+# sentence, and the Comments one was the last still wrong for THREE consecutive
+# rounds (it read one when there were two, then two when there were three).
+# Understating a PR expansion is what a reviewer cross-checks against the source,
+# so this is a FAIL rather than a warning.
+WORDNUM = r'(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)'
+for pat, cid, label in (
+        (r'\b%s\s+additions?\b' % WORDNUM, "additions",
+         "how many additions were made to the source pull request"),
+        (r'\b%s\s+rounds? of Check feedback\b' % WORDNUM, "rounds",
+         "how many rounds of Check feedback returned a result"),
+        (r'\b%s\s+(?:hostile|separate) (?:runs?|requirements?)\b' % WORDNUM, "probes",
+         "how many hostile probes were run")):
+    hits = [m.group(0).strip().lower() for m in re.finditer(pat, raw, re.I)]
+    seen = sorted(set(hits))
+    if not hits:
+        emit("SKIP", "answers.count-%s" % cid, "no claim found about %s" % label)
+    elif len(seen) == 1:
+        emit("PASS", "answers.count-%s" % cid,
+             "%d place(s) agree on %s" % (len(hits), label))
+    else:
+        emit("FAIL", "answers.count-%s" % cid,
+             "%s is stated %d different ways" % (label, len(seen)),
+             ["found: " + ", ".join(repr(x) for x in seen),
+              "one place was updated and another was not - reconcile them all"])
 
 # ---------------------------------------------------------- required answers --
 for pat, cid, label in (

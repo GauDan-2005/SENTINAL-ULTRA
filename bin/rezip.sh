@@ -121,6 +121,27 @@ else
     exit 1
   fi
 
+  # `git gc` above packs every ref, which leaves .git/refs/heads EMPTY. An empty directory
+  # survives `zip -rXy` and `unzip`, but it does not survive every extractor, and git reports
+  # `fatal: not a git repository` the moment .git/refs is gone - even with HEAD, objects and
+  # packed-refs all intact. Measured on jqno 1166: `rm -rf .git/refs` in the built image
+  # reproduces that error exactly, and a peer reviewer counted agents hitting it 134 times.
+  # Writing the loose ref back makes the directory non-empty, so no extractor can drop it. The
+  # sha matches packed-refs, so nothing about the repo's state changes. Written directly rather
+  # than via `git update-ref`, which would recreate the reflog the scrub just removed.
+  if [ "$DRY_RUN" -ne 1 ] && [ -d "$REPO/.git" ]; then
+    HEAD_REF="$(sed -n 's|^ref: ||p' "$REPO/.git/HEAD" 2>/dev/null || true)"
+    if [ -n "$HEAD_REF" ] && [ ! -s "$REPO/.git/$HEAD_REF" ]; then
+      HEAD_SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"
+      if [ -n "$HEAD_SHA" ]; then
+        mkdir -p "$(dirname "$REPO/.git/$HEAD_REF")"
+        printf '%s\n' "$HEAD_SHA" > "$REPO/.git/$HEAD_REF"
+        rm -rf "$REPO/.git/logs"
+        pass "GIT-LOOSE-REF wrote $HEAD_REF so .git/refs is not an empty tree an extractor can drop"
+      fi
+    fi
+  fi
+
   if [ "$DRY_RUN" -ne 1 ]; then
     STRAY="$(cd "$REPO/.git" && ls -A | grep -vxE 'config|description|HEAD|hooks|index|info|objects|packed-refs|refs' || true)"
     if [ -n "$STRAY" ]; then
@@ -146,7 +167,26 @@ echo "-- step 1: patches still apply at HEAD"
 if [ -d "$REPO/.git" ] && [ "$DRY_RUN" -ne 1 ]; then
   TP="$TASK_DIR/work/tests/tests.patch"
   if [ -f "$TP" ]; then
-    if git -C "$REPO" apply --check "$TP" >/dev/null 2>&1; then
+    # A create-only tests.patch declares every graded file as a new file, so it cannot apply
+    # on a tree that still holds those paths. test.sh clears them first, and a plain
+    # `git apply --check` here reports that correct design as a failure. Model the delete
+    # step in a throwaway copy instead. See learning/tests-patch-vs-agent-edits.md.
+    _tp_stanzas=$(grep -c '^diff --git ' "$TP" 2>/dev/null || true)
+    _tp_creates=$(grep -c '^new file mode' "$TP" 2>/dev/null || true)
+    if [ "${_tp_stanzas:-0}" -gt 0 ] && [ "${_tp_stanzas:-0}" -eq "${_tp_creates:-0}" ]; then
+      _tp_tmp=$(mktemp -d)
+      cp -a "$REPO/." "$_tp_tmp/" 2>/dev/null || true
+      sed -n 's|^+++ b/||p' "$TP" | while IFS= read -r _tp_target; do
+        [ -n "$_tp_target" ] && rm -f "$_tp_tmp/$_tp_target"
+      done
+      if git -C "$_tp_tmp" apply --check "$TP" >/dev/null 2>&1; then
+        pass "TESTS-PATCH create-only patch applies once its targets are cleared, as test.sh does"
+      else
+        fail "TESTS-PATCH create-only patch does not apply even after clearing its targets"
+        git -C "$_tp_tmp" apply --check "$TP" 2>&1 | head -5 | sed 's/^/     /'
+      fi
+      rm -rf "$_tp_tmp"
+    elif git -C "$REPO" apply --check "$TP" >/dev/null 2>&1; then
       pass "TESTS-PATCH tests.patch applies at the base commit"
     else
       fail "TESTS-PATCH tests.patch does not apply at the base commit"

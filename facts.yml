@@ -20,6 +20,13 @@
 #   appears_in   repo files that state this fact in prose. doclint greps these.
 #                Never list docs/ here — that is an upstream export and is not
 #                ours to lint. Never list the source note either.
+#                An entry ending in "/" is a DIRECTORY GROUP: it expands to every
+#                .md inside and counts as one logical target, so a fact stated in
+#                one member does not raise a stale warning about the others.
+#                `.claude/rules/` is why this exists. The eleven numbered sections
+#                moved out of CLAUDE.md into one file each on 2026-08-05, so the
+#                union of that directory is what a single CLAUDE.md entry used to
+#                cover. A drift problem still names the individual rule file.
 #   pattern      regex that locates candidate lines inside appears_in files.
 #   kind         "rule"  = the platform enforces it, a violation fails something.
 #                "hint"  = local guidance, calibration, a target band. Never a gate.
@@ -34,7 +41,7 @@
 
 meta:
   version: 1
-  updated: 2026-08-04
+  updated: 2026-08-06
   precedence: >-
     docs/ wins on policy and judgment. learning/ wins on observed platform
     behaviour. This file wins on the number itself, because it is the only copy
@@ -52,6 +59,7 @@ facts:
     enforced_by: platform static check "config"; bin/checks/10-static.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -81,7 +89,7 @@ facts:
     verified_on: 2026-08-02
     enforced_by: platform static check "tests"; bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
       - .cursor/rules/sentinel-task-check.mdc
@@ -100,6 +108,7 @@ facts:
     enforced_by: none - this is a guard against a check nobody should write
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: 'pre-existing test file'
 
   - id: allow_extra_failures_policy
@@ -110,7 +119,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/40-grader.sh (WARN only, never FAIL)
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: 'allow_extra_failures'
@@ -124,6 +133,7 @@ facts:
     enforced_by: bin/checks/50-restore-shape.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: 'restore|tests\.patch'
@@ -137,7 +147,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -152,7 +162,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -170,7 +180,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -188,7 +198,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -206,7 +216,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -225,6 +235,7 @@ facts:
     enforced_by: platform static check "agent-timeout"; bin/checks/10-static.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -242,7 +253,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -261,6 +272,7 @@ facts:
     enforced_by: bin/checks/10-static.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -275,7 +287,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -290,7 +302,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -305,7 +317,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
       - .cursor/rules/sentinel-task-fixing.mdc
@@ -320,7 +332,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: none - this is a guard against flagging a build-time install as a defect
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: '(?i)build[- ]time network|network at build'
@@ -333,7 +345,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: '`os`|\[environment\] os'
@@ -346,7 +358,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/10-static.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: 'difficulty_explanation'
@@ -361,6 +373,7 @@ facts:
     enforced_by: platform static check "structure"; bin/checks/10-static.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: 'environment/repo'
 
   - id: bundle_required_files
@@ -381,6 +394,7 @@ facts:
     enforced_by: platform static checks "structure" and "prompt"; bin/checks/10-static.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: 'golden\.patch|problem_statement\.md'
 
   - id: static_check_count
@@ -392,6 +406,7 @@ facts:
     enforced_by: platform static check phase
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: '(?i)\b20 (?:static )?(?:upload )?checks|static check'
 
   - id: zip_command
@@ -402,7 +417,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/30-package.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
       - learning/static-checks.md
@@ -422,7 +437,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/30-package.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: '0755|mode 755'
@@ -450,7 +465,7 @@ facts:
     verified_on: 2026-08-02
     enforced_by: bin/checks/30-package.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
     pattern: '__pycache__'
@@ -464,7 +479,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: platform static check "git"; bin/checks/20-git.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
       - .cursor/rules/sentinel-task-check.mdc
@@ -482,7 +497,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: bin/checks/20-git.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
     pattern: 'packed-refs'
 
   - id: git_forbidden_state
@@ -493,7 +508,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: platform static check "git"; bin/checks/20-git.sh
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
       - .cursor/rules/sentinel-task-check.mdc
@@ -510,6 +525,7 @@ facts:
     enforced_by: platform Oracle Check
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: '3/3|three times|Oracle Check'
@@ -535,6 +551,7 @@ facts:
     enforced_by: bin/checks/40-grader.sh
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-fixing.mdc
       - .claude/skills/sentinel-task-fixing/SKILL.md
     pattern: 'raw_exit_code|fail[- ]open|fails closed'
@@ -549,6 +566,7 @@ facts:
     enforced_by: platform Quality Check
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-task-check.mdc
       - .claude/skills/sentinel-task-check/SKILL.md
     pattern: '(?i)must-have|Quality Check'
@@ -562,7 +580,52 @@ facts:
     enforced_by: platform Quality Check
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: 'test_coverage|test_faithfulness|REMOVE|DISCUSS'
+
+  - id: review_gate
+    value: {stages: 2, first: "agentic judge", second: "difficulty screen", second_runs_only_if_first_passed: true, report_field: "Agentic Judge Quality Report", is_final_difficulty_grade: false}
+    statement: "The review gate runs before a reviewer sees the task: the agentic judge first, then a cheap single-arm difficulty screen that runs only if the judge passed. It is not the final difficulty grade, the full rollout runs after a reviewer accepts. A block is a content-side result to act on, and the per-axis reasons sit in the collapsed 'Agentic Judge Quality Report' field on the submission."
+    source: docs/faq.md
+    kind: rule
+    verified_on: 2026-08-06
+    enforced_by: platform review gate
+    appears_in:
+      - CLAUDE.md
+      - .claude/rules/
+      - .cursor/rules/sentinel-difficulty-scope.mdc
+      - .claude/skills/sentinel-difficulty-scope/SKILL.md
+      - .cursor/rules/quality-rehearsal.mdc
+      - .claude/skills/quality-rehearsal/SKILL.md
+    pattern: '(?i)review gate|agentic judge|difficulty screen'
+
+  - id: related_pr_difficulty_material
+    value: {allowed: true, bounds: ["related PR only", "no wholesale copy", "no change to original scope or feature"]}
+    statement: "When a task comes back too easy, difficulty material may be adapted from a later RELATED PR in the same repo. Never an unrelated PR, never a wholesale copy, and never a change to the scope or feature of the original PR."
+    source: docs/faq.md
+    kind: rule
+    verified_on: 2026-08-06
+    enforced_by: reviewer, PR Scope Violation
+    appears_in:
+      - .claude/rules/
+      - .cursor/rules/sentinel-difficulty-scope.mdc
+      - .claude/skills/sentinel-difficulty-scope/SKILL.md
+    pattern: '(?i)related PR|later PR'
+
+  - id: download_packaging_varies
+    value: {upload_is_flat: true, known_download_shapes: ["zip root", "task/", "seed/", "*_harborized/"], runs_dir_optional: true}
+    statement: "A downloaded task zip may hold the five task entries at the zip root or under a wrapper such as task/ or seed/, and runs/ may be absent. Locate the directory by its contents. The UPLOAD zip is always flat, with no wrapper and no runs/."
+    source: docs/harbor-framework.md
+    kind: rule
+    verified_on: 2026-08-06
+    enforced_by: platform static check "layout"; bin/checks/30-package.sh
+    appears_in:
+      - CLAUDE.md
+      - INDEX.md
+      - .claude/rules/
+      - .cursor/rules/sentinel-task-check.mdc
+      - .claude/skills/sentinel-task-check/SKILL.md
+    pattern: '(?i)seed/|zip root|packaging (can )?var|wrapper'
 
   - id: prescriptiveness_check
     value: {threshold_above: 0.50, blocking: false, phase: "CodeBuild BUILD", id_prefix: "P"}
@@ -573,6 +636,7 @@ facts:
     enforced_by: platform BUILD phase
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: '(?i)prescriptiveness'
 
   - id: difficulty_pass_at_k
@@ -583,7 +647,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: platform Difficulty Check
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
       - .cursor/rules/sentinel-difficulty-scope.mdc
       - .claude/skills/sentinel-difficulty-scope/SKILL.md
     pattern: '(?i)pass@k|4 of 8|2 of 8'
@@ -597,6 +661,7 @@ facts:
     enforced_by: platform claim flow
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: '(?i)pending.revision'
 
   - id: inapp_check_runtime_limit_min
@@ -607,7 +672,7 @@ facts:
     verified_on: 2026-07-31
     enforced_by: platform
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
     pattern: '(?i)5-minute|five-minute'
 
   # ── local guidance, never a gate ──────────────────────────────────────────
@@ -619,7 +684,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/60-answers.sh (WARN only - the accepted bundle shipped 260)
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
     pattern: '180.{0,3}240'
 
   - id: handling_time_revision_band
@@ -630,7 +695,7 @@ facts:
     verified_on: 2026-08-04
     enforced_by: bin/checks/60-answers.sh (WARN only - the accepted bundle shipped 195)
     appears_in:
-      - CLAUDE.md
+      - .claude/rules/
     pattern: '60.{0,3}120'
 
   - id: accepted_bundle_calibration
@@ -653,4 +718,5 @@ facts:
     enforced_by: none
     appears_in:
       - CLAUDE.md
+      - .claude/rules/
     pattern: 'kvdex'

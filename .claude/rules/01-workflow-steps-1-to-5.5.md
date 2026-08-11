@@ -1,0 +1,241 @@
+_Owner of CLAUDE.md **Section 1**, Steps 1 through 5.5. Loaded every session. Steps 6 to 10 are in `.claude/rules/02-workflow-steps-6-to-10.md`._
+
+## 1. Submission Workflow
+
+When the user says "review", "inspect", "submit", or starts a new task:
+
+### STEP 1: Read `learning/`, then scan the workspace (session start, no user input needed)
+
+When a new task session begins, before asking for anything:
+
+1. **Read every file in `learning/` - this is mandatory and comes first.** Start with `learning/README.md`, then read each note it indexes. These are verified findings from real platform runs, recording where the actual behaviour differs from what `docs/` and this file say. Apply them for the rest of the session without being asked. If a note contradicts this file on a matter of fact about what the platform does, the note wins and the drift gets flagged to the user
+2. **Read `INDEX.md`** at the workspace root. It is the cross-task register - one row per task with its verdict, status and submission id. It tells you what is already in flight before you touch anything
+3. Scan `tasks/` for the per-task folders. Each one holds everything for a single task: `task.md`, `task_details.md`, `download/`, `work/`, `upload/`, `answers/`. Ignore everything else at the root by name: the directories `.claude/`, `.cursor/`, `.git/`, `_archive/`, `bin/`, `chat_transcripts/`, `comparison-report/`, `docs/`, `learning/`, and the files `AGENTS.md`, `CLAUDE.md`, `INDEX.md`, `README.md`, `facts.yml`, `prompts.md`, `.gitignore`
+4. Reconcile `INDEX.md` against what is actually on disk. A folder under `tasks/` with no row, or a row whose status no longer matches the files, is drift - report it rather than silently fixing it
+5. **Throughput rule - a hard stop, not a note.** At most **two** tasks may sit in `pending-revision` at once, or the platform blocks a new claim. Count it, do not eyeball it, and anchor the pattern to the table rows or the count comes back wrong - a bare `grep -c 'pending-revision'` also matches the status-vocabulary table and the surrounding prose. Use the form `INDEX.md` itself documents: `grep -c '^| \[.*| pending-revision |' INDEX.md`. `INDEX.md` also carries a `pending-revision: N of 2` line under its `## Active` heading, updated by the same action that changes any row's status. If the count is already 2, **refuse to start a new claim** and say which task has to be sent to reviewer or parked first. If the count is 3 or more, that is drift and it gets resolved with the user before anything else happens
+6. Report what was found, then write the applicable `learning/` notes into the task's `task.md` before Step 3 begins - a chat message does not satisfy this. The section is mandatory and takes the shape below, one line per note, naming the specific thing the note predicts for THIS task and the command that will confirm or refute it. Then move to Step 1.5
+
+```
+## learning/ notes applied
+| Note | What it predicts here | Command that settles it |
+|---|---|---|
+| unreachable-git-blobs.md | golden and patched-test blobs dangling in environment/repo/.git | git fsck --unreachable --no-progress |
+| verifier-fail-open.md | stock test.sh writes reward 1.0 without reading raw_exit_code | grep -n raw_exit_code tests/test.sh |
+| solve-sh-idempotency.md | reverse-apply fallback inverts the tree on the second oracle run | run solve.sh three times in one container |
+```
+
+**Writing back to `learning/`.** When something in this workspace costs real time and would cost it again - a platform check that rejected a bundle, an environment quirk, a rule whose real behaviour differs from its documented wording - add or update a note in `learning/` and index it in `learning/README.md`. Record what happened with the exact error text, why it happened, the rule to apply next time, and the date and task it came from. Do not log anything already covered by `docs/` or this file; log the gap between them and reality.
+
+### STEP 1.5: Ask the user for the task zip and the platform task data (every task, do not skip)
+
+Ask for BOTH in a single message:
+
+**1. The task zip.** Ask the user to drop the downloaded zip into `tasks/<Original Directory Name>/download/`, then to find the directory inside the zip that holds `instruction.md`, `task.toml`, `environment/`, `solution/` and `tests/` together and extract THAT to `tasks/<Original Directory Name>/download/original/`, so `original/` always holds those five entries at its top level. **Ask shape-independently, because the packaging varies** - `docs/harbor-framework.md` (the components list, "How your download is packaged can vary") and `docs/tasking-guide.md` quick start step 2 both say the files may sit at the zip root or inside a wrapper such as `task/` or `seed/`, and that a `runs/` logs folder may or may not be included. Whatever shape arrives, `download/original/` ends up flat. Nothing goes to the workspace root. If Step 1 already found an extracted task in that shape, ask the user to confirm it is the one to work on.
+
+**2. The platform task data.** Ask the user to paste the block shown in the platform for this zip:
+
+```
+Original Directory Name:
+Category:
+Difficulty:
+Task Tags:
+Languages:
+Metadata: (paste the full task.toml shown in the platform, or say "same as file")
+```
+
+Do NOT generate any of these values, and do NOT start Step 2 until the task is in the workspace and the data block is pasted. Wait for the user.
+
+### STEP 2: Auto-read the task and cross-check the platform data
+
+0. **Make the working copy before running anything.** Every command in this step that touches git or a patch runs against the working copy, never the pristine extract. Create the folders if they are missing and copy the extract across, preserving `.git` and every dotfile:
+
+   ```bash
+   mkdir -p "tasks/<Original Directory Name>"/{download,work,upload,answers}
+   cp -a "tasks/<Original Directory Name>/download/original/." "tasks/<Original Directory Name>/work/"
+   ```
+
+   `download/original/` is now frozen for the rest of the task. Reads are fine; commands are not. The inspection target from here on is `tasks/<Original Directory Name>/work/environment/repo`
+
+1. Locate the extracted task. It is `tasks/<Original Directory Name>/download/original/` with `instruction.md`, `task.toml`, `environment/`, `solution/` and `tests/` at its top level. **The download's own shape varies, and that is documented behaviour rather than a legacy quirk** - `docs/harbor-framework.md` (the components list, "How your download is packaged can vary") and `docs/tasking-guide.md` quick start step 2 both say the five entries may sit at the zip root or inside a wrapper such as `task/` or `seed/`. Bundles in this workspace also ship a `*_harborized/` directory, sometimes nested inside a `<submission_id>/` folder. The fix is the same for every wrapper: re-extract the directory that actually holds the five entries into `download/original/` so the pristine extract is always flat, never work inside the wrapper
+2. Read ALL of, relative to `download/original/`:
+   - `instruction.md` AND `problem_statement.md` - then `diff` them; they must be byte-identical. The current spec puts the copy at `environment/problem_statement.md`; older bundles keep it at the top level. Diff whichever one ships, and if both exist all three files must match
+   - `task.toml` (schema_version, `[environment]` / `[agent]` / `[verifier]` / `[metadata]`, source URL, base commit, timeouts, network_mode per block - see Section 8 for the field limits)
+   - `solution/solve.sh` and its patch (`golden.patch`). If it ships as `solution.patch` or `init_state.patch`, both are dead names for the same file - record it, read the diff direction rather than trusting the name (Section 9), and rename it to `golden.patch` on the Fixable path
+   - `tests/test.sh`, `tests/tests.patch`, `config.json` (wherever it ships). Note that `tests/` accepts **only** `config.json`, `grade.py`, `test.sh` and `tests.patch` - a `tests/files/` directory is rejected by the static checker even though older layout docs list it, so if you find one it is a finding (`learning/static-checks.md`)
+   - `environment/Dockerfile`
+   - `runs/*/*/result.json`; `verifier/test-stdout.txt` for ALL failing trials and at least one passing trial. `runs/` is not guaranteed to be in the download (`docs/harbor-framework.md`, the components list) - when the bundle ships without it, record that there is no trial evidence rather than reasoning from trials you never read
+3. **Count the fail-to-pass tests**: enumerate the cases in tests.patch and `grading.fail_to_pass` in config.json, confirm against a passing trial's stdout. **The platform's static check enforces a hard 10–20 range and fails the build outside it** (verified - see `learning/static-checks.md`). The guidelines wording ("at least 10, ideally 10–20") and the form checkbox ("more than 10") both read as floors, but 21+ is rejected. Target **11–20**, and if a rewrite pushes the count over 20, regroup cases as sub-steps under fewer top-level tests rather than deleting assertions
+4. **Git hygiene** (inside `tasks/<Original Directory Name>/work/environment/repo`, never inside `download/original/` - these commands write `.git/index`): `git log --oneline -n 20`, `git remote -v`, `git reflog` / `ls .git/logs`, `git rev-parse HEAD` vs task.toml base commit, `git rev-list --all --not HEAD`, `git config --local --get-regexp '^filter\.'`, `git status --porcelain`, `du -sh .git`, and `git fsck --unreachable --no-progress`. Unreachable objects are not covered by any of the other lines: a repo with no reflog, no stray refs and a clean tree can still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p`. `docs/guidelines.md` prescribes the remedy (`reflog expire --all` + `gc --prune=now`) but never the check, and `docs/tasking-guide.md` step 5 requires that no solution material be readable from agent paths - `.git` is an agent path. See `learning/unreachable-git-blobs.md`
+5. **tests.patch applies to the base commit**: `git apply --check ../../tests/tests.patch` inside `tasks/<Original Directory Name>/work/environment/repo` at HEAD. A patch cut against a different base fails every trial and shows up as "0/8 valid trials - infra/harness failure" in the difficulty check
+6. **Pre-existing test files untouched IN THE SHIPPED TREE - which is not the same as untouched by `tests.patch`.** Two separate rules, and collapsing them into one is how a healthy bundle gets judged Fixable over a non-defect:
+   - **The shipped tree is byte-identical to base.** Every test file under `environment/repo` matches its content at the base commit. Check it mechanically: `git -C tasks/<name>/work/environment/repo status --porcelain` prints nothing, and `git -C ... diff --stat HEAD -- <test paths>` is empty. This is the rule `docs/tasking-guide.md:39` is really about, and the harness enforces it
+   - **`tests.patch` MAY edit pre-existing test files.** It is applied at verify time, on top of that clean tree, and editing an existing test file is a normal thing for it to do. Measured on the one platform-ACCEPTED bundle: kvdex 245's `tests.patch` has 45 `diff --git` headers and 1 `new file mode`, so 44 pre-existing test files are edited by the patch and the bundle was accepted. `docs/tasking-guide.md:39` reads "new functions or new files only", which is good advice for keeping collisions down and is not what the harness checks. Flag the drift, do not rewrite a working patch into a create-only shape to satisfy the narrow reading
+   - Giving graded tests their own file with a distinctive prefix stays the **recommended practice** for collision safety (Section 10.3), not a rule the patch is judged against
+7. **Stray-artifact sweep** (in `tasks/<Original Directory Name>/work/`): look for `__pycache__/`, `*.pyc`, `.DS_Store`, `.venv/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.idea/`, `.vscode/`, editor swap files, `*.orig`, `*.bak`, `node_modules/`, `.pnpm-store/`, `.gradle/`, `target/`, and stray build lock files (`*.lock` written by a build tool, e.g. `.gradle/8.0/fileHashes/fileHashes.lock`) - a single one shipping into the container hard-caps the packaging axis at 1. Intentional dotfiles (`.gitignore`, `.dockerignore`, `.gitattributes`, `.gitkeep`, `.github/`) are fine.
+
+   **Protect tracked paths before you delete anything.** Run `git ls-files` at the base commit first and keep every path it lists, including ones that look like artifacts - `.claude/`, `.vscode/`, `.python-version`, a committed lockfile. Deleting a tracked file is editing tracked source inside `environment/repo/`, which is a hard boundary (Step 5). If a swept artifact turns out to be tracked, do not delete it: exclude it from the image with `.dockerignore` or an `rm -rf` in the Dockerfile after the `COPY`, and say so in Comments for Reviewer. `grep -n 'rm -rf' environment/Dockerfile` should show that removal sitting after the COPY, or the exclusion never happened
+8. Fetch the source PR from task.toml (`[metadata] source`, or `source_pr_url` on older tasks); summarize its type (bug fix / feature / refactor), module/area, and the behavior it changes. **Fetch the file list through the API and page it** - `curl "https://api.github.com/repos/<owner>/<repo>/pulls/<n>/files?per_page=100&page=N"`, repeating until a page returns under 100. The `.diff` URL redirects to a host that may not resolve, and a 100-row page 1 of a 198-file PR produced a confidently wrong finding on kvdex 245. Keep the full list: Step 2 item 9, the difficulty scope rules and any judge finding you cross-check all depend on it being complete. See `learning/source-pr-cross-check.md`
+9. **Diff the golden patch's file list against the PR's file list.** List the paths `solution/golden.patch` touches and compare them to the files the source PR actually changed. `docs/guidelines.md` requires the patch to contain "only what's needed to resolve the task" with no drive-by edits, and `docs/tasking-guide.md` step 2 requires no unrelated scope. A golden patch spanning far more files than the PR is a polluted oracle and a Fixable finding; files the PR changed but golden omits (docs, changelogs) are the same finding in the other direction. Non-test files only - test changes belong in `tests.patch`
+10. **Read the grader in `tests/test.sh` for fail-open behavior.** Trace how the reward is decided. If it parses stdout for test names, check whether it also gates on the test command's exit status. `docs/guidelines.md` states the invariant plainly - "the exit code should match the reward it writes" - and a parse-only grader breaks it: a compile failure, timeout, crash or partial run can leave the expected lines in the log and still award `1.0`. See `learning/verifier-fail-open.md`
+11. Skim `environment/repo/` as needed based on instruction scope
+
+**Cross-check the pasted platform data (from Step 1.5) against the extracted task:**
+
+- Original Directory Name ↔ the actual extracted directory name
+- Category ↔ task.toml `category` / `task_type` ↔ the source PR type
+- Difficulty ↔ task.toml `difficulty` (the `model_difficulty` field is separate and may differ - flag it only if it clashes badly with the runs/ results)
+- Task Tags ↔ task.toml `tags` (3–6 relevant tags)
+- Languages ↔ task.toml `coding_language` / `language` ↔ the actual code in `environment/repo/`
+- Metadata block ↔ the `task.toml` file on disk - diff them ("same as file" means use the file)
+- Source URL resolves to the right repo and PR; base commit ↔ `git rev-parse HEAD` (on mismatch HEAD wins - realign task.toml per the git rules)
+- `[metadata] repo_license` holds a real SPDX id and matches the licence file in `environment/repo`; `repo_name`, `base_commit_sha` and `source_pr_url` agree with the repo and the PR. These four are undocumented in `docs/harbor-framework.md` and populated in every bundle measured here (Section 8)
+- Every `task.toml` limit in Section 8 holds: cpus, memory_mb, storage_mb, gpus = 0, build/agent/verifier timeouts, and `network_mode` present in all three blocks with the right value. Missing or stripped `network_mode` fields are a finding
+- Legacy fields (`pass_at_k_*`, `expert_time_estimate_min`, `junior_time_estimate_min`, `tags`, `coding_language`, `model_difficulty`) were dropped from the current schema but still appear on older tasks. Cross-check them when present - `pass_at_k_*` against the actual pass rates in `runs/*/*/result.json`, `expert_time_estimate_min` feeds the senior-engineer estimate answer - and never add them to a task that lacks them
+
+**On mismatch:** record it as a finding. Fix task.toml where the editing rules allow (base-commit realignment to HEAD, strictly-metadata cleanup); flag anything unresolved in Comments for Reviewer.
+
+### STEP 3: Independent analysis
+
+Run the four core principles (Solvability, Clarity & No Leakage, Verifiability, Authenticity - full lists in sentinel-task-check) plus a scan for the six auto-REMOVE test patterns (Section 4 below). For EVERY issue record: file:line, what is wrong, which Fixable trigger or Not Fixable condition it maps to (Section 3), and the minimal fix. Include the Step 2 cross-check results - platform-vs-file metadata mismatches are findings too.
+
+Do NOT re-judge difficulty from scratch - arriving tasks have already passed the difficulty checks. Difficulty only re-enters if your fixes lower it, in which case the platform evals bounce the task back (see sentinel-difficulty-scope). For reference, the bar is a pass@k threshold: a frontier model solves a Medium task in at most 4 of 8 attempts and a Hard task in at most 2 of 8 - compare it against the trial outcomes in `runs/` when a difficulty claim needs grounding.
+
+### STEP 4: Decide the verdict
+
+Pick exactly one of **Valid as-is / Fixable / Invalid-Not Fixable** using Section 3 criteria.
+
+The analysis question appears TWICE in the platform and both are required - the two answers must be identical. The [For internal use] Validity field must also match, mapped as: Fixable → Fixable, Invalid/Not Fixable → Invalid, Valid as-is → Valid-as-is.
+
+### STEP 5: Apply corrections (Fixable only)
+
+**The working copy already exists - never edit the original extract:**
+
+1. `tasks/<Original Directory Name>/{download,work,upload,answers}` were created in Step 2 item 0
+2. `work/` was populated from `download/original/` in Step 2 item 0 and Steps 2 to 4 ran against it. **Do NOT re-make the copy here** - that would discard nothing on a clean pass and silently discard your inspection state on a resumed one. If `work/` is genuinely empty or missing, go back and run Step 2 item 0 rather than copying ad hoc
+3. ALL edits happen inside `tasks/<Original Directory Name>/work/`. `download/original/` stays untouched as the pristine reference. At any point, `diff -rq download/original work -x '.git'` from the task folder lists exactly the files you changed - run it before zipping and confirm every line is a change you meant to make. Paths in sentinel-task-fixing (e.g. `environment/repo`) refer to the working copy
+   - **Never run the project's build tool inside `download/original/`, and never inside `work/` either.** Gradle, Maven, npm and cargo all write caches and lock files into the checkout (`.gradle/`, `target/`, `node_modules/`). Those paths are gitignored, so `git status` stays clean and nothing warns you. Two things then break quietly: `diff -rq download/original work` starts reporting files you never touched, and the next `zip -rXy .` ships the cache into the container, which hard-caps the packaging axis at 1. Verified 2026-08-02, where a Gradle run left `.gradle/8.0/fileHashes/fileHashes.lock` in both trees. Builds and test runs belong in disposable scratchpad copies (Step 5.5). If a cache does appear, delete it before the stray-artifact sweep and re-run the sweep
+4. Add or update the task's row in `INDEX.md` and its `task.md` as the verdict and status change
+
+Follow sentinel-task-fixing in full. Hard boundaries, always in force:
+
+- NEVER edit tracked source files inside `environment/repo/` - git metadata cleanup is allowed and expected, source edits are not
+- NEVER leave a pre-existing test file modified **in the shipped tree** - the harness checks that every test file under `environment/repo` is byte-identical to its content at the base commit. `git -C environment/repo status --porcelain` prints nothing before the zip. Editing one of those files in place is the boundary violation
+- `tests/tests.patch` is a different thing and it MAY edit pre-existing test files. It is applied at verify time on top of the clean tree, so an added function inside an existing test file is legitimate: kvdex 245, the one accepted bundle, edits 44 pre-existing test files that way. Prefer a separate prefixed file for the graded tests (Section 10.3) because it removes the agent-collision surface, not because in-place edits are banned
+- Editable: `instruction.md` (+ its exact copy `problem_statement.md`), tests (test.sh, tests.patch, config.json - those three and `grade.py` are the ONLY entries `tests/` may contain, verified by a rejected upload), oracle (solve.sh + patch), the LISTED Dockerfile fixes only, task.toml metadata and limits, git metadata in the repo
+- Oracle edits only in two cases: the oracle does not implement the instruction, or you are expanding PR scope to raise difficulty. Expansion = original PR + additions. Never reduce or replace the PR
+- If any fix would require reducing or replacing PR behavior → STOP and reclassify as Invalid/Not Fixable
+
+Work in this order: git hygiene → instruction rewrite → sync problem_statement.md → oracle (if an allowed case applies) → tests (regenerate tests.patch against clean HEAD, register new test ids in `fail_to_pass`) → allowed Dockerfile fixes → task.toml sanity (Section 8) → pre-upload checklist.
+
+Write tests to clear the Quality Check bar (Section 4): no silent skips, no fail-open, invoke the actual CLI/entry point when one is asked for, pair every existence check with a content assertion, enumerate expected items from the instruction/environment (never from agent output), no overreach beyond stated requirements. Then apply Section 10 - the defects that pass every eval and still come back from the reviewer.
+
+**Regenerating `tests.patch`** when it does not apply: from `environment/repo` at the base commit, confirm the target test files are in their original state (they must NOT already contain the new f2p tests - the patch is what adds them), apply the test additions by hand, then `git add -A && git diff --cached -- <test paths> > ../../tests/tests.patch` and `git checkout .` to restore the repo to base. Re-verify with `git apply --check`. Common traps: the repo copy already includes the new tests (the patch re-adds them and conflicts), or the patch touches a non-test file such as `CMakeLists.txt` that has since changed.
+
+**Pre-upload checklist - these are the Phase A gates. Run all of it on `work/` before the zip is built and before the Step 5.5 battery runs:**
+
+1. `tests.patch` applies cleanly to `environment/repo` at the base commit (`git apply --check`)
+2. The shipped tree is clean: `git -C environment/repo status --porcelain` prints nothing and no test file differs from base. `tests.patch` editing a pre-existing test file is fine and expected (Step 2 item 6); a pre-existing test file left edited **in the tree** is the defect
+3. `docker build environment/` succeeds and is reproducible. The build MAY use the network; run `apt-get update` before installs, use packages that exist in the base image distro, pin the base image to a concrete tag, and bake test dependencies into the image instead of fetching them at test time. Run time is what stays restricted - the agent reaches only the model gateway and the verifier is airgapped. Four **reproducibility** checks on top of the base-image tag, none of them a network restriction:
+   - `grep -nE 'apt-get +(dist-)?upgrade|apk upgrade|yum upgrade' environment/Dockerfile` is empty. An upgrade step re-resolves the whole package set on whatever day the image is built, so the difficulty run and the oracle run can get different toolchains
+   - every bare `pip install <pkg>` carries `==`, and the npm, gem and cargo equivalents carry an explicit version. `grep -nE 'pip3? install' environment/Dockerfile` then read each line
+   - every `pip install -e <dir>` target exists inside `environment/repo`. A path that does not resolve fails at build time on the platform and passes locally when a stale directory happens to be lying around
+   - any `git+https://` requirement is pinned to a tag or a sha, never a bare branch. Fetching from git at build time is allowed; fetching a moving branch is what makes the build unreproducible
+4. Git hygiene clean per the checklist in sentinel-task-fixing (HEAD == base commit, no refs past HEAD, no remotes, no `filter.*`, clean tree, no reflog, `.git` under 100 MB) **and `git fsck --unreachable --no-progress` prints nothing**
+5. Stray-artifact sweep is empty, no solution material readable from agent paths, `problem_statement.md` re-copied from `instruction.md`, and `solution/solution.patch` renamed to `golden.patch` if the bundle shipped that name
+6. `task.toml` sanity per Section 8 - limits, `gpus = 0`, `network_mode` in all three blocks, accurate `category` / `difficulty_explanation` / source URL, `[environment] os` present, and `[metadata] repo_license` / `repo_name` / `base_commit_sha` / `source_pr_url` populated and correct. Remove `network_mode = "none"` from `docker_compose.yaml` if present
+7. **Script modes.** `tests/test.sh` and `solution/solve.sh` are executable (`0755`). A `0644` verifier entrypoint is the "non-executable scripts" row of the allowed-fix table in `docs/guidelines.md` and fails at run time, not at build time, so nothing local catches it for you. Check the mode in the extracted zip, not only the working copy
+8. **Grader fails closed.** `tests/test.sh` writes reward `1.0` only when the test command also exited zero (Section 10). A parse-only grader is the `Fail-open` auto-REMOVE pattern wearing a different hat
+9. **No source-shape grading.** `grep -rnE 'getsource|getsourcelines|inspect\.|readFileSync|read_text\(|Files\.readString|open\(.*\.(py|ts|java|rs|kt)' tests/` turns up nothing that reads a source file to assert on its text, and no assertion greps for a private helper name. Pass condition: the graded tests call the public API and assert on behaviour. A test that scans source text passes for a solution that writes the right words and fails one that writes correct different code, which is the `Don't` at the top of the Section 4 test-writing checklist and a judge finding when it ships
+10. **Instruction and tests name the same things.** For every public identifier `instruction.md` names as a deliverable, confirm it appears in both `tests/tests.patch` and `solution/golden.patch`. Pass condition: no name in the instruction that nothing grades, and no graded name the instruction never states. A name that is in the tests and not the instruction is a `test_faithfulness` finding; one that is in the instruction and not the patch is the `Task Instruction Sufficiency: FAIL` signature from the other side (Section 4)
+11. **No unguarded bashisms.** `grep -n '\[\[\|BASH_SOURCE\|\${.*\[@\]}\|<(' solution/solve.sh tests/test.sh`. Pass condition: every hit sits in a script whose shebang is `#!/usr/bin/env bash` or `#!/bin/bash`, or which re-execs itself under bash. A `#!/bin/sh` script full of `[[` runs fine on this machine, where `/bin/sh` is bash or a bash-compatible shell, and dies inside an image whose `/bin/sh` is dash or ash. That failure surfaces as `DownloadVerifierDirError` or a missing verifier output, never as a clear message
+12. **Hostile-delete gate** - not here. It needs a built image and a passing oracle, so it runs as the third check of the Step 5.5 Phase B battery against the extracted zip. See Step 5.5
+13. Full local dry run - that is Step 5.5 Phase B
+
+**Re-zip rule (run only after the fixes and the Phase A pre-upload checklist pass - the zip is what the Step 5.5 Phase B battery then runs against):**
+
+1. **Re-do git hygiene FIRST, immediately before zipping.** Checklist item 4 above is not enough on its own: regenerating `tests.patch` and running the local checks both use git inside `environment/repo`, and `logallrefupdates = true` recreates `.git/logs` (plus `ORIG_HEAD` / `FETCH_HEAD`) every time. A reflog fails the platform's `git: no reflog` static check and leaks your git identity. Run the full scrub, including the stash - a stash ref keeps its blobs reachable, so `gc` will never prune them and `--prune=now` alone leaves them behind:
+
+   ```bash
+   git stash clear && rm -f .git/refs/stash
+   git reflog expire --expire=now --expire-unreachable=now --all
+   git gc --prune=now
+   rm -rf .git/logs .git/ORIG_HEAD .git/FETCH_HEAD .git/refs/remotes
+   ```
+
+   Then re-confirm both patches still apply. `.git` should contain exactly `config description HEAD hooks index info objects packed-refs refs`. **Then verify, do not assume:** `git fsck --unreachable --no-progress` must print nothing. If it lists blobs, read a couple with `git cat-file -p <sha>` - regenerating `tests.patch` and running the local checks both write objects that the gc above may leave dangling, and those blobs are the golden file and the patched test file. Re-run the scrub until fsck is silent
+2. Check `tasks/<Original Directory Name>/upload/` exists - create it if missing
+3. Zip from INSIDE the working copy so it unpacks DIRECTLY to `instruction.md`, `task.toml`, `environment/`, `solution/`, `tests/` with no `runs/` and no `task/` wrapper:
+   `cd "tasks/<Original Directory Name>/work" && zip -rXy "../upload/<Original Directory Name>.zip" . -x '*.DS_Store' '__MACOSX/*'`
+4. Use `zip -rXy` - never `zip -rD` and never a GUI compress tool. Each flag does a different job, and it is easy to state this wrongly (`docs/tasking-guide.md:99` and `:104` are the source of truth): `-r` recurses and writes directory entries **by default**, so it is the ABSENCE of `-D` that keeps the empty `.git/refs/` that `git gc` leaves behind - add `-D` and the repo unpacks broken on the platform even though the local copy works. `-X` strips extra file attributes (resource forks, UID/GID) for a portable archive. `-y` stores symlinks as symlinks; without it zip follows them and flattens the link into a copy of its target, which is how libcrux lost all 7 of its repo symlinks
+5. Verify with `unzip -l "tasks/<Original Directory Name>/upload/<Original Directory Name>.zip"`: files sit at the top level, no `runs/`, no `task/` prefix, `environment/repo/.git/` IS present, and `unzip -l ... | grep 'refs/'` lists the empty git directories. **Then assert the symlink count**, because a flattened symlink looks perfectly healthy in a listing:
+   `unzip -Z "<zip>" | grep -c '^l'` must equal `find work -type l | wc -l`
+6. **Run the static-check simulation from `learning/static-checks.md` against the EXTRACTED ZIP, not the working copy.** Unpack the zip to a scratch directory and check all 20 items there. Both times a static check failed on a real upload, the working copy looked clean and the zip did not
+7. **Write the upload-ledger row in `task.md` before the zip goes anywhere.** Every zip that is uploaded gets a row, written after step 6 verifies it, in the table Step 7 requires:
+
+   ```
+   ## Upload ledger
+   | # | Date | Zip sha256 | Size | Checks returned | Outcome |
+   |---|---|---|---|---|---|
+   | 1 | 2026-08-04 | a1b2c3… | 4.1 MB | static, difficulty, oracle, quality | quality DISCUSS coverage_gap |
+   ```
+
+   The zip is overwritten every round by design, so the hash is the only record of what the platform actually evaluated. Without it you end up proving which bundle was graded by quoting instruction phrasing back at a report
+
+Keep a change log per file (path, what changed, why) - it feeds the Files Changed answer.
+
+### STEP 5.5: The verification battery (Fixable only, after the fixes)
+
+Cursor runs these ITSELF - do not hand them to the user, and do not write any answers until the whole battery passes.
+
+**The battery runs in two phases, and the order is the point.**
+
+- **Phase A - cheap gates on `work/`.** All 13 items of the pre-upload checklist above: patch applies, shipped tree clean, image builds and is pinned, git hygiene clean and `fsck` silent, stray sweep empty, task.toml sane, script modes `0755`, grader fails closed, and the three mechanical greps (no source-shape grading, instruction and tests naming the same things, no unguarded bashisms). Then build the zip with the Step 5 re-zip rule
+- **Phase B - the three required runs, against the EXTRACTED ZIP.** Extract the zip to the scratchpad, build the image from that extract, and run NOP, oracle and hostile-delete there
+
+**Why the zip and not `work/`.** The artifact that ships has to be the artifact that was measured. A battery run on `work/` measures a tree that no longer exists once `zip` has followed a symlink, dropped a directory entry or lost a mode bit - the libcrux task burned a whole re-verification session on exactly that gap. **Any edit after Phase B voids Phase B**: a fresh zip and a fresh battery, no exceptions and no "it was only the instruction".
+
+**Phase B setup - never run inside the working copy** (solve.sh and test.sh mutate the tree):
+
+1. A run directory in the session scratchpad (ignored by Step 1, deleted after, never zipped)
+2. Extract the built zip three times, once per run: `unzip -q "tasks/<Original Directory Name>/upload/<Original Directory Name>.zip" -d "<scratchpad>/run-nop"`, and the same into `<scratchpad>/run-oracle` and `<scratchpad>/run-hostile`. Copying from `work/` instead is the defect this phase exists to catch
+3. Build the image from the extracted `environment/Dockerfile`, not from `work/environment/`
+4. The shipped scripts may assume container paths (`/workspace/repo`, `/tests`, `/logs/verifier`) - recreate those paths with directories or symlinks pointing into the disposable copy. NEVER edit the scripts just to make them run locally
+
+**Execution environment, in order of preference:**
+
+- Harbor installed → run the checks through Harbor as usual
+- Docker available → `docker build` the extracted `environment/Dockerfile`, run the checks inside the container against the disposable copies
+- Neither → replicate the Dockerfile's toolchain and dependencies on the host inside the disposable copies; if the environment genuinely cannot be replicated, stop, ask the user to run the checks, and record their reported results
+
+**Run 1 - NOP check (must FAIL):** on the `run-nop` copy, run `tests/test.sh` against the UNMODIFIED base repo with no solution applied. Expected: reward `0.0`, non-zero exit, and the fail-to-pass tests actually failing - ideally all of them, and at minimum the regression test that reproduces the original issue. If the suite passes without the fix, the task grades a no-op as success → back to Step 5.
+
+**A NOP reward of 0 is necessary, never sufficient - confirm it is 0 for the right reason.** Three separate mechanisms produce a textbook-looking 0 while grading nothing: stale result files baked in at build time (`learning/stale-test-reports.md`), a collection abort, and a module whose test sources do not compile at base so the runner never reaches the rest of the graded set. In all three, every f2p id lands in `missing_required_tests` whether it would have passed or not, and `set(required) - set(missing)` reads as a clean all-clear. So **split the graded ids by whether their module compiles at base and actually run the ones that do**: revert the uncompilable test sources to base, run the remainder, and read per-test outcomes rather than the reward. Anything that PASSES there is not a fail-to-pass test - move it to `pass_to_pass` and re-count against the 10–20 range. This has caught a real one (`learning/verify-in-the-image.md`), and it is most likely to bite on ids whose assertions you relaxed while fixing something else.
+
+**When the toolchain cannot run a per-file subset, audit the symbols instead.** The split above assumes you can run part of the graded set. Gradle with Kotlin gives you no such handle: the module compiles as a unit, so reverting the uncompilable sources and running the remainder is not available, and AltBeacon 1177 had to improvise a substitute mid-round. The named fallback, so nobody improvises it again:
+
+- Read every f2p test body and list the symbols it touches that do not exist at the base commit - the new class, the new method, the new constructor argument
+- Prove each one absent with a grep against the base tree, and record the grep and its empty output. `git -C environment/repo grep -n '<symbol>' $(git -C environment/repo rev-parse HEAD)` printing nothing is the evidence
+- A test whose body only touches symbols that DO exist at base is not a fail-to-pass test, whatever the reward says. Move it to `pass_to_pass` and re-count
+- Write in `task.md` and in Comments for Reviewer that genuineness rests on the symbol audit rather than on an executed subset, and name the symbols. Do not report an audit as if it were a run
+
+Both paths are acceptable. Silence about which one you used is not, because a reader cannot tell an audited zero from an executed one, and the whole point of the rule is that a zero proves nothing on its own.
+
+**Run 2 - Oracle check (must PASS, three times):** on the `run-oracle` copy, run `solution/solve.sh`, then `tests/test.sh`. Expected: reward `1.0`, zero exit, every fail-to-pass test passing, the pass_to_pass regression guard still green, all inside the `[verifier] timeout_sec`.
+
+**Run `solve.sh` three times in one container, because the platform does.** The Oracle Check runs the golden solution three times and the pass bar is **3/3** (Section 4). Runs two and three execute against the already-patched tree, which is where a non-idempotent script inverts its own fix. Record all three rewards for Comments for Reviewer. A pass on run one followed by a failure on run two is exactly the `1/3` signature - do not ship it and call it green.
+
+**Run 3 - Hostile-delete gate (reward must DROP to 0.0):** on the `run-hostile` copy, apply the oracle, then stub or delete one requirement the instruction actually states, and re-run the verifier. The Quality Check coverage axis is scored on this exact property - "a broken or stub solution must fail at least one test" (`docs/tasking-guide.md`). Pick the requirement you are least sure is tested, not the easiest one.
+
+**Name the test that caught it.** The record has to read "stubbed X, `<test id>` failed, reward 0.0", not "reward dropped". A reward that drops for some other reason (a compile break introduced by the stub) proves nothing about coverage, and the test id is what separates the two.
+
+**If any of the three FAILS:** go back to Step 5, resolve the issue in the working copy (`tasks/<Original Directory Name>/work/`), rebuild the zip with the re-zip rule, and re-run the WHOLE battery from fresh extracts. Loop fix → re-zip → re-check until the NOP fails as expected, the oracle passes 3/3, and the hostile run drops to `0.0` naming its test. No answers are written until then.
+
+**Record for the answers:** all three oracle rewards, the NOP reward and the list of tests that failed in it, the hostile-delete test id, and total runtime vs the verifier timeout - these go into Comments for Reviewer.
+
+**After the battery passes - strict order, never deviate:**
+
+1. Delete the `<scratchpad>/run-*` disposable copies
+2. Confirm the zip in `tasks/<Original Directory Name>/upload/` is still the exact one the battery ran against - nothing in `work/` may have been touched since it was built. `find tasks/<name>/work -newer tasks/<name>/upload/<name>.zip` must print nothing
+3. Only then → move on to the answers (Steps 6–9)
+
+The Fixable sequence is always: fixes → Phase A gates → zip → Phase B battery → resolve failures, re-zip, re-run the battery → answers. Never run the battery on `work/`. Never write answers before the battery passes against the zip that will actually be uploaded.

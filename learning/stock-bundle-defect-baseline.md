@@ -105,3 +105,37 @@ question.
 The three that are invisible on paper are 1, 3 and 4. Each needs a run: read the NOP's
 `raw_exit_code`, read what the NOP reports as executed, and invoke `solve.sh` twice. Budget for
 that in the Step 5.5 runs rather than treating the reward as the answer.
+
+## A build-time warm-up that looks dead can be insurance for a default-active profile
+
+Source: `20260728_153118__jqno_equalsverifier__1166`, round 6, 2026-08-10. A peer reviewer asked
+for an "unused JaCoCo warmup" to be deleted from the Dockerfile. Nothing at verify time
+references JaCoCo: `grep -ic 'jacoco|argline|coverage'` over `tests/test.sh` with the base64
+payload stripped returns **0**, and the six hits in `tests/config.json` are all test *class
+names* (`CoverageNoInheritanceTest` and friends) in `pass_to_pass`. On that evidence the block
+is dead weight, and it was deleted.
+
+It is not dead. The repo's `static-analysis` profile activates on `!disableStaticAnalysis`
+(`pom.xml:230-235`), which means **active by default**, and the only thing suppressing it is
+`ENV MAVEN_ARGS="-DdisableStaticAnalysis"` in the Dockerfile. Measured in the built image:
+
+```
+-- with MAVEN_ARGS as shipped --   compile OK
+-- with MAVEN_ARGS unset --
+   [ERROR] Plugin org.jacoco:jacoco-maven-plugin:0.8.14 ... could not be resolved:
+   [ERROR] Cannot access central (...) in offline mode and the artifact ... has not been
+           downloaded from it before.
+```
+
+The verifier runs `mvn -o`. Without the warm-up, the moment that ENV is absent or overridden the
+run dies at plugin resolution rather than at a test, and every graded id comes back missing.
+
+**Rule: before deleting a build-time warm-up because nothing references it, find the flag that
+makes it unnecessary and unset it.** A warm-up exists to make an offline run survive a
+configuration you are not currently in. Grepping the verifier tells you the happy path; it does
+not tell you what the warm-up is insuring against. The two-line check is to run the offline
+build once with the suppressing flag removed.
+
+This is the same shape as the `-buildvcs=false` finding in
+[empty-git-refs.md](empty-git-refs.md): a build-time behaviour that is invisible until the
+environment shifts one notch.

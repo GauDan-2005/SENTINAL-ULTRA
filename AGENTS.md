@@ -1,8 +1,14 @@
 # AGENTS.md
 
 The contract for any agent working this repo, whatever tool it runs in. Read this, then read
-`README.md` for the map and `CLAUDE.md` for the workflow. Rules below cite the CLAUDE.md
-step or section that owns them, because line numbers rot.
+`README.md` for the map and `CLAUDE.md` for the workflow. Rules below cite the step or section
+that owns them, because line numbers rot.
+
+**The numbered sections live in `.claude/rules/`, one file per section**, and `CLAUDE.md` holds
+the spine plus a routing table naming which file owns which. Claude Code loads every file in
+that directory automatically at session start. **No other tool does**, so if you are not Claude
+Code, a step or section cited below is an instruction to open the rule file the routing table
+names and read it before acting. A summary in `CLAUDE.md` is never the whole rule.
 
 ## Before anything
 

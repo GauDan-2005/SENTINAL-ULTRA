@@ -2,9 +2,11 @@
 
 Source site: https://snorkel-ai.github.io/Sentinel_Ultra_Hub/
 
-Exported: six tabs on 2026-07-31T13:51:23Z; `faq.md` and `whats-new.md` refreshed 2026-08-01.
-There is no single export date — `manifest.json` carries the real date, size and SHA-256 per
-file, and is the thing to trust.
+Exported: 2026-08-06T08:15:55Z. Five tabs changed in this re-export and were overwritten
+(`whats-new.md`, `tasking-guide.md`, `harbor-framework.md`, `faq.md`, `changelog.md`);
+`guidelines.md`, `glossary.md` and `quick-links.md` were unchanged upstream and keep their
+2026-07-31 export date. There is no single export date — `manifest.json` carries the real
+date, size and SHA-256 per file, and is the thing to trust.
 
 The Hub is a single-page app whose content is compiled into its JS bundle — there are no
 per-page Markdown endpoints. These files were produced by rendering each tab in a headless
@@ -59,6 +61,14 @@ reporting CHANGED was modified without the manifest being updated.
 A re-export overwrites the file and silently loses these local repairs. Reapply each one, or
 the workspace goes back to prescribing broken shell. Both files carry the SAME table and both
 must be repaired - `ALL_DOCUMENTATION.md` is not manifest-tracked, so nothing detects it.
+
+**This has now happened once, exactly as predicted.** The 2026-08-06 re-export left
+`guidelines.md` byte-identical to the repaired copy — that tab did not change upstream, so it
+was not overwritten and its repair survived untouched — while `ALL_DOCUMENTATION.md` WAS
+regenerated and came back carrying all five damaged rows. The repair was re-applied to it the
+same day. The lesson is that the two files can fall out of step on a partial re-export, so run
+the two verification commands below over BOTH of them, every time, rather than checking the one
+you happened to overwrite.
 
 In `guidelines.md` and `ALL_DOCUMENTATION.md`, "Fixable environment issues" table, Fix column:
 
@@ -154,13 +164,16 @@ commands back, so re-apply the correction.
   - [How should I set the agent timeout, and what if the task keeps timing out?](faq.md#how-should-i-set-the-agent-timeout-and-what-if-the-task-keeps-timing-out)
   - [How do I check the status of a submission?](faq.md#how-do-i-check-the-status-of-a-submission)
   - [An eval failed with an infra/platform error, or came back with blank feedback — is my task broken?](faq.md#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)
+  - [My eval says "Review gate blocked at the agentic judge / difficulty screen" — what does that mean?](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
   - [The linter rejects my task as "easy" after a difficulty downgrade — what do I do?](faq.md#the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do)
   - [Do I need to run the oracle and NOP tests locally?](faq.md#do-i-need-to-run-the-oracle-and-nop-tests-locally)
   - [What counts as "changing the PR scope" vs. "adding complexity"?](faq.md#what-counts-as-changing-the-pr-scope-vs-adding-complexity)
+  - [A task came back too easy — can I adapt a change from a related PR to add complexity?](faq.md#a-task-came-back-too-easy-can-i-adapt-a-change-from-a-related-pr-to-add-complexity)
 
 - **[Quick Links](quick-links.md)**
 
 - **[Changelog](changelog.md)**
+  - Aug 5, 2026
   - Jul 27, 2026
   - Jul 25, 2026
   - Jul 23, 2026

@@ -119,6 +119,12 @@ task as proof of them:
   other scored 5/5. Adjudicated 3.0, advisory, so the disagreement was never resolved. The
   reasoning for leaving it (tracked upstream at base, removing it means editing tracked repo
   files) still stands, but it is unadjudicated.
+
+  > **Settled against, 2026-08-06 (LEDGER L25).** firefly 1123 round 0 put the same question to
+  > two judges and **both** scored packaging **1.0**, citing `.vscode` reaching `/app`. The kvdex
+  > split was one sampling, not a standing ambiguity. The reasoning about tracked files still
+  > holds and the conclusion drawn from it does not: exclude the directory from the image rather
+  > than leaving it, which needs no tracked-source edit. See `dockerignore-context-root.md`.
 - **`model_difficulty = "medium"` against `difficulty = "hard"`.** Left alone per the FAQ rule,
   declared to the reviewer, and never queried.
 
@@ -132,6 +138,42 @@ Not a hardening measure. Reading the round-over-round trend. 13 of 16 invalid, t
 then 15 of 16 is a flat line across two different locally-verified fixes, and a flat line
 means the fixes are not landing on the cause. That signal was free and available from round 4.
 See `diagnosing-platform-only-failures.md`.
+
+
+## Instruction shape, measured (added 2026-08-05, from AltBeacon 1177 round 5)
+
+A judge scored AltBeacon's `instruction.md` down on clarity twice. The first fix added section
+headings and the score did not move, which is the tell that the headings were never the problem.
+Measuring the four bundles here answered it in one command:
+
+| Bundle | Lines | Longest prose paragraph |
+|---|---|---|
+| kvdex 245 (**accepted**) | 47 | **717** chars |
+| libcrux 1165 | 45 | 791 |
+| equalsverifier 1166 | 36 | 447 |
+| xlwings 2719 | 25 | 675 |
+| AltBeacon 1177, as bounced | 13 | **2724** (second longest 2466) |
+| AltBeacon 1177, after the round 5 rewrite | 67 | 826 |
+
+So the bundles that are not being bounced on clarity all sit under 800 characters in their
+longest paragraph, and the one being bounced was at three and a half times that. The rewrite that
+moved it was a 14-row field table plus two bullet lists, not more headings.
+
+`instr_lines` and `instr_max_para_chars` are now columns in `calibration.tsv`. Measure with
+
+```bash
+python3 -c "
+import io,sys; t=io.open(sys.argv[1],encoding='utf-8').read()
+p=[x for x in t.split(chr(10)*2) if x.strip() and not x.lstrip().startswith(('|','-','#','*'))]
+print(t.count(chr(10)),'lines, longest prose paragraph',max(map(len,p)))" instruction.md
+```
+
+**Structure is not the risk it is sometimes taken for.** The accepted bundle uses headings, bullet
+lists and a table, and still scores full marks on reading like a real ticket. What costs is a
+single paragraph carrying fourteen field names, their types, their defaults and three method
+contracts at once, because a judge reading for coverage cannot tell which of those is a
+requirement. As always this is calibration, not a target: 717 is a fact about one accepted
+bundle, not a threshold anyone published.
 
 ## One example is not a distribution: see `calibration.tsv`
 

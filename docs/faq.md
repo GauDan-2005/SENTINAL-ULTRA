@@ -54,9 +54,7 @@ Use the `stb submissions list` command to see the current status of your submiss
 
 ## An eval failed with an infra/platform error, or came back with blank feedback — is my task broken? <a id="an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken"></a>
 
-**No — a platform failure is not a task defect.** Errors like `DaytonaRateLimitError` / `ApiRateLimitError`, sandbox auth/connection errors, a one-off `NonZeroAgentExitCode`, or a run that comes back with blank feedback / "No evaluation information available" are infra issues on our side, not something wrong with your task.
-
-The tell is **inconsistency**: the same task passes on one run and errors on another, or only 1 of N agent runs fails while the rest are clean.
+**No — a platform failure is not a task defect.** Errors like `DaytonaRateLimitError`, `ApiRateLimitError`, sandbox auth/connection errors, a one-off `NonZeroAgentExitCode`, or a run that comes back with **blank feedback / "No evaluation information available"** are infra issues on our side, not something wrong with your task. The tell is inconsistency: the same task passes on one run and errors on another, or only 1 of N agent runs fails while the rest are clean.
 
 What to do:
 
@@ -66,6 +64,18 @@ What to do:
 -   **If it persists,** flag it to the team on the Slack channel with the task/submission UID and the exact error. Include whether it's intermittent (passes sometimes) so we can tell an outage apart from a real defect.
 
 When in doubt, check the [submission status](#how-do-i-check-the-status-of-a-submission) — the CLI is the source of truth for where the task actually is.
+
+## My eval says "Review gate blocked at the agentic judge / difficulty screen" — what does that mean? <a id="my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean"></a>
+
+The **review gate** is a two-stage check that runs before your task reaches a reviewer: the **agentic judge** first, then a **difficulty screen** (a cheap single-arm rollout). The second stage only runs if the first passed, so a block names the stage that stopped it. This is **not** your task's final difficulty grade — the full difficulty rollout is a separate check that runs later, after a reviewer accepts.
+
+In almost every case a block is a **real, content-side result you need to act on**, not an infra failure:
+
+-   **"Blocked at the agentic judge"** — the judge returned a needs-work verdict. The one-line eval summary only names the stage; the actual reasons are in the **"Agentic Judge Quality Report"** field on your submission (it's collapsed and marked *optional*, lower down the form — expand it). It shows the `DISCUSS`/`REMOVE` status and cites the specific axes/files. Fix what it flags, and resubmit.
+-   **"Blocked at the difficulty screen (cheap single-arm rollout)"** — the screen found the task **trivially easy** (the model solved every attempt). Add difficulty per the [PR scope and difficulty](guidelines.md#pr-scope-and-task-difficulty) rules, then resubmit.
+-   **"Not run: difficulty screen"** in the summary just means the judge blocked first, so the later stage never ran — expected, not a second error.
+
+The **one** infra case is when the message explicitly says **"the difficulty screen failed with an infra error"** — that's a sandbox/platform crash, no verdict was produced, so retry (see the [infra-failure FAQ](#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)). If you get the *same* review-gate block repeatedly across different tasks, or several in a short window with otherwise-clean checks, flag it on Slack with the UIDs — a cluster can indicate a platform-side issue rather than a problem with each task.
 
 ## The linter rejects my task as "easy" after a difficulty downgrade — what do I do? <a id="the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do"></a>
 
@@ -90,3 +100,11 @@ Say the source PR adds **CSV export** to a reports page:
 -   ❌ **Changing the scope:** swap it for a *different* feature (PDF export instead of CSV), replace it with something unrelated, or strip it down to be simpler (export only the current page instead of the full dataset).
 
 Rule of thumb: if the task still clearly maps back to the original PR — just bigger or more thorough — that's adding complexity. If it no longer resembles the PR, or does *less* than the PR, you've changed the scope, which makes it **Not Fixable**. See [PR scope rules](guidelines.md#pr-scope-rules) in the Guidelines.
+
+## A task came back too easy — can I adapt a change from a related PR to add complexity? <a id="a-task-came-back-too-easy-can-i-adapt-a-change-from-a-related-pr-to-add-complexity"></a>
+
+**Yes.** You can look at later PRs in the repo and take inspiration from a *related* one to add complexity. Keep it within bounds:
+
+-   Don't pull from **unrelated** PRs.
+-   Don't copy a PR **wholesale** — adapt from it, don't lift it entirely.
+-   Don't change the **scope or feature** of the original PR/task — you're adding to it, not replacing it. See [adding complexity vs. changing scope](#what-counts-as-changing-the-pr-scope-vs-adding-complexity) above.

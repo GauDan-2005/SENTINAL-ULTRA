@@ -1,7 +1,7 @@
 ---
 id: platform-announcements
 status: reported
-last_verified: 2026-08-04
+last_verified: 2026-08-06
 verified_by:
   - "none in this workspace — relayed from a sibling workspace's notes and from Slack"
 evidence: "Operational rules that reach ECs through Slack and never appear in the exported Hub tabs"
@@ -60,6 +60,38 @@ the screen came back red once. Rerun before diagnosing anything.
 
 The two rules are about different things and the boundary is whether a fix shipped between the
 two results. Reruns come first, two strikes comes after.
+
+### Where the ladder does NOT apply: a review-gate difficulty screen
+
+Added 2026-08-06, when the Hub documented the review gate (`docs/faq.md`, "My eval says Review
+gate blocked at the agentic judge / difficulty screen"). Read this before rerunning anything,
+because the ladder above was written when a red difficulty result was assumed to be noise, and the
+Hub now says that a review-gate block usually is not.
+
+The ladder is about **noise**: trials scored invalid, a harness failure, a result that does not
+reproduce. A review-gate difficulty screen that reports the task **trivially easy, the model solved
+every attempt** is not noise. It is a measurement, it will reproduce, and rerunning it burns a
+round to be told the same thing. The answer is added difficulty, per Fixable trigger 8.
+
+Read the message, not the colour:
+
+| What the result says | Is it the ladder's case? | What to do |
+|---|---|---|
+| invalid trials, harness failure, a result that did not reproduce | yes | rerun once, then again, then diagnose |
+| blocked at the difficulty screen, model solved every attempt | no | raise difficulty, do not rerun |
+| blocked at the agentic judge | no | get the "Agentic Judge Quality Report" field and fix what it cites |
+| the difficulty screen failed with an infra error, said explicitly | yes | retry, no verdict was produced |
+
+**What survives unchanged:** a failed Difficulty Check is still never *automatically* a Not Fixable
+verdict. `docs/faq.md` answers a difficulty-screen block with "add difficulty, then resubmit", which
+is the Fixable path, not the Invalid one. That claim in the section above is confirmed rather than
+weakened, and `raising-difficulty-on-a-wrapper-task.md` is still the note that says what a complete
+Not Fixable answer has to contain.
+
+**One thing this file can now stop guessing about.** The single-arm screen and its ordering behind
+the agentic judge were recorded here and in `README.md` as observation from this workspace's own
+runs. They are documented Hub behaviour as of 2026-08-05 and no longer second-hand, so the rule now
+lives in `.claude/rules/05-evals-and-quality-check.md` under the review gate, sourced to `docs/`.
 
 ---
 

@@ -191,6 +191,16 @@ gate was safe. If it had answered nonzero on a fully green tree, the correct mov
 the gate out and write the reason into Comments for Reviewer rather than ship a verifier that
 fails the oracle.
 
+> **Correction, 2026-08-06 (LEDGER L23).** That last sentence offers two outcomes and there is a
+> **third**, which is usually the right one on a large repo. firefly 1123's `go test ./...` exits
+> **1** on a fully correct oracle tree: a swagger check is already stale at the base commit, a
+> generated-reference check moves with the change, and an end-to-end suite needs a live stack.
+> None of the three is caused by the task. **Scoping `execution.commands` to the packages the
+> change touches took the bare exit to 0 and made the gate safe**, so the gate shipped instead of
+> being dropped, with a whole-repo `go build ./...` kept as a separate command so no coverage is
+> lost. Drop the gate only when the packages you actually grade are themselves red for reasons
+> you cannot fix. Full write-up in [go-task-verifier-gotchas.md](go-task-verifier-gotchas.md).
+
 Note the `2 ignored` in that line. Tests the runner reports as ignored emit neither a PASS nor
 a FAIL through the parser, so an upstream `Deno.test.ignore` is not a hazard when flipping
 `allow_extra_failures` to `false`. Confirm the same for whatever runner the task uses before

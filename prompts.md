@@ -6,7 +6,8 @@ when a prompt below and a rule file disagree, the rule file wins.
 
 Paths are written with real directory names in backticks. A bare `__` renders as bold in
 markdown, so a name pasted without backticks arrives mangled and gets mistaken for a
-different task. See the "Confirm WHICH task" rule in CLAUDE.md Step 10.
+different task. See the "Confirm WHICH task" rule in Step 10, in
+`.claude/rules/02-workflow-steps-6-to-10.md`.
 
 ---
 
@@ -27,7 +28,8 @@ Complete Steps 1 to 8.
 ```
 
 Handling times come from me, not from you. Ask for all four numbers and do not invent any of
-them. The bands and the arithmetic are in CLAUDE.md Step 8 — the total is fields 1 + 2 + 3
+them. The bands and the arithmetic are in Step 8, in
+`.claude/rules/02-workflow-steps-6-to-10.md` — the total is fields 1 + 2 + 3
 and never includes the revision figure.
 
 The four questions the form asks:
@@ -99,7 +101,7 @@ This task has been accepted. Work out and write down:
 - what the key factors were
 - what the thinking process was
 
-Then put the findings into CLAUDE.md and learning/.
+Then put the findings into learning/, and into CLAUDE.md or the matching `.claude/rules/` file.
 ```
 
 ---

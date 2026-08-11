@@ -6,17 +6,33 @@ Latest updates to the Sentinel Ultra contributor guidelines
 
 📢 Latest update
 
-Network fields in `task.toml` have changed
+Review-gate blocks now point you to the reason
 
-Network access is now set **per block** — `[environment]` `"public"`, `[agent]` `"allowlist"` with `allowed_hosts`, and `[verifier]` `"no-network"`. Also remove `network_mode = "none"` from `docker_compose.yaml` if present.
+When an eval says the **review gate** blocked at the **agentic judge**, the actual per-axis reasons (`DISCUSS`/`REMOVE` + cited axes/files) are in the **"Agentic Judge Quality Report"** field on your submission — it's collapsed and marked *optional*, lower down the form, so it's easy to miss. **Expand it** to see exactly what to fix. The gate runs in two stages (agentic judge, then a difficulty screen); `"Not run: difficulty screen"` just means the judge blocked first — expected, not a second error.
 
-[See the updated task.toml structure →](harbor-framework.md#task-metadata)
+[See the review-gate FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
 
 ## Recent updates <a id="recent-updates"></a>
 
+-   Aug 5, 2026
+
+    **Task came back too easy?** You can look at later PRs in the repo and adapt a change from a *related* one for inspiration to add complexity — just don't use unrelated PRs, don't copy a PR wholesale, and don't change the scope or feature of the original PR/task. [FAQ →](faq.md#a-task-came-back-too-easy-can-i-adapt-a-change-from-a-related-pr-to-add-complexity)
+
+-   Aug 5, 2026
+
+    **Reviewers: cite the Guidelines in revision notes.** When sending a task back for Needs Revision, point the submitter to the relevant Guidelines section for specific or easily-missed rules. It's not required for every note, but a pointer to the exact rule makes revisions faster and removes ambiguity. [Reviewer form questions →](tasking-guide.md#reviewer-form-questions)
+
+-   Aug 5, 2026
+
+    **Review-gate blocked at the agentic judge?** The one-line summary only names the stage — the reasons (`DISCUSS`/`REMOVE` + cited axes/files) live in the **"Agentic Judge Quality Report"** field on your submission. It's collapsed and marked optional, so expand it, fix what it flags, and resubmit. [FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
+
+-   Jul 27, 2026
+
+    **Network fields in `task.toml` changed.** Network access is now set **per block** — `[environment]` `"public"`, `[agent]` `"allowlist"` with `allowed_hosts`, and `[verifier]` `"no-network"`. Also remove `network_mode = "none"` from `docker_compose.yaml` if present. [task.toml structure →](harbor-framework.md#task-metadata)
+
 -   Jul 31, 2026
 
-    **Quality Check pass bar clarified.** On coverage and faithfulness (scored 1–5), a task must land **above 3** on both axes to pass — exactly 3 (or any single judge at 2 or below) sends it to needs-revision, and 2 or below is a hard fail. Don't ship borderline. [Quality Check judge →](tasking-guide.md#quality-check-agentic-judge)
+    **Quality Check pass bar clarified.** On coverage and faithfulness (scored 1–5), a task must land *above 3* on both axes to pass — exactly 3 (or any single judge at 2 or below) sends it to needs-revision, and 2 or below is a hard fail. Don't ship borderline. [Quality Check judge →](tasking-guide.md#quality-check-agentic-judge)
 
 -   Jul 31, 2026
 

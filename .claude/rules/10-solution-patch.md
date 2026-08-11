@@ -1,0 +1,8 @@
+_Owner of CLAUDE.md **Section 9**. Loaded every session._
+
+## 9. Understanding the solution patch
+
+- `golden.patch` is the forward fix: applying it produces the solved state. It is the current, correct name - if the bundle ships `solution.patch` (a short-lived draft name) rename it to `golden.patch`
+- **`init_state.patch` is a former NAME for `golden.patch`, not a different format.** `docs/glossary.md:38` reads "`golden.patch` (a.k.a. gold patch; formerly `init_state.patch`)" and the `Jul 1, 2026` entry in `docs/changelog.md` records the rename. Cite that one by its date heading rather than by line: `changelog.md` grows at the TOP, so every line number into it shifts by the size of the next Hub update. The 2026-08-06 re-export moved this entry from line 49 to line 54. This file used to describe it as a reverse diff whose polarity is inverted, and nothing in `docs/` says that. No bundle in `tasks/` or `_archive/` ships one, so the claim has never been testable here either. If a bundle ever does ship an `init_state.patch`, **read the diff before assuming its direction**: check whether the `+` lines are the solved state or the broken one, and confirm against `solve.sh` (a lone `patch -p1 -R` or `git apply -R` says reverse, a plain apply says forward). Rename it to `golden.patch` once you know which way it runs. A filename the docs call obsolete is not evidence about polarity
+- A missing patch alone is NOT a defect if solve.sh implements the fix
+- An oracle may be larger than strictly necessary or include extra functionality the instruction never asked for. That is fine as long as it does what the instruction requires and the tests enforce it - the oracle exists to prove the task is solvable

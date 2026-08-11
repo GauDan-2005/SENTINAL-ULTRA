@@ -1,0 +1,129 @@
+_Owner of CLAUDE.md **Section 11**. Loaded every session._
+
+## 11. Common Mistakes (Avoid)
+
+- Skipping any of the three Step 5.5 Phase B runs on a Fixable task (NOP, oracle 3/3, hostile delete), or writing answers before all three pass
+- Drafting answers before the zip exists in tasks/<name>/upload/ and the battery has passed against an extract of that exact zip
+- Uploading the fixed zip to the platform before entering the Phase 1 answers (verdict, where/what issues, issue details)
+- Running solve.sh or test.sh inside the working copy instead of a disposable scratchpad extract of the built zip (they mutate the tree)
+- Editing shipped scripts just to make them run locally - recreate the container paths instead
+- Finalizing Valid as-is without a local oracle + NOP run - it's the only check on those tasks
+- Checking a compliance/confirmation box that was not actually verified against the files
+- Giving different answers to the two occurrences of the analysis question
+- Editing tracked source files inside environment/repo/
+- Calling a task Fixable without applying every fix, or faking a fix
+- Reducing or replacing PR scope (expansion only - and then re-run the difficulty eval)
+- Ruling out a related later PR as difficulty material. `docs/faq.md`, "A task came back too easy - can I adapt a change from a related PR to add complexity?", allows adapting from one, as long as it is related, not copied wholesale, and does not change the scope or feature of the original PR
+- Forgetting to sync problem_statement.md after editing instruction.md
+- Including runs/ or a task/ wrapper directory in the re-upload zip
+- Assuming the DOWNLOADED zip always has an inner `task/` directory. Packaging varies - the files may sit at the zip root, inside `task/`, or inside `seed/` (`docs/harbor-framework.md` task structure, and `docs/tasking-guide.md` quick start step 2) - so locate the directory holding `instruction.md` and `task.toml` and extract that one to `download/original/`. The upload zip is still flat with no wrapper and no `runs/`, and that has not changed
+- Editing the original extract instead of the working copy in tasks/<name>/work/
+- Zipping in a way that drops dotfiles - environment/repo/.git must be inside the zip
+- Zipping with `zip -rD` or a GUI compress tool - both drop empty directory entries like `.git/refs/` and break the repo on the platform
+- Leaving a pre-existing test file modified in the shipped tree under `environment/repo`, which is what the harness actually checks
+- Reading that rule as a ban on `tests.patch` editing pre-existing test files. It is not one - the accepted kvdex bundle edits 44 of them, so rewriting a working patch into a create-only shape on that reasoning wastes a round and judging a healthy bundle Fixable over it is a false finding
+- Stripping `network_mode` or `allowed_hosts` from task.toml, or leaving `network_mode = "none"` in docker_compose.yaml
+- Flagging build-time network use as an issue - Dockerfile builds may use the network, only run time is restricted
+- Leaving a task.toml value outside the Section 8 limits, or `gpus` not set to 0
+- Hand-editing the task.toml difficulty or pass-rate fields to satisfy the linter or a reviewer - escalate that conflict instead
+- Leaving `solution/solution.patch` unrenamed, or leaving problem_statement.md out of sync after an instruction edit
+- Using tasks/<name>/work/ or tasks/<name>/upload/ without checking they exist first (always mkdir -p)
+- Creating submission_answer.txt before every step for the task is complete
+- Leaving stray dev artifacts (**pycache**, .DS_Store, .venv, node_modules, etc.) in the zip - hard-caps packaging at 1
+- Shipping any of the six auto-REMOVE test patterns (silent skip, no CLI invocation, existence-only checks, agent-controlled coverage, fail-open, overreach)
+- Not registering added tests in config.json fail_to_pass, or leaving tests.patch cut against the wrong base
+- Answering the difficulty question for an Invalid/Not Fixable task (it is only asked for Valid as-is and Fixable)
+- Selecting "Dirty git history that can't be recovered" for ordinary git issues - most are fixable
+- Marking a task Not Fixable over an infra or platform failure (Daytona/rate-limit errors, sandbox auth errors, a one-off nonzero exit, blank feedback) - those are never a Not Fixable condition, retry and escalate instead
+- Reworking a task after blank feedback or a dropped eval result, or resubmitting blindly and burning a revision slot, before checking whether the failure even reproduces
+- Reading a review-gate block as an infra failure and retrying instead of fixing what the judge flagged. Per `docs/faq.md`, "My eval says Review gate blocked at the agentic judge / difficulty screen - what does that mean?", the one infra case is a message that explicitly says the difficulty screen failed with an infra error
+- Diagnosing "Not run: difficulty screen" as a second failure, when it only means the agentic judge blocked first and the later stage never ran
+- Vague issue descriptions or unfixable explanations (these get submissions rejected)
+- Skipping the Step 1.5 ask for the task zip and platform data, or generating those values instead of waiting for the user
+- Not cross-checking platform Category, Difficulty, Tags, and Languages against task.toml and the actual repo code
+- Inventing any of the handling-time numbers instead of asking the user
+- Folding the revision time into the total submission time - the total is fields 1 + 2 + 3 only, and the revision number is always tracked on its own
+- Treating 180–240 and the old 60–120 revision window as gates and bending a real number to fit them. They are shape hints. The one platform-ACCEPTED bundle shipped a 260-minute total and 195 minutes of revisions, so a figure outside the bands is not an error - an invented one is. Read the revision figure off the task.md handling-time ledger, which grows 50 to 70 minutes per round
+- Putting whole-task time in the "all revisions" field, or forgetting to update that field after a new revision round
+- Charging Step 5 rewrite time to the revision field, or revision-round edits to the rewrite field - field 2 is pre-first-upload only
+- Hard-wrapping prose in submission_answer.txt, or letting an editor reflow it - the newlines survive the paste into the platform
+- Finishing submission_answer.txt without a final humanizer pass over the text actually in the file, or assuming the chat-time pass covered it
+- Letting the humanizer pass touch file paths, test names, commands, code examples, checkbox lines, or the handling-time numbers
+- Leaving em dashes in `submission_answer.txt` on the grounds that they are the issue-block and sub-answer markers rather than prose. Section 5 bans them and exempts only code examples. **Use a hyphen for those markers.** The one accepted bundle, kvdex 245, has zero em dashes in its answers file. The Section 2 and Section 6 templates showed them until 2026-08-04, which is where the wrong inference came from, and they now show hyphens throughout - a bare count inside the Section 6 template fences returns 0
+- **Writing a verification that filters out the thing it is supposed to catch.** The em dashes above survived a "Section 5 re-check" because the grep excluded the template markers by design, so it could never fail on them. A check built around your own conclusion confirms the conclusion. When a rule says *zero* of something, the check is a bare count with no exclusions, and any nonzero result gets shown rather than reasoned away
+- Checking Section 5 with a grep that only covers the punctuation half of the ban. Judge axis names, reason strings, verdict words and bare axis scores are banned by the same sentence as the em dashes, and a grep for `Q9` and `/15` finds none of them. Five rounds of AltBeacon answers shipped `oracle_spec_faithfulness`, `coverage_gap`, `DISCUSS` and `rubric panel` to a reviewer who has none of this workspace's context
+- Substituting a grep for the `humanizer` skill on a later editing round. The grep catches the mechanical rules (dashes, quotes, semicolons, wrapping) and none of the writing patterns (manufactured one-line closers, negative parallelism, aphorism formulas, announced candour). Both passes are required every round, in that order
+- Treating submission_answer.txt as written once - every revision round edits it, so it always describes the zip currently in tasks/<name>/upload/
+- Shipping a revision round without re-humanizing the answers you changed, or without re-checking the joins where new text meets already-humanized text
+- Regenerating submission_answer.txt from scratch after a revision instead of editing the answers the round actually affected
+- Listing workspace bookkeeping in Files Changed. That field is bundle paths only - never CLAUDE.md, INDEX.md, task.md, learning/, docs/, .cursor/rules or .claude/skills. A round that touches a bundle file no numbered finding named still has to be explained in Comments for Reviewer
+- Appending a new round block to submission_answer.txt without editing the earlier blocks the round made false, so the file describes two mutually exclusive verifiers
+- Heading an issue-detail block with an invented category instead of one of the seven exact platform strings, leaving the reviewer nothing to match your checkboxes against
+- Running the Step 5.5 battery on `work/` instead of an extract of the built zip, so the artifact that ships was never the artifact that was measured
+- Treating an Oracle Check below 3/3 as flake, or reaching for an idempotency theory on a 0/3 that arithmetic already ruled out
+- Acting on a report that names test ids, line numbers, commands or instruction text that no longer match the current bundle - check freshness on those four axes before touching a file
+- Deciding a blocking axis from a report whose justification was elided by the paste, or from a score remembered out of a previous session
+- Acting on the one-line review-gate summary without expanding the "Agentic Judge Quality Report" field on the submission. It is collapsed and marked optional, sits lower down the form, and is the only place the per-axis reasons and the cited files appear (`docs/faq.md`, the review-gate FAQ)
+- Working three rounds on the same failure signature because nothing was counting strikes, or shipping a third variation after two
+- Deleting a swept artifact that `git ls-files` shows tracked at the base commit - exclude it from the image instead, and say so in Comments for Reviewer
+- Zipping without `-y`, which follows symlinks and flattens them, or skipping the symlink-count assertion that is the only way to notice
+- Scrubbing git before the zip without clearing the stash - a stash ref keeps its blobs reachable, so `gc --prune=now` never touches them and `fsck` still finds the golden file
+- Re-checking the post-fix confirmation boxes from memory after a revision instead of re-verifying them against the current files
+- Addressing part of a reviewer's feedback because several asks were bundled into one paragraph - split it into numbered items and answer every one, including the ones you decline
+- Discarding a reviewer's Guidelines citation in a Needs Revision note instead of reading the section it names. `docs/tasking-guide.md` reviewer form question 4 now asks reviewers to cite the relevant Guidelines section for specific or easily-missed rules, and that citation is the fastest way to settle what a finding is actually asking for
+- Treating reviewer feedback as permission to cross an editing boundary (tracked source, pre-existing tests, PR scope) - explain the constraint in Comments for Reviewer instead
+- Re-zipping a revision without re-running the full Phase A checklist and the whole Phase B battery against the new zip, or without redoing git hygiene immediately before the zip
+- Losing the feedback text - paste it verbatim into task.md before starting, since the reviewer's notes are the list you are graded against
+- Arguing with a borderline Quality Check score instead of fixing the cited defect
+- Quoting "both judges need a solid 4+ on coverage and faithfulness" as the documented Quality Check bar. `docs/tasking-guide.md` no longer says it - the practical bar there is a final score above 3 on both axes, a final of 3 or below sends the task to needs-revision (as does a single judge at 2 or below), and a final of 2 or below is a hard fail. Aiming for 4+ is this workspace's own margin, not the platform's line
+- Checking Send to reviewer while checks are failing without detailed explanatory comments
+- Writing LLM-sounding output in the free-text answers
+- Editing a `.cursor/rules/*.mdc` without making the same edit in its `.claude/skills/*/SKILL.md` twin, or the other way round
+- Trusting `git gc --prune=now` without running `git fsck --unreachable` afterwards - a clean tree with no reflog can still hold dangling golden and test blobs
+- Leaving a broken `refs/remotes/origin/HEAD` in the repo - `git remote` is empty so the static check passes, `for-each-ref` does not list it, and only `git fsck` catches it. `rm -rf .git/refs/remotes` is part of the cleanup
+- Shipping a grader that awards reward 1.0 while the test command exited nonzero, or that records a raw exit status without gating on it. **The stock `test.sh` does exactly this**, so an untouched harness is already defective
+- Making the grader fail closed with an early `infrastructure_error` exit - that reclassifies every non-compiling agent as an invalid trial and poisons the difficulty run. Gate inside the grader's success expression instead
+- Adding an exit-code gate without `set -e` in the generated runner - `execution.commands` is a list and the status you get is the last command's, not the suite's
+- Relying on `set -e` alone when a command is a pipeline, or assuming `test.sh`'s own `set -o pipefail` reaches the runner - `bash /tmp/run_tests.sh` is a child shell and inherits no shell options, so the gate reads the parser's status and never fires. Pass `bash -o pipefail`
+- Wiring the exit-code gate without first measuring the runner's bare exit on a green tree - a runner that exits nonzero on a fully passing suite turns the gate into a failing oracle
+- Acting on a Quality Check coverage finding before checking whether it describes the source PR - if it does, the instruction is over-promising and the oracle must not be touched
+- Reading a PR's file list off page 1 of the GitHub API - it caps at 100, and a 198-file PR answered the opposite question on page 2
+- Building a test-tree restore on git **in any form**. Three designs shipped on kvdex 245 and none worked, because the verify-time workspace is not a git repository. `git checkout -- <dir>` reads the INDEX so staging defeats it, `git checkout <sha> -- <dir>` leaves files the agent added, and both are moot when there is no repo to read. Use a create-only `tests.patch` or a base64 payload embedded in `test.sh` (Section 10.3)
+- Shipping the restore payload as `tests/files/<archive>` - `tests/` accepts only `config.json`, `grade.py`, `test.sh` and `tests.patch`, and that upload is rejected at the static phase
+- Choosing between the create-only patch and a full-tree payload by assuming instead of counting. Measure how many graded ids live outside the patched files. Zero means create-only; kvdex was 102 of 132 and needed the payload
+- Concluding you have no evidence when your own difficulty report says `Task Instruction Sufficiency: NOT_APPLICABLE`. The harness is shared, so a sibling task's per-trial analysis is evidence about your task's environment
+- Shipping a third variation of a fix that already failed on the platform twice. Two failures on a locally-verified fix means the model of the environment is wrong, so remove the dependency instead of refining the theory (`learning/diagnosing-platform-only-failures.md`)
+- Simulating an agent with unstaged edits only. Stage and commit in the simulation, or the restore step looks green and fails on the platform
+- Giving the graded test files the names an agent would pick for its own tests, when a verifier-only prefix costs nothing
+- Treating instruction over-prescription and leakage as advisory because the prescriptiveness build check says so - the Quality Check's `criterion: Instructions` items are must-have and block on their own (`learning/quality-check-criteria.md`)
+- Reading a NOP reward of 0 as proof the f2p set is genuine, when a compile failure or collection abort marks every id missing regardless
+- Leaving `pass_to_pass` empty when existing tests cover the area the patch touches, or adding `allow_extra_failures` to a config.json that never had it
+- Injecting graded tests into an existing public test suite under predictable names, so an agent's own test collides and kills the trial
+- Writing a test that names a constraint but uses a fixture which cannot violate it (bidirectional coverage on a random-access container)
+- Uploading without the hostile-delete run, or recording it as "reward dropped" without naming the test id that caught the stub - an unenforced requirement reads as coverage right up until the reviewer stubs it
+- Shipping `tests/test.sh` or `solution/solve.sh` at mode 0644
+- A `solve.sh` whose reverse-apply fallback counts as success, hiding a golden patch that did not apply
+- Stripping the `git apply --3way` retry out of a `solve.sh` on the belief that it is the same defect. It is the prescribed third step of the sanctioned shape (Section 10.6, the "The fix" section in `learning/solve-sh-idempotency.md`) and it applies forward, so it cannot invert a tree. The bug is a reverse apply that reports success
+- A `solve.sh` that deletes, renames or edits a tracked path with its own `rm`, `mv` or `sed` line instead of inside `golden.patch`. The Oracle Check still goes green and the patch no longer describes the solution
+- Treating `init_state.patch` as a reverse-diff format on the strength of its name. `docs/glossary.md:38` calls it a former name for `golden.patch`, so read the diff direction before applying anything
+- Leaving `[metadata] repo_license` blank or invented, or letting `repo_name`, `base_commit_sha` and `source_pr_url` drift from the repo and the PR. All four ship populated in every bundle measured here and none of them is in `docs/harbor-framework.md`, so nothing but your own check catches them
+- Splitting a graded id on `::` and reading the left half as a file path. That is right for deno and pytest and wrong for gradle, cargo and ctest, and it reported all 35 of libcrux's ids as outside when 21 were. Use the Section 10.3 snippet, and treat an `UNRESOLVED` line as "not an answer yet" rather than a rounding error
+- Renaming a graded test file to something the runner cannot import - a prefix has to be a legal module identifier in the target language, or every trial reports the ids missing while the file sits in the tree
+- Accepting a NOP zero on a compiled-language task with no per-file subset and no symbol audit either. Say which of the two you did, and never report an audit as a run
+- Shipping a Dockerfile with `apt-get upgrade`, an unpinned `pip install <pkg>`, a `pip install -e <dir>` whose target is not in `environment/repo`, or a `git+https://` on a bare branch. All four are reproducibility defects and none of them is a network problem - build-time network use is allowed
+- Grading the shape of the source instead of its behaviour: `inspect.getsource`, reading a source file and asserting on substrings, or requiring a private helper name. It passes a solution that writes the right words and fails correct different code
+- Shipping a golden patch whose file list does not match the source PR's, in either direction
+- Padding fail_to_pass with tautologies or one contract repeated across N shapes instead of distinct behaviors
+- Testing only a new helper when the PR's point is wiring that helper into the CLI, engine, or response path
+- Pinning serialization accidents (object numbers, byte offsets, creation-order ids) instead of structure and values
+- Claiming flexible wording in the instruction while the matcher still demands literal tokens
+- Rewriting fail-open Dockerfile steps as pure hygiene - fix them where they cause a listed issue, report the rest
+- Quietly reconciling `model_difficulty` with `difficulty` to satisfy a check instead of reporting the mismatch
+- Showing Phase 1 findings as a pastebox first - the two checkbox lists come before it, in the platform's order
+- Waiting to be asked for the difficulty answer, the senior estimate, or Comments for Reviewer instead of drafting them with everything else
+- Trusting the task path pasted alongside feedback instead of identifying the task from the report's own citations - `__` renders as bold, so directory names arrive mangled and one task's path gets attached to another task's feedback
+- Running gradle, maven, npm or cargo inside `work/` or `download/original/` - the caches are gitignored, so nothing warns you until `diff -rq` reports files you never touched or the zip ships the cache
+- Concluding "flaky or infra" from a platform message that says so, when the failure is identical on every run - reproduce the oracle *script* twice in one container before blaming the environment
+- Chasing a prescriptiveness finding that quotes a requirement a graded test asserts - that finding is asking you to break `test_faithfulness`, which blocks
+- Treating a past prescriptiveness pass as settled - any later instruction edit re-runs it, and it has come back red on text unchanged since the passing round
+- Diagnosing a non-reproducing platform failure by guessing - measure each hypothesis (time the cold build, read the offline cache, time the verifier) and record the dead ends so nobody repeats the sweep

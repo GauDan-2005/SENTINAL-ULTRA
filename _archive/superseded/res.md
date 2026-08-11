@@ -1,29 +1,25 @@
-<!-- DEPRECATED 2026-08-04 -->
-
-# DEPRECATED - superseded by INDEX.md
-
-This was a third status register at the workspace root, duplicating the Active and Done
-tables in `INDEX.md`. Every line of it is now carried by an `INDEX.md` row with a proper
-Status token and Round column, so nothing here is live.
-
-`cl` meant "claimed". The four tasks it tracked are jqno equalsverifier 1166, AltBeacon
-android-beacon-library 1177, cryspen libcrux 1165 and oliver-oloughlin kvdex 245, and all
-four are in `INDEX.md`.
-
-Do not read this for status. `INDEX.md` is the only register.
-
-Original content follows.
-
----
-
 # Started
+
+sysprog = cl --resume 79a6b5fa-3cc5-4145-a17c-68f4362edabe
+
+openwhispr = cl --resume 580671d6-e38a-4d8f-97a5-915fb5322f06
+
+openziti = cl --resume 3e41bc12-fb81-45d1-bb21-1e32fa5d634b
+
+tair = cl --resume b308d79e-6a63-43f2-868f-6ebf27afcf18
+
+hyperledger = cl --resume 0433b817-4263-447a-935e-34405b27dc96
+
+xaaha = cl --resume e8e80d88-09e4-489d-b916-ad97be7f01d0
 
 # In revision
 
-jqno = cl
-alt = cl
-cryspen = cl
+xlwing = cl --resume 4bc2e1c0-8bf7-4bfb-b6cb-eb89fe1b5fef
+statrs = cl --resume 97a1ee33-389f-4e62-b437-1b2b7dd975f3
+jqno = cl --resume 31329b4f-0d96-4f3d-b1a6-6759ac710823
+alt = cl --resume 3c7c485a-c99b-45b7-9e86-41ced2231dbd
+cryspen = cl --resume 19ce00b7-a25d-4dde-8ba4-45660fda395a
 
 # Accepted
 
-oliver = cl
+oliver = cl --resume 51cf1c45-8067-4a3f-8813-479e43205a78

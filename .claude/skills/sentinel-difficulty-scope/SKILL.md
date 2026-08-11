@@ -27,6 +27,12 @@ Use these rules whenever assessing task difficulty, planning difficulty-raising 
 
 ## 2. Troubleshooting difficulty (when a task is, or becomes, too easy)
 
+**First read WHICH stage blocked, because only one of them measured difficulty.** The review gate that runs before a task reaches a reviewer has two stages - the agentic judge first, then a difficulty screen which is a cheap single-arm rollout - and the second only runs if the first passed (`docs/faq.md`, the review gate FAQ "My eval says Review gate blocked at the agentic judge / difficulty screen"). Neither stage is the task's final difficulty grade; the full difficulty rollout is a separate check that runs later, after a reviewer accepts.
+
+- **Blocked at the difficulty screen** - the model solved every attempt, so the task is trivially easy and this section is the work to do
+- **Blocked at the agentic judge** - difficulty was never measured this round at all, because the screen never ran. `Not run: difficulty screen` in the summary is the expected consequence of that, not a second error. Fix what the judge flagged and resubmit; do not start raising difficulty on the strength of a judge block
+- The one infra case is a message that explicitly says the difficulty screen failed with an infra error - no verdict was produced, so retry
+
 Work through these in order:
 
 **Step 1 — Check for over-prescriptive instructions first.**
@@ -60,6 +66,14 @@ When fixing a task you can change the instruction, tests, and oracle — but you
 
 - Example: original PR adds a `/health` endpoint → you extend it so the endpoint also handles auto-restart on failure
 - Example: original PR fixes a single edge case in a date parser → you extend it to handle three additional edge cases
+
+**Where the added material may come from.** When a task comes back too easy you may look at LATER PRs in the repo and adapt a change from a **related** one for inspiration (`docs/faq.md`, "A task came back too easy - can I adapt a change from a related PR to add complexity?"). Three bounds, all of them from that answer:
+
+- Do not pull from **unrelated** PRs
+- Do not copy a PR **wholesale** - adapt from it, do not lift it entirely
+- Do not change the **scope or feature** of the original PR/task - you are adding to it, not replacing it
+
+This is an extra source of material inside the expansion-only rule, not a relaxation of it. The anchor still has to hold: the task must map back to the ORIGINAL PR, with the adapted material building on that change rather than sitting beside it as a second PR. A later PR you took inspiration from is never a new anchor - `task.toml` still points at the original, and the scope-check procedure in Section 4 is still run against it.
 
 ### ❌ Forbidden
 

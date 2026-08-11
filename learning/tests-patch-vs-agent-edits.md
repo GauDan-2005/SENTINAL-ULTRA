@@ -613,3 +613,45 @@ difficulty signal. `docs/faq.md` says to raise it, and the ceiling is 7200. Rais
 Agents burning the budget rewriting a large test suite is itself a cause here, which the
 restore step above does not prevent. It is another reason not to leave the timeout at the
 authored default on a migration task.
+
+## Two ways a correct-looking restore still fails (redisshake 1005, 2026-08-07)
+
+Both found by re-auditing a bundle that had already passed its own battery, and both are one
+character of fix each.
+
+**1. `-type f` makes the wipe partial.** The restore deletes every test file before untarring the
+base tree, so an agent's own file at a graded path cannot block the patch. Written as
+
+```bash
+find . -name '*_test.go' -not -path './.git/*' -type f -delete      # WRONG
+```
+
+a **directory** or a **symlink** left at a path `tests.patch` creates survives, and then all three
+apply paths fail. Measured: planting a directory at the graded path produced
+`infrastructure_error: tests.patch did not apply`, which the difficulty harness scores as an
+**invalid trial** rather than a wrong answer. That is the kvdex 245 failure in miniature, arriving
+through the one hole a file-only wipe leaves. Use
+
+```bash
+find . -name '*_test.go' -not -path './.git/*' -exec rm -rf {} +    # RIGHT
+```
+
+and re-run the same planted-directory case: reward 1.0.
+
+**2. The runner truncates the restore's own diagnostics.** The stock `test.sh` appends restore and
+patch-apply messages to `$STDERR_LOG` (`2>>`), and then runs the suite with
+
+```bash
+"${RUNNER[@]}" > "$STDOUT_LOG" 2> "$STDERR_LOG"     # truncates everything above
+```
+
+so by the time the artifact is written, every trace of a rescued or failed apply is gone. On a
+failure that only reproduces on the platform, that is exactly the evidence
+[diagnosing-platform-only-failures.md](diagnosing-platform-only-failures.md) says sits above local
+reproduction. Change it to `2>>`. Proved both ways by removing `git` from the image so the
+`patch(1)` fallback runs: with `2>>` the artifact carries 179 bytes naming the three patched files,
+with `2>` it is 0 bytes.
+
+Worth recording alongside: with `git` deleted from the image entirely, the bundle still scored
+25 of 25 through the `patch -p1 --forward` fallback, which is the cleanest confirmation this note's
+central claim has had that the verify-time workspace does not need to be a git repository.

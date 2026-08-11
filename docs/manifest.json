@@ -1,13 +1,14 @@
 {
  "schema": 2,
  "source_site": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
- "manifest_generated": "2026-08-04",
- "hub_bundle": "assets/index-77c1ec94.js",
- "hub_bundle_checked": "2026-08-04",
+ "manifest_generated": "2026-08-06",
+ "export_date": "2026-08-06",
+ "hub_bundle": "assets/index-d251bfe7.js",
+ "hub_bundle_checked": "2026-08-06",
  "notes": [
-  "There is no single export date. Six tabs were exported 2026-07-31T13:51:23Z; faq.md and whats-new.md were refreshed 2026-08-01 and are current against the Hub.",
-  "hub_bundle is the content-hashed filename of the Hub's JS bundle, which holds all tab text. If the live filename differs from this one, the Hub has changed and this export is stale. See 'Staleness and refresh' in README.md.",
-  "sha256 covers the file exactly as it sits on disk, header comment included.",
+  "Re-exported 2026-08-06T08:15:55Z. Five tabs changed since the 2026-07-31/08-01 export: whats-new.md, tasking-guide.md, harbor-framework.md, faq.md and changelog.md. guidelines.md, glossary.md and quick-links.md were unchanged upstream and keep their earlier export date.",
+  "hub_bundle is the content-hashed filename of the Hub's JS bundle, which holds all tab text. If the live filename differs from this one, the Hub has changed and this export is stale. See 'Staleness and refresh' in README.md. It moved from index-77c1ec94.js to index-d251bfe7.js between 2026-08-04 and 2026-08-06, which is what flagged this refresh.",
+  "sha256 covers the file exactly as it sits on disk, header comment included. line_count is the number of newline characters, so a file with no trailing newline reports one fewer line than an editor shows.",
   "README.md and manifest.json are local scaffolding, not Hub tabs, and are not tracked here."
  ],
  "files": [
@@ -16,12 +17,12 @@
    "navigation_title": "What's New",
    "local_path": "whats-new.md",
    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-   "exported": "2026-08-01",
+   "exported": "2026-08-06",
    "verbatim": true,
-   "bytes": 3266,
-   "line_count": 51,
-   "character_count": 3221,
-   "sha256": "067d42223ed6f33fb3efbcbef953d4a3a7507a073c2434e5f8481941e30d39fb"
+   "bytes": 5174,
+   "line_count": 67,
+   "character_count": 5113,
+   "sha256": "c992b7b6c02a4fbbc77c3bb49515e5f3ff41d992e66bc55f1b8640c917dc3009"
   },
   {
    "tab_id": "guide",
@@ -36,7 +37,8 @@
    "sha256": "6e070722bdaacc30b22ea4a0650f546ebab66a4add3f673ad9c61ae3bf391312",
    "local_edits": [
     "Fixable-environment table: restored the Fix-column commands to valid shell (`apk add --no-cache`, `apt-get install -y`, `chmod +x`, `memory_mb`/`storage_mb`) and backticked them. The Hub itself stores the broken forms, so this is a correction of an upstream defect, not of the export. Two autocorrect rule names are left at the Hub's spelling. Verified against Hub bundle index-77c1ec94.js on 2026-08-04.",
-    "Added a top-of-file HTML comment and an inline note above the table recording the above. No guideline wording was changed."
+    "Added a top-of-file HTML comment and an inline note above the table recording the above. No guideline wording was changed.",
+    "The 2026-08-06 re-export left this tab byte-identical to the 2026-07-31 one apart from these repairs, so the file was NOT overwritten and the repairs never had to be re-applied here. Confirmed by diffing the re-export against this copy."
    ]
   },
   {
@@ -44,24 +46,24 @@
    "navigation_title": "Tasking Guide",
    "local_path": "tasking-guide.md",
    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-   "exported": "2026-07-31",
+   "exported": "2026-08-06",
    "verbatim": true,
-   "bytes": 40177,
+   "bytes": 40872,
    "line_count": 459,
-   "character_count": 39892,
-   "sha256": "1737b3dc90a06218dd27395c621a1cdf86d1a93cc82a50ae2a6ba4d2816fe86f"
+   "character_count": 40581,
+   "sha256": "07c63e475a47845e503cc7f6df08414ec071c268f99c4e05528b77f758bc3144"
   },
   {
    "tab_id": "harbor",
    "navigation_title": "The Harbor Framework",
    "local_path": "harbor-framework.md",
    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-   "exported": "2026-07-31",
+   "exported": "2026-08-06",
    "verbatim": true,
-   "bytes": 7203,
+   "bytes": 7512,
    "line_count": 111,
-   "character_count": 6641,
-   "sha256": "496defe7d5dd4c70b760c7dd30cc536fcc34bf1984ee16a11ce6cc9d122109e0"
+   "character_count": 6948,
+   "sha256": "86eb4ceb06818003c20b52e7edcc802ef72a65de5a885a3c87981d885925f73c"
   },
   {
    "tab_id": "glossary",
@@ -80,12 +82,12 @@
    "navigation_title": "FAQ",
    "local_path": "faq.md",
    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-   "exported": "2026-08-01",
+   "exported": "2026-08-06",
    "verbatim": true,
-   "bytes": 9875,
-   "line_count": 92,
-   "character_count": 9803,
-   "sha256": "4963baf736d438114d3f9d18efd4d3cad9bc952a4d410d03cd381833fb7a371d"
+   "bytes": 12650,
+   "line_count": 110,
+   "character_count": 12556,
+   "sha256": "031b6a3180528a8fd346847a9c8ce67d423690ef8458fff720505d0399e6178d"
   },
   {
    "tab_id": "quicklinks",
@@ -104,12 +106,12 @@
    "navigation_title": "Changelog",
    "local_path": "changelog.md",
    "source_url": "https://snorkel-ai.github.io/Sentinel_Ultra_Hub/",
-   "exported": "2026-07-31",
+   "exported": "2026-08-06",
    "verbatim": true,
-   "bytes": 10784,
-   "line_count": 84,
-   "character_count": 10724,
-   "sha256": "b073010ad0b5b82ac772bc311f36105c2a9f9ac51ec3d0a82c1b46a251dc70dc"
+   "bytes": 11270,
+   "line_count": 89,
+   "character_count": 11206,
+   "sha256": "0545bcdae96ef4925b812335e49416941d1a260b891cd88ab48ca704b4a97c95"
   }
  ],
  "derived": [
@@ -126,12 +128,12 @@
     "quick-links.md",
     "changelog.md"
    ],
-   "note": "Content-identical to the eight tab files apart from each tab file's <!-- Source: --> header line and this file's added '# <Tab Name>' section headings (verified 2026-08-04). It predates the guidelines.md repair, so it still carries the broken Fixable-environment commands; prefer guidelines.md.",
-   "exported": "2026-08-01",
-   "bytes": 106652,
-   "line_count": 1273,
-   "character_count": 105360,
-   "sha256": "bdb2e9021b29411b98f17b7207c495f07fb3a49036c38fc8177c567b1a01532d"
+   "note": "Content-identical to the eight tab files apart from each tab file's <!-- Source: --> header line and this file's added '# <Tab Name>' section headings. The 2026-08-06 re-export reintroduced the broken Fixable-environment commands here, and the guidelines.md repair was re-applied to this file the same day, so both copies now carry the corrected table. Verify with the two commands in README.md 'Reapply after any re-export'.",
+   "exported": "2026-08-06",
+   "bytes": 113678,
+   "line_count": 1322,
+   "character_count": 112336,
+   "sha256": "59f6741cc03100107f0d3ca93be5d4ed03d5443016bb16312f7f55f9a63398e1"
   }
  ]
 }

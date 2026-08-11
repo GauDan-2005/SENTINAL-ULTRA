@@ -9,7 +9,7 @@ Sentinel Ultra submission and review steps
 ## Submission Quick Start Guide <a id="submission-quick-start-guide"></a>
 
 1.  **Log in** — open the [Snorkel Experts platform](https://experts.snorkel-ai.com/home) and open the Submission task (search "Sentinel").
-2.  **Download your task zip** — it contains two folders: `task/` (the instruction, environment, solution, and tests you'll review) and `runs/` (agent attempt logs). Everything you'll inspect and edit is inside `task/`.
+2.  **Download your task zip** — it contains the task's files (`instruction.md`, `task.toml`, `environment/`, `solution/`, `tests/`), usually alongside a `runs/` folder of agent attempt logs. Packaging can vary — the files may be at the zip root, or inside a wrapping folder such as `task/` or `seed/` — so look for them wherever they land. You'll inspect and edit the task files, not `runs/`.
 3.  **Review** — decide Valid / Fixable / Not Fixable.
 4.  **If Fixable, rewrite** the instruction, tests, and/or oracle.
     4b. **Prepare your upload:** zip only the contents of the `task/` folder — not the folder itself, and not `runs/`. The zip should unpack directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, and `tests/`.
@@ -119,7 +119,7 @@ Download the task zip provided at the top of the form. It contains the task you'
 
 **What is your analysis of the Sentinel task you downloaded above?**
 
-> **Note:** **Note:** This question appears twice in the platform, and both are required. Please make sure that both answers are the same.
+> **Note:** This question appears twice in the platform, and both are required. Please make sure that both answers are the same.
 
 -   **Fixable** — The task has issues in the instructions, tests, and/or oracle, but you can correct all issues.
 -   **Invalid/Not Fixable** — The task is invalid and/or unfixable, as it requires changes outside of the instructions, tests, or oracle, or is invalid for other reasons.
@@ -286,7 +286,7 @@ The verdict logic:
 -   **DISCUSS** (fails, `NEEDS_REVISION`) — any single judge scored either test axis ≤ 2, or the adjudicated score on either axis is ≤ 3.0.
 -   **OK** (passes) — both test axes land above 3.0 with no judge at ≤ 2.
 
-> **Note:** **Practical bar:** both judges need to rate your test suite a solid 4+ on coverage and faithfulness. A single "3 with reservations" from one judge is enough to bounce the task. Borderline scores round down by design — don't argue with a 3, fix it.
+> **Note:** **Practical bar:** the judges score your test suite on coverage and faithfulness (1–5). A final score **above 3** on both axes passes. A final of **3 or below** on either axis sends the task to needs-revision (a single judge scoring **2 or below** on either axis also trips this). A final of **2 or below** on either axis is a hard fail. In short: aim comfortably above 3 — a task sitting right at 3 does not pass, so don't ship borderline; fix it.
 
 ##### The two questions the judge asks about your tests <a id="quality-check-two-questions"></a>
 
@@ -434,7 +434,7 @@ The reviewer should confirm that the submitter correctly identified fixable issu
     -   Environment
     -   PR Relevancy
     -   Other
-4.  **If Needs Revision:** Explain in more detail what revisions are needed from the submitter based on your selection(s) above.
+4.  **If Needs Revision:** Explain in more detail what revisions are needed from the submitter based on your selection(s) above. Where it helps, **cite the relevant section of the [Guidelines](guidelines.md)** in your notes. You don't need to do this for every point, but for specific or easily-missed rules, pointing the submitter to the exact section that backs your feedback makes revisions faster and removes ambiguity about what you're asking for.
 
 5.  **Acknowledgement of Submitter Rebuttal:** Before submitting, open the rebuttal comments in the left-hand panel and read the submitter's notes in full. Confirm one of the following:
 

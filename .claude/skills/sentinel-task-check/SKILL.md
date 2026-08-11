@@ -18,7 +18,9 @@ Use these rules whenever the user asks to check, review, validate, or give a ver
 
 ## 1. Read everything first
 
-Locate the `*_harborized/` task directory and read ALL of:
+**Locate the task directory first - how the download is packaged varies.** Find the directory that holds `instruction.md`, `task.toml`, `environment/`, `solution/` and `tests/`. It may be the zip root itself, a wrapping folder such as `task/` or `seed/`, or a legacy `*_harborized/` folder sometimes nested under a submission-id directory. `docs/harbor-framework.md` "Task Structure & Components" says the documented layout shows what a task is made of and not a guarantee of the download structure, so locate these files wherever they land instead of expecting one shape. A wrapper name on its own is never a finding. `task/` in the paths below means that located directory, whatever it is actually called on this download.
+
+Read ALL of:
 
 - `task/instruction.md`
 - `problem_statement.md` — `diff` it against instruction.md, they must be byte-identical. Current spec puts it at `task/environment/problem_statement.md`; older bundles keep it at `task/problem_statement.md`
@@ -27,7 +29,7 @@ Locate the `*_harborized/` task directory and read ALL of:
 - `task/tests/test.sh`, `task/tests/tests.patch`, `config.json`. **`tests/` accepts only these four names: `config.json`, `grade.py`, `test.sh`, `tests.patch`.** A `tests/files/` directory is rejected by the static checker even though older layout docs list it, so finding one is a finding
 - `task/environment/Dockerfile`
 - Skim `task/environment/repo/` for the areas the instruction touches
-- `runs/*/*/result.json`, plus `verifier/test-stdout.txt` for ALL failing trials and at least one passing trial
+- `runs/*/*/result.json`, plus `verifier/test-stdout.txt` for ALL failing trials and at least one passing trial. `runs/` is packaged alongside the task files rather than inside them, and it is not guaranteed to be there at all - `docs/harbor-framework.md` "Task Structure & Components" says the logs folder may or may not be included. A download without one is not a finding, only less evidence to work from
 - Fetch the source PR from task.toml (`[metadata] source`, or `source_pr_url` on older tasks) and note its scope and diff
 
 Git-hygiene and packaging checks on the shipped repo (read-only):

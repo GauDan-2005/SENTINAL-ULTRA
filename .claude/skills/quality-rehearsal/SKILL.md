@@ -40,9 +40,11 @@ Documented verdict logic:
 
 1. **`criterion: Instructions` items block on their own.** `20260728_153118__jqno_equalsverifier__1166` failed on Q9 and Q10 with healthy test axes. Do not carry over the "prescriptiveness is advisory" reasoning — that belongs to a different, non-blocking check (section 8 below).
 2. **An oracle axis can REMOVE a task with both test axes clear.** `20260727_135618__AltBeacon_android-beacon-library__1177` round 2: `test_coverage` 3.5, `test_faithfulness` 3.5, `oracle_spec_faithfulness` 2.0, verdict REMOVE, `Reason: oracle_spec_gap`. **Read `Reason:` first and treat the axis it names as blocking**, whatever the verdict rules say about test axes.
-3. **Borderline rounds down by design.** A 3 bounces the task. Score honestly and fix the 3. Arguing a 3 up to a 4 in Comments for Reviewer has never worked and costs the round anyway.
+3. **A 3 does not pass.** The verdict bullets above stop at DISCUSS; `docs/tasking-guide.md`, the Quality Check practical bar, states the consequence - a final above 3 on both test axes passes, a final of 3 or below on either axis sends the task to needs-revision, a single judge at 2 or below on either axis trips the same thing, and a final of 2 or below is a hard fail. Score honestly and fix the 3. Arguing a 3 up to a 4 in Comments for Reviewer has never worked and costs the round anyway.
 
-So the practical bar is: both judges at a solid 4+ on `test_coverage` and `test_faithfulness`, no must-have instruction criterion failing, and no oracle axis you would score below 3.
+So the bar to clear is: `test_coverage` and `test_faithfulness` both finishing comfortably above 3, no must-have instruction criterion failing, and no oracle axis you would score below 3. **This skill still rehearses to 4 or better on both test axes, as this workspace's own margin and not the documented bar** - a local score is one reader's estimate of what two judges will adjudicate, so leave it a point of slack.
+
+**Where the real report lands, for the comparison.** When the platform blocks a task at the review gate, the one-line eval summary names only the stage that stopped it. The per-axis reasons sit in the **"Agentic Judge Quality Report"** field on the submission, collapsed and marked optional, lower down the form. Expand it - it carries the DISCUSS or REMOVE status and cites the specific axes and files, and it is the report to read this rehearsal against. See `docs/faq.md`, "My eval says 'Review gate blocked at the agentic judge / difficulty screen' - what does that mean?".
 
 ---
 
@@ -296,7 +298,7 @@ Score each axis 1 to 5, and write the evidence next to the number. An axis with 
 | 2 | A gap that lets a stub or broken solution pass, or an assertion with no home in the instruction |
 | 1 | An auto-REMOVE pattern, or an axis that cannot be assessed because the bundle does not run |
 
-**A 3 is a fix, not an argument.** Borderline scores round down by design. The panel has never been talked up from a 3, and a round spent explaining one is a round.
+**A 3 is a fix, not an argument.** A final of 3 or below on either test axis sends the task to needs-revision (`docs/tasking-guide.md`, the Quality Check practical bar), so a 3 is a bounce and not a near miss. The panel has never been talked up from a 3, and a round spent explaining one is a round.
 
 Report in the platform's own shape so the local run and the real report can be read side by side:
 

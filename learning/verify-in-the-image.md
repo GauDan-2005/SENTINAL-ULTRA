@@ -263,3 +263,77 @@ bash /tests/test.sh
 is a bug in your probe. Re-pointed at `src/pqcp.rs`, both probes immediately gave
 `reward 0.0` with `0 of 35` and `35 of 35` respectively, matching what the previous round had
 recorded.
+
+## A probe can land and still prove nothing, if it lands on the wrong code path
+
+Added 2026-08-05, `20260727_135618__AltBeacon_android-beacon-library__1177` round 6.
+
+The existing rule here is that a probe has two assertions and the first is that the break landed.
+That is necessary and it is not sufficient. Round 6 stubbed the consumer rebind to check the
+hostile-delete gate, confirmed the edit had landed (`this.bindInternal(consumer);` went from 2
+occurrences to 1, and line 666 read `/* STUBBED */`), ran the suite, and got **230/230 with reward
+1**. Read literally that says the rebind requirement has no enforcing assertion.
+
+It was the wrong `bindInternal`. Line 666 is inside a `shouldFailover` branch. The path the graded
+test actually drives is `configureScanStrategyWhenConsumersUnbound`, whose rebind is
+`BeaconManager.this.bindInternal(consumer)` a few hundred lines earlier. Stubbing that one drops the
+reward to 0 and fails `everyScanStrategyCanBeAppliedAndReadBack`.
+
+**So the probe has three assertions, not two:**
+
+1. the edit landed (occurrence count went down, and the new text is on the line you expected)
+2. it landed on the code path the graded test reaches
+3. the reward moved
+
+Assertion 2 is the one with no cheap mechanical check. When a symbol appears more than once, print
+every occurrence with context and pick by reading the call chain from the assertion backwards. A
+green suite after a landed stub is ambiguous between "no coverage" and "wrong line", and reporting
+it as the first is how a task ships with a coverage claim that is not true.
+
+## A probe guard has to match the direction of the edit
+
+Added 2026-08-06, android-beacon 1177 round 7. Companion to the three-assertion rule above.
+
+The rule says assert the break landed before trusting a green suite. Round 7 wrote that guard as
+`occurrences must decrease` and reused it for a probe that **inserts** code - restoring a deleted
+lazy-initialisation block. The count went 3 to 3, the guard fired `ABORT: break did not land`, and
+the probe reported nothing. The break was fine; the guard was backwards.
+
+So the assertion is not "the count went down", it is "the count moved the way this edit moves it":
+
+| Probe shape | Guard |
+|---|---|
+| delete or stub a call | occurrences **decrease** |
+| restore or inject a block | occurrences **increase** |
+| replace a condition | the old text is gone **and** the new text is present |
+
+An aborted probe is not a passing probe, and it is not a failing one either. It is no result, and it
+looks exactly like a careful check if nobody reads the line.
+
+## A probe can report "no failures" because nothing compiled (hulak 118, 2026-08-09)
+
+A fourth way a run looks healthy while measuring nothing, and the cheapest to fall for.
+
+While measuring whether a candidate difficulty lever discriminated, one probe removed a block of
+Go source and reported **PASSES ALL**, which reads as "this behaviour is not worth grading" and
+would have discarded a real lever. The removal had left an `argRequired :=` binding with no
+remaining use, which is a **compile error** in Go, so `go test -json` emitted no test events at
+all. A harness that counts `Action == "fail"` events sees zero failures and prints success.
+
+The corrected probe fails the named test, so the lever was real and nearly got thrown away.
+
+**The fix is one line in the probe harness, before the test run:**
+
+```bash
+if ! go build ./... >/tmp/b 2>&1; then echo "BUILD FAILED, probe invalid: $(head -1 /tmp/b)"; exit 0; fi
+```
+
+Generalising past Go: **a probe must distinguish "the suite ran and nothing failed" from "the
+suite never ran".** Counting failure events cannot tell those apart. Assert that the run produced
+the expected number of test events, or check the build separately. The same reasoning already
+appears in this note for a collection abort and for a build tool rejecting a flag; the new part
+is that it bites hardest when the probe is the thing deciding whether a lever ships.
+
+Related: the `assert old in s, 'SABOTAGE DID NOT LAND'` guard catches an edit that never applied,
+and it did its job in the same session. It cannot catch an edit that applied and then broke the
+build, so both checks are needed.

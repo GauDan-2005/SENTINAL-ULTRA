@@ -214,6 +214,41 @@ public contract.
 After any such edit, regenerate `tests.patch`, re-run NOP and oracle, redo git hygiene and
 re-zip. Changing the instruction alone is never the whole job.
 
+## The same trap from the other direction: extending the oracle invents symbols
+
+Verified 2026-08-05 on `20260727_135618__AltBeacon_android-beacon-library__1177`, caught by a
+local rehearsal and **missed by both real judges**, who scored `test_faithfulness` 5.0 on the
+bundle that carried it.
+
+The section above is about *cutting* a name out of the instruction while a graded test still needs
+it. This is the mirror image, and it is easier to walk into because nothing prompts you to look.
+
+AltBeacon's source PR left a TODO. Completing it additively is allowed and is the sanctioned way
+to close an oracle spec gap, so `golden.patch` grew two new public readers,
+`BeaconManager.getLongScanForcingEnabled()` and `ScanJob.getJobPersistenceEnabled()`. Graded
+assertions were then written against both. Neither name exists at the base commit. Neither name
+was ever added to `instruction.md`.
+
+That is the `Task Instruction Sufficiency: FAIL` signature being manufactured by hand:
+
+- the oracle passes 100%, because `golden.patch` creates the symbols
+- every agent fails at compile, because nothing told them to build a reader by that name
+- the report reads as agents-at-0% against oracle-at-100%, which looks exactly like difficulty
+
+**Rule: any public symbol that only exists because you extended the oracle is a deliverable, and
+the instruction has to say so.** The check is mechanical and belongs in the pre-upload list
+(CLAUDE.md Step 5 item 10 already states it as a two-way match):
+
+```bash
+# every identifier the graded tests call that is absent at base must appear in instruction.md
+git -C environment/repo grep -n '<symbol>' $(git -C environment/repo rev-parse HEAD)   # empty = new
+grep -n '<symbol>' instruction.md                                                       # must not be empty
+```
+
+Run it after **every** oracle edit, not only after an instruction edit. The trigger here was not a
+prescriptiveness fix at all, it was a round of work three rounds earlier whose consequence for the
+instruction nobody revisited. Two rounds of reports went past it.
+
 ## When the whole instruction is the problem
 
 The equalsverifier round is the harder case. I applied the fix pattern above (drop the
@@ -399,6 +434,19 @@ Four of the five were actionable, which is the opposite of the equalsverifier ro
 
 I concluded from that round that "an existing class name is not a finding, a new one is."
 **That was wrong**, and round two proved it. Correction below.
+
+### A restructure aimed at a different check can move this one backwards
+
+Added 2026-08-05, android-beacon 1177. Scoreboard across six uploads: **0.38, 0.45, pass, 0.50,
+0.30**. The 0.30 came straight after a rewrite that broke one 2724-character paragraph into a field
+table and short paragraphs, which was aimed at a judge's clarity complaint and did move that score
+up. It was also the first run to return a `high` finding.
+
+Two things to carry from that. The score is not monotonic in instruction quality, so a rewrite that
+demonstrably helps one check can cost you here. And the high finding quoted a sentence that existed
+only because an *earlier blocking* judge had demanded the behaviour be stated. Before deleting text
+this check objects to, find out which check asked for it, or the two of them will trade the same
+sentence back and forth across rounds.
 
 ### The findings rotate, so budget for more than one round
 

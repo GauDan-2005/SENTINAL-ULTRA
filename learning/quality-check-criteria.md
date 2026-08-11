@@ -310,6 +310,65 @@ Acting on it would have meant rewriting working PR code to satisfy a misreading.
 
 **Rule: split a judge's rationale into individual claims and reproduce each one before touching
 anything.** A claim about resolution, linkage, visibility or types is a two-minute check in the
-task image. Fix the ones that reproduce, and refute the others in Comments for Reviewer with the
-measurement rather than silently ignoring them. The judges disagreed here too, 5/5 against 2/5 on
+task image. Fix the ones that reproduce.
+
+**Correction, 2026-08-05: refuting the others in Comments for Reviewer does not clear them.** That
+is what this note used to advise and it cost libcrux 1165 two further rounds. The panel reads the
+instruction, the tests, the oracle and the task directory. Comments for Reviewer is a form field
+and is not one of them, so the refutation is invisible to the judge and the finding returns. It
+returned three times here and went from DISCUSS to REMOVE. When a false claim blocks and the code
+can be changed so the misreading is impossible without changing behaviour, change the code and
+prove the equivalence. See `LEDGER.md` L18. The judges disagreed here too, 5/5 against 2/5 on
 the same axis, which is itself a signal to go and measure.
+
+## Making an instruction truthful creates coverage debt
+
+Measured 2026-08-06 on `20260727_135618__AltBeacon_android-beacon-library__1177` round 7, whose
+`coverage_gap` named exactly two requirements: long scan forcing being consulted by the scanning
+code, and no default distance calculator for a caller who never applies settings.
+
+**Both were sentences earlier rounds had added**, to stop the instruction claiming things PR 1177
+does not do. Round 5 added the first, round 6 the second. Neither round added a matching assertion.
+
+That is a loop with a name now. An `oracle_spec_gap` is fixed by narrowing the instruction to what
+the patch really does. Every such narrowing that *states a new behaviour* is a new requirement, and
+the coverage axis grades stated requirements. So the next report comes back `coverage_gap` on the
+sentence you just wrote to fix the last one.
+
+**Rule: when a narrowing adds a sentence describing behaviour, add the assertion in the same round,
+or do not state the behaviour at all.** The second option is legitimate - Section 9 says an oracle
+may implement more than the instruction requires - and it is the right call when the behaviour has
+no observable a test can reach. Decide which by looking for the observable *before* writing the
+sentence, not after the next report.
+
+The cheap check, run over any instruction sentence you add during a narrowing: name the assertion
+that would fail if the behaviour were removed. If you cannot, the sentence is coverage debt.
+
+## When a stated requirement has no public observable
+
+Same round. The judge asked for long scan forcing to be *consulted* by the scanning code and not
+merely stored. There is no public reader for the consumed state anywhere in that library:
+`ScanHelper.getCycledScanner()` is package-private and `CycledLeScanner.mLongScanForcingEnabled` is
+private with a setter and no getter. The obvious readings are "narrow the requirement away" or "add a
+getter to the oracle". Both are worse than the third option.
+
+**Reflective assertion over base-commit names is defensible, under four conditions.** All four held
+here and all four are worth checking before reaching for it:
+
+1. **The drive path is already proven.** `BeaconServiceTest::beaconScanCallbackTest` was already in
+   `pass_to_pass`, so building the service and calling `onCreate()` was known green in that image.
+2. **Every reflected name exists at the base commit and the golden patch never touches it.** The test
+   then constrains the wiring an implementer adds, not a name they must invent. That is what keeps it
+   off the `overreach` axis.
+3. **It reads runtime state, not source text.** `getDeclaredField` is not `inspect.getsource`, so the
+   no-source-shape-grading gate still passes on its own terms rather than by luck.
+4. **A negative control rules out the unconditional cheat.** This is the one that is easy to miss.
+   The first version asserted only that the flag was ON after applying the setting, which an
+   implementation that switched it on always would also pass. The fix is to assert it is OFF before
+   anything asks for it, in the same test. Proved by a probe that replaces the consult with an
+   unconditional switch-on: without the control it passes, with it the reward drops to 0.
+
+Add a fifth in practice: **say you did it in Comments for Reviewer.** A reflective test that a
+reviewer finds for themselves reads as sleight of hand; one you declare reads as the only available
+way to grade a real requirement.
+

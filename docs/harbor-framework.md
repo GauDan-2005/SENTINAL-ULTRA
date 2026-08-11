@@ -19,7 +19,7 @@ Tasks follow the [Harbor format](https://harborframework.com/docs) and are evalu
 
 ## Task Structure & Components <a id="task-structure-components"></a>
 
-Each task follows the Harbor format and contains a task directory with the following structure:
+Each task follows the Harbor format and is built from the components shown below. **How your download is packaged can vary** — these files may sit at the zip root, or inside a wrapping folder such as `task/` or `seed/`, and a `runs/` logs folder may or may not be included. The layout below shows what a task is made of, not a guarantee of the download structure; locate these files wherever they land.
 
 ```
 <task-id>/

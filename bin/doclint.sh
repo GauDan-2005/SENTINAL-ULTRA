@@ -131,12 +131,22 @@ def code_fence_mask(text):
     return inside
 
 # ── which files are ours to lint ─────────────────────────────────────────────
+def rule_files():
+    """The numbered CLAUDE.md sections, one file each, in .claude/rules/.
+
+    These are loaded into every session at the same priority as CLAUDE.md, so a
+    'Section 8' or 'Step 5.5' written anywhere in the workspace resolves against
+    them exactly as it used to resolve against CLAUDE.md."""
+    return sorted(glob.glob(os.path.join(ROOT, ".claude", "rules", "*.md")))
+
+
 def prose_files():
     out = []
     for name in ("CLAUDE.md", "AGENTS.md", "README.md", "INDEX.md", "prompts.md"):
         p = os.path.join(ROOT, name)
         if os.path.isfile(p):
             out.append(p)
+    out += rule_files()
     out += sorted(glob.glob(os.path.join(ROOT, "learning", "*.md")))
     out += sorted(glob.glob(os.path.join(ROOT, ".cursor", "rules", "*.mdc")))
     out += sorted(glob.glob(os.path.join(ROOT, ".claude", "skills", "*", "SKILL.md")))
@@ -316,12 +326,16 @@ def pass_xref():
                         if found:
                             target = found[0]
                 # Resolution order: the file named on the line, then this file,
-                # then CLAUDE.md. An unqualified "Step 5.5" in a learning note
-                # means CLAUDE.md's Step 5.5, and that is the house convention.
+                # then CLAUDE.md, then the .claude/rules/ files that hold the
+                # numbered sections. An unqualified "Step 5.5" in a learning note
+                # means the workspace's Step 5.5, and that is the house
+                # convention. The rules pool is what makes it keep resolving now
+                # that the sections live one per file instead of inline.
                 claude = os.path.join(ROOT, "CLAUDE.md")
                 pools = [target, f]
                 if os.path.isfile(claude):
                     pools.append(claude)
+                pools += rule_files()
                 checked += 1
                 hit = False
                 for p in pools:
@@ -423,52 +437,72 @@ def pass_fact():
         hits_total = 0
         problems = []
         stale = []
+        # An appears_in entry ending in "/" is a directory group: it expands to
+        # every .md inside and counts as ONE logical target. `.claude/rules/` is
+        # the case this exists for - the numbered sections used to be one file,
+        # so the union of the rules files is what a single `CLAUDE.md` entry used
+        # to cover. Grouping keeps the stale warning honest: a fact stated in one
+        # rule file must not warn about the eleven that do not state it.
+        groups = []
         for t in targets:
-            p = os.path.join(ROOT, t)
-            if not os.path.isfile(p):
-                problems.append(f"{t}: appears_in names a file that does not exist")
-                continue
-            text = read(p)
-            rows = text.split("\n")
-            if pattern:
-                try:
-                    hits = sum(1 for ln in rows if re.search(pattern, ln))
-                except re.error as exc:
-                    problems.append(f"{t}: bad 'pattern' regex: {exc}")
-                    hits = 0
-                hits_total += hits
-                if hits == 0:
-                    stale.append(t)
-            for c in f.get("contradicts") or []:
-                rx, why = c.get("regex"), c.get("why", "")
-                if not rx:
+            if t.endswith("/"):
+                members = sorted(glob.glob(os.path.join(ROOT, t, "*.md")))
+                if not members:
+                    problems.append(f"{t}: appears_in names a directory with no .md files")
                     continue
-                try:
-                    crx = re.compile(rx)
-                    # `unless` exempts a line that quotes the wrong value in order
-                    # to refute it. Without it every warning about a mistake reads
-                    # as the mistake.
-                    urx = re.compile(c["unless"]) if c.get("unless") else None
-                except re.error as exc:
-                    problems.append(f"{t}: bad 'contradicts' regex {rx!r}: {exc}")
+                groups.append((t, members))
+            else:
+                p = os.path.join(ROOT, t)
+                if not os.path.isfile(p):
+                    problems.append(f"{t}: appears_in names a file that does not exist")
                     continue
-                for n, ln in enumerate(rows, 1):
-                    if crx.search(ln) and not (urx and urx.search(ln)):
-                        problems.append(f"{t}:{n}: {why}\n        {ln.strip()[:160]}")
-            nc = f.get("numeric_claim")
-            if nc and nc.get("locate"):
-                try:
-                    lrx = re.compile(nc["locate"])
-                except re.error as exc:
-                    problems.append(f"{t}: bad 'numeric_claim.locate' regex: {exc}")
-                    lrx = None
-                if lrx is not None:
-                    want = str(nc.get("equals"))
+                groups.append((t, [p]))
+
+        for t, members in groups:
+            group_hits = 0
+            for p in members:
+                rows = read(p).split("\n")
+                # A grouped target reports the real file, so a drift problem
+                # names the rule file to open, not the directory.
+                label = t if len(members) == 1 else rel(p)
+                if pattern:
+                    try:
+                        group_hits += sum(1 for ln in rows if re.search(pattern, ln))
+                    except re.error as exc:
+                        problems.append(f"{t}: bad 'pattern' regex: {exc}")
+                for c in f.get("contradicts") or []:
+                    rx, why = c.get("regex"), c.get("why", "")
+                    if not rx:
+                        continue
+                    try:
+                        crx = re.compile(rx)
+                        # `unless` exempts a line that quotes the wrong value in
+                        # order to refute it. Without it every warning about a
+                        # mistake reads as the mistake.
+                        urx = re.compile(c["unless"]) if c.get("unless") else None
+                    except re.error as exc:
+                        problems.append(f"{label}: bad 'contradicts' regex {rx!r}: {exc}")
+                        continue
                     for n, ln in enumerate(rows, 1):
-                        m = lrx.search(ln)
-                        if m and m.group(1) != want:
-                            problems.append(
-                                f"{t}:{n}: states {m.group(1)} where facts.yml says {want}\n        {ln.strip()[:160]}")
+                        if crx.search(ln) and not (urx and urx.search(ln)):
+                            problems.append(f"{label}:{n}: {why}\n        {ln.strip()[:160]}")
+                nc = f.get("numeric_claim")
+                if nc and nc.get("locate"):
+                    try:
+                        lrx = re.compile(nc["locate"])
+                    except re.error as exc:
+                        problems.append(f"{label}: bad 'numeric_claim.locate' regex: {exc}")
+                        lrx = None
+                    if lrx is not None:
+                        want = str(nc.get("equals"))
+                        for n, ln in enumerate(rows, 1):
+                            m = lrx.search(ln)
+                            if m and m.group(1) != want:
+                                problems.append(
+                                    f"{label}:{n}: states {m.group(1)} where facts.yml says {want}\n        {ln.strip()[:160]}")
+            hits_total += group_hits
+            if pattern and group_hits == 0:
+                stale.append(t)
         if problems:
             emit("FAIL", ident, f"{len(problems)} drift problem(s)")
             detail("\n".join(problems))

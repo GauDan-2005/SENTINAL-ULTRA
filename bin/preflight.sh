@@ -12,7 +12,7 @@
 #   <target> is any of
 #     a bundle directory        (has task.toml, environment/, solution/, tests/)
 #     a task folder             (has work/ and download/) - work/ is checked
-#     a *_harborized directory  (has task/task.toml)
+#     a wrapper directory       (holds the bundle under task/, seed/ or *_harborized/task/)
 #     a .zip                    (extracted to a temp dir, checked, cleaned up)
 #
 # Options:
@@ -120,14 +120,17 @@ case "$TARGET" in
     elif is_bundle "$TARGET"; then
       BUNDLE_DIR="$TARGET"
       case "$(basename "$TARGET")" in
-        work|task) TASK_DIR="$(dirname "$TARGET")" ;;
+        work|task|seed) TASK_DIR="$(dirname "$TARGET")" ;;
       esac
     elif is_bundle "$TARGET/work"; then
       BUNDLE_DIR="$TARGET/work"; TASK_DIR="$TARGET"
     elif is_bundle "$TARGET/task"; then
       BUNDLE_DIR="$TARGET/task"; TASK_DIR="$TARGET"
+    elif is_bundle "$TARGET/seed"; then
+      # docs/harbor-framework.md: a download may wrap the task files in task/ OR seed/
+      BUNDLE_DIR="$TARGET/seed"; TASK_DIR="$TARGET"
     else
-      die "no bundle found at $TARGET (looked for task.toml + tests/ here, in work/ and in task/)"
+      die "no bundle found at $TARGET (looked for task.toml + tests/ here, in work/, task/ and seed/)"
     fi
     ;;
 esac

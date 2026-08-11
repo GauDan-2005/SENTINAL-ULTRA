@@ -5,15 +5,16 @@ downloaded from the platform, decide whether it is **Valid as-is**, **Fixable** 
 **Invalid / Not Fixable**, correct it when it is Fixable, prove it locally, upload it, get it
 through the platform's checks, answer the submitter form, and survive a peer EC's review.
 
-This file is the map. `CLAUDE.md` is the manual. `AGENTS.md` is the short contract an agent
-reads before it touches anything.
+This file is the map. `CLAUDE.md` plus `.claude/rules/` is the manual, split so the always-loaded
+index stays short and each numbered section is its own file. `AGENTS.md` is the short contract an
+agent reads before it touches anything.
 
 ## Where things are
 
 ```
 README.md            this file
 AGENTS.md            the hard locks, tool-neutral, under 60 lines
-CLAUDE.md            the full workflow, Steps 1 to 10, plus the form answers
+CLAUDE.md            the index: the workflow spine, the hard boundaries, and which rule file owns what
 INDEX.md             the cross-task register, one row per task
 prompts.md           reusable prompt templates for the submitter
 facts.yml            every platform number and enumeration, machine-readable
@@ -25,6 +26,7 @@ chat_transcripts/    session records kept as evidence, indexed in its own README
 tasks/               one folder per live task
 _archive/            finished tasks, and superseded/ for retired root files
 comparison-report/   the audit that explains why the workspace is shaped this way
+.claude/rules/       the eleven numbered sections, one file each, loaded every session
 .claude/skills/      the Claude Code copies of the companion rules
 .cursor/rules/       the Cursor copies of the same rules, kept byte-identical
 ```
@@ -51,7 +53,9 @@ quietly reconciled. **`docs/`** owns policy and judgment, being the Hub export. 
 owns what the platform and this machine actually do, since every note is backed by a build log
 or a container run, so a note beats `CLAUDE.md` on a matter of observed fact. **`facts.yml`**
 owns the numbers and enumerations, and `bin/doclint.sh` fails on prose that contradicts it.
-**`CLAUDE.md`** owns the workflow that stitches all of it together.
+**`CLAUDE.md` and `.claude/rules/`** own the workflow that stitches all of it together, the
+first holding the spine and the routing table and the second holding the full text of each
+numbered section. Where those two disagree the rule file wins, because it is the full text.
 
 ## Starting a session
 
@@ -69,8 +73,9 @@ owns the numbers and enumerations, and `bin/doclint.sh` fails on prose that cont
 Claim and bootstrap the folder, analyse the bundle against the four core principles, decide
 the verdict, apply corrections in `work/` if it is Fixable, run the local NOP and oracle
 checks on disposable copies, zip, upload, work the eval loop until the checks pass, write the
-answers, send to reviewer, then run the revision rounds that come back. `CLAUDE.md` Steps 1
-to 10 spell every one of those out. The two orderings that are never negotiable: the zip is
+answers, send to reviewer, then run the revision rounds that come back. Steps 1 to 10 spell
+every one of those out, summarised in `CLAUDE.md` and written in full in
+`.claude/rules/01-workflow-steps-1-to-5.5.md` and `.claude/rules/02-workflow-steps-6-to-10.md`. The two orderings that are never negotiable: the zip is
 built only after the local checks pass, and the answers are written only after the zip exists.
 
 ## Commands
