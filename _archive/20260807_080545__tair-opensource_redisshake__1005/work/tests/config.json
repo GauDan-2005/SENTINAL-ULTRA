@@ -1,0 +1,74 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "/usr/local/go/bin/go build ./...",
+      "/usr/local/go/bin/go test -json ./..."
+    ],
+    "selected_test_files_to_run": [
+      "internal/commands/sentinel_hash_stream_cmds_test.go",
+      "internal/rdb/sentinel_valkey_rdb_test.go",
+      "internal/reader/sentinel_valkey_aof_test.go",
+      "internal/client/sentinel_server_type_test.go",
+      "internal/aof/sentinel_aof_bulk_test.go",
+      "internal/reader/sentinel_scan_wiring_test.go",
+      "internal/writer/sentinel_writer_liveness_test.go"
+    ],
+    "env": {
+      "GOFLAGS": "-buildvcs=false"
+    },
+    "timeout_sec": 1500
+  },
+  "grading": {
+    "fail_to_pass": [
+      "RedisShake/internal/commands::TestSentinelHashFieldCommandsRouteWithKeyAtIndexOne",
+      "RedisShake/internal/commands::TestSentinelStreamCommandsRouteWithKeyAtIndexOne",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBHeaderIsRead",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBDecodesFieldsWithMillisecondTTL",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBOmitsExpireForFieldsWithoutTTL",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBEmitsExpireForEveryExpiringField",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBPreservesLargeTimestampsAndFieldAlignment",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBKeepsFieldOrder",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBDecodesSeveralKeysInOneFile",
+      "RedisShake/internal/reader::TestSentinelValkeyAOFBaseFileIsReadAsASnapshot",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBDecodesLargeCountsAndLongValues",
+      "RedisShake/internal/rdb::TestSentinelValkeyRDBTreatsZeroAsAnOrdinaryTimestamp",
+      "RedisShake/internal/client::TestSentinelServerTypeValkeyReportsValkey",
+      "RedisShake/internal/client::TestSentinelServerTypeRedisReportsRedis",
+      "RedisShake/internal/client::TestSentinelServerTypeReportsMissingVersion",
+      "RedisShake/internal/client::TestSentinelServerTypeIgnoresOtherVersionKeys",
+      "RedisShake/internal/aof::TestSentinelAOFKeepsBinaryArgumentsWhole",
+      "RedisShake/internal/aof::TestSentinelAOFResumesAfterABinaryArgument",
+      "RedisShake/internal/reader::TestSentinelScanReaderUsesTheServerAnswer",
+      "RedisShake/internal/writer::TestSentinelWriterForwardsAnOversizedEntry"
+    ],
+    "pass_to_pass": [
+      "RedisShake/internal/rdb::TestSentinelRedisRDBHeaderStillRead",
+      "RedisShake/internal/rdb::TestSentinelRedisRDBUsesTheRedisLayoutForTheSameTypeByte",
+      "RedisShake/internal/reader::TestSentinelRedisAOFBaseFileStillReadAsASnapshot",
+      "RedisShake/internal/commands::TestSentinelLegacyHashTTLCommandsStillRoute",
+      "RedisShake/internal/commands::TestCalcKeys",
+      "RedisShake/internal/commands::TestKeyHash",
+      "RedisShake/internal/rdb/types::TestSet",
+      "RedisShake/internal/rdb/types::TestSetIntset",
+      "RedisShake/internal/rdb/types::TestSetListpack",
+      "RedisShake/internal/reader::Test_syncStandaloneReader_Status",
+      "RedisShake/internal/utils::TestCrc16",
+      "RedisShake/internal/aof::TestSentinelAOFStillReadsPlainCommands",
+      "RedisShake/internal/reader::TestSentinelScanReaderKeepsRedisServersOnTheRedisLayout"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "go-test",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

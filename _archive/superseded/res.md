@@ -16,8 +16,6 @@ alt = cl --resume 3c7c485a-c99b-45b7-9e86-41ced2231dbd
 
 # Accepted
 
-statrs = cl --resume 97a1ee33-389f-4e62-b437-1b2b7dd975f3
-
 tair = cl --resume b308d79e-6a63-43f2-868f-6ebf27afcf18
 
 sysprog = cl --resume 79a6b5fa-3cc5-4145-a17c-68f4362edabe
@@ -27,3 +25,5 @@ sysprog = cl --resume 79a6b5fa-3cc5-4145-a17c-68f4362edabe
 oliver = cl --resume 51cf1c45-8067-4a3f-8813-479e43205a78
 
 cryspen = cl --resume 19ce00b7-a25d-4dde-8ba4-45660fda395a
+
+statrs = cl --resume 97a1ee33-389f-4e62-b437-1b2b7dd975f3

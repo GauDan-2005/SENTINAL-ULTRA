@@ -35,6 +35,9 @@ Use these rules whenever assessing task difficulty, planning difficulty-raising 
 
 Work through these in order:
 
+**Step 0 - before any of the steps below, check whether the source PR's own author got anything subtly wrong.** This is the cheapest question in the section and it decides whether you are looking for a lever or at a ceiling. A place upstream got wrong is a trap, and a trap you have found is one a weaker model can walk into; a PR with no such place is where a difficulty ceiling is structural. redisshake 1005 had three, all still on the project's default branch, and was accepted on round 4 after four `FAIL EASY` screens. libcrux 1165 had none, because its PR wraps existing functions, and was accepted as Not Fixable. Same symptom, opposite verdicts, and this is what separates them (`learning/when-fail-easy-is-not-not-fixable.md`).
+
+
 **Step 1 — Check for over-prescriptive instructions first.**
 Often the instruction hands the agent context it should have discovered itself:
 
@@ -46,6 +49,14 @@ Remove anything the agent could reasonably find by exploring the codebase, and r
 
 **Step 2 — Apply the balancing principle.**
 This is the crux of the work: a task needs **enough context to be solvable, but not so much that it becomes instructional**. Every trim must be re-checked against solvability — never trim a genuine public contract or required output format.
+
+**What to do when you have run out of levers.** Measured on redisshake 1005: four consecutive `FAIL EASY` screens, answered with four different lever classes, every one measured at 0 of 4 against a local control, plus six further related PRs surveyed and rejected. That was a complete Not Fixable dossier and the task was **accepted on round 4**. Three rules come out of it:
+
+- **Your local control is a ceiling, never a forecast.** It runs on a model newer than the ones the screen grades, so an all-pass says the lever *might* be worth nothing and never that it is. Quote the number with the model attached, as "4 of 4 against Opus 5". The platform artifact for that task showed gpt-5.5 losing seven graded assertions to a trap the control had found 16 times out of 16
+- **Ship the round anyway when it independently improves the bundle.** More coverage, a real defect fixed, a path graded that was not graded before - all of that is true whatever the screen says, and it is what got the task accepted. The screen answers difficulty; you answer whether this bundle is better than the last one
+- **Try the classes in cost order, cheapest first.** Withholding a stated answer from the instruction costs no scope, no id budget and no reviewer risk, and it was the class that actually bit on the platform. Withhold a fact when its natural wrong reading is **silent** - it compiles, runs and looks plausible. State it when the wrong reading fails loudly on the first byte, because that is a debugging speed bump rather than difficulty
+
+A repeated `FAIL EASY` is not a strike count that terminates. Two strikes tells you to stop refining one theory; four screens answered with four genuinely different classes is four theories.
 
 **Step 3 — If trimming isn't enough, expand the PR scope** (Section 3 rules).
 

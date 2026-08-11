@@ -1,7 +1,7 @@
 ---
 id: oracle-bug-vs-pr-scope
-status: locally-verified
-last_verified: 2026-08-07
+status: platform-confirmed
+last_verified: 2026-08-11
 verified_by:
   - 20260805_080500__statrs-dev_statrs__315
   - 20260807_080545__tair-opensource_redisshake__1005
@@ -154,3 +154,34 @@ equal case, which is the one both "smaller" and "larger" framings forget.
 - Does the full library suite still pass on the fixed tree?
 - Do the graded tests now FAIL when the bug is reinstated? That is the only proof the coverage
   is real. Here 2 of 19 fail on reinstatement, where the previous suite passed the same tree.
+
+## Platform confirmation, 2026-08-11: a three-defect oracle correction was ACCEPTED
+
+redisshake 1005 shipped the widest case-1 correction this workspace has attempted and a reviewer
+accepted it. `golden.patch` carries **three** fixes beyond what PR 1005 does, each adapted from a
+different later PR in the same repo, each still unfixed on the project's default branch:
+
+| Defect | The correction |
+|---|---|
+| Valkey writes `-1` for a field that never expires; the PR gates on `expireAt != 0`, so the field is emitted with an `HPEXPIREAT` dated before 1970 and **deleted** | `expireAt != -1`, one condition |
+| The append-only reader takes a length-prefixed binary argument with a line-based read, cutting any value containing the line terminator | read the declared length plus the terminator |
+| The writer waits for in-flight bytes to drain before sending an entry larger than the target allowance, so a single oversized entry spins forever with nothing outstanding | wait only while the target owes an answer, then send with a warning |
+
+What made it survivable, and what to copy:
+
+- **The standard was read at its source, not inferred from the patch.** Valkey's own
+  `src/expire.h` defines `EXPIRY_NONE` as `-1`, `src/entry.c` returns it, the save path writes it
+  and the load path compares against it. The answers cited those files by name
+- **The default branch was checked first**, because an existing upstream fix would be the one to
+  adopt. It was byte-identical to what the patch produces, so the divergence was documented rather
+  than assumed
+- **Every one was declared** in its own numbered issue block and again under PR additions, with
+  the half of PR 1043 that was deliberately **not** taken and why (its other half sits on a
+  different later change, and importing that would alter the PR's feature)
+- **The file list did not grow for the first two.** A case-1 correction that changes a condition
+  is not scope expansion; one that adds a file is, and gets declared as such
+
+The trap this note opens with fired here too, in its strongest form: **all ten shipped graded
+tests agreed with the bug**, because every one had been written from what the oracle does. So did
+the first replacements written for them, until the format itself was read. If the tests and the
+oracle agree, that is not confirmation - they may share one ancestor.

@@ -1,0 +1,335 @@
+diff --git a/internal/commands/hash_field_cmds_test.go b/internal/commands/hash_field_cmds_test.go
+new file mode 100644
+index 0000000..a69e0de
+--- /dev/null
++++ b/internal/commands/hash_field_cmds_test.go
+@@ -0,0 +1,62 @@
++package commands
++
++import (
++	"testing"
++)
++
++// Redis 8 / Valkey 9 hash-field commands must route through the command table
++// with the key at index 1 so cluster slot calculation works.
++func TestHashFieldCommandKeys(t *testing.T) {
++	cases := []struct {
++		argv []string
++		keys []string
++	}{
++		{[]string{"HGETDEL", "myhash", "FIELDS", "1", "f1"}, []string{"myhash"}},
++		{[]string{"HGETEX", "myhash", "FIELDS", "1", "f1"}, []string{"myhash"}},
++		{[]string{"HSETEX", "myhash", "EX", "100", "FIELDS", "1", "f1", "v1"}, []string{"myhash"}},
++	}
++	for _, c := range cases {
++		cmd, group, keys, _ := CalcKeys(c.argv)
++		if group != "HASH" {
++			t.Errorf("CalcKeys(%v): group=%q, want HASH", c.argv, group)
++		}
++		if !testEq(keys, c.keys) {
++			t.Errorf("CalcKeys(%v): cmd=%s keys=%v, want %v", c.argv, cmd, keys, c.keys)
++		}
++	}
++}
++
++// Redis 8.2 stream commands must route with the key at argument index 1.
++func TestStreamCommandKeys(t *testing.T) {
++	cases := []struct {
++		argv  []string
++		group string
++		keys  []string
++	}{
++		{[]string{"XACKDEL", "mystream", "grp", "id1"}, "STREAM", []string{"mystream"}},
++		{[]string{"XDELEX", "mystream", "id1", "id2"}, "STREAM", []string{"mystream"}},
++	}
++	for _, c := range cases {
++		cmd, group, keys, _ := CalcKeys(c.argv)
++		if group != c.group {
++			t.Errorf("CalcKeys(%v): group=%q, want %q", c.argv, group, c.group)
++		}
++		if !testEq(keys, c.keys) {
++			t.Errorf("CalcKeys(%v): cmd=%s keys=%v, want %v", c.argv, cmd, keys, c.keys)
++		}
++	}
++}
++
++// The legacy hash-field-TTL commands are emitted during RDB rewrite and appear
++// in live traffic, so they must stay registered in the command table.
++func TestHashFieldTTLCommandsRegistered(t *testing.T) {
++	legacy := []string{
++		"HEXPIRE", "HEXPIREAT", "HPEXPIRE", "HPEXPIREAT",
++		"HTTL", "HPTTL", "HEXPIRETIME", "HPEXPIRETIME", "HPERSIST",
++	}
++	for _, name := range legacy {
++		if _, ok := redisCommands[name]; !ok {
++			t.Errorf("command %s missing from redisCommands", name)
++		}
++	}
++}
+diff --git a/internal/rdb/types/hash_valkey_test.go b/internal/rdb/types/hash_valkey_test.go
+new file mode 100644
+index 0000000..793733a
+--- /dev/null
++++ b/internal/rdb/types/hash_valkey_test.go
+@@ -0,0 +1,261 @@
++package types
++
++import (
++	"bytes"
++	"encoding/binary"
++	"testing"
++)
++
++type valkeyEntry struct {
++	field, value string
++	ttlMs        int64
++}
++
++// encStr writes a short RDB string (6-bit length prefix, value < 64 bytes).
++func encStr(buf *bytes.Buffer, s string) {
++	if len(s) >= 64 {
++		panic("encStr helper only handles short strings")
++	}
++	buf.WriteByte(byte(len(s)))
++	buf.WriteString(s)
++}
++
++// buildValkeyBuf encodes entries in Valkey 9.0 type-22 hash format:
++// count byte, then per entry: field (string), value (string), 8-byte LE ms TTL.
++func buildValkeyBuf(entries []valkeyEntry) *bytes.Buffer {
++	var buf bytes.Buffer
++	buf.WriteByte(byte(len(entries)))
++	for _, e := range entries {
++		encStr(&buf, e.field)
++		encStr(&buf, e.value)
++		binary.Write(&buf, binary.LittleEndian, e.ttlMs) //nolint:errcheck
++	}
++	return &buf
++}
++
++// join concatenates a command slice into a space-separated string.
++func join(argv []string) string {
++	out := ""
++	for i, a := range argv {
++		if i > 0 {
++			out += " "
++		}
++		out += a
++	}
++	return out
++}
++
++// collectCmds drains a Rewrite channel into a slice of joined strings.
++func collectCmds(o interface{ Rewrite() <-chan RedisCmd }) []string {
++	var out []string
++	for cmd := range o.Rewrite() {
++		out = append(out, join(cmd))
++	}
++	return out
++}
++
++// Valkey 9.0 stores TTL-bearing hashes as RDB_TYPE_HASH_2 (type byte 22):
++// size, then per entry field, value and an 8-byte millisecond TTL. This layout
++// differs from Redis 8.0's pre-GA metadata format that shares the same type
++// byte, so decoding must key off the Valkey flag.
++func TestReadHashValkey(t *testing.T) {
++	const ttl int64 = 1893456000000 // fixed ms timestamp
++
++	var buf bytes.Buffer
++	buf.WriteByte(2) // two fields
++	encStr(&buf, "f1")
++	encStr(&buf, "v1")
++	binary.Write(&buf, binary.LittleEndian, ttl)         //nolint:errcheck
++	encStr(&buf, "f2")
++	encStr(&buf, "v2")
++	binary.Write(&buf, binary.LittleEndian, int64(0)) // no expiration //nolint:errcheck
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(bytes.NewReader(buf.Bytes()), "myhash", 22)
++
++	cmds := collectCmds(o)
++
++	want := []string{
++		"del myhash",
++		"hset myhash f1 v1",
++		"hpexpireat myhash 1893456000000 fields 1 f1",
++		"hset myhash f2 v2",
++	}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i := range want {
++		if cmds[i] != want[i] {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], want[i])
++		}
++	}
++}
++
++// When all field TTLs are zero, only del and hset commands are emitted.
++func TestReadHashValkeyZeroTTL(t *testing.T) {
++	entries := []valkeyEntry{{"a", "1", 0}, {"b", "2", 0}}
++	buf := buildValkeyBuf(entries)
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "h", 22)
++
++	cmds := collectCmds(o)
++	want := []string{"del h", "hset h a 1", "hset h b 2"}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}
++
++// When all fields have a non-zero TTL, every field produces both hset and hpexpireat.
++func TestReadHashValkeyAllExpiring(t *testing.T) {
++	entries := []valkeyEntry{{"x", "p", 1000}, {"y", "q", 2000}}
++	buf := buildValkeyBuf(entries)
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "h", 22)
++
++	cmds := collectCmds(o)
++	want := []string{
++		"del h",
++		"hset h x p",
++		"hpexpireat h 1000 fields 1 x",
++		"hset h y q",
++		"hpexpireat h 2000 fields 1 y",
++	}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}
++
++// A single-field Valkey hash with TTL produces exactly three commands.
++func TestReadHashValkeySingleField(t *testing.T) {
++	const ttl int64 = 9999999999999
++	buf := buildValkeyBuf([]valkeyEntry{{"f", "v", ttl}})
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "k", 22)
++
++	cmds := collectCmds(o)
++	want := []string{
++		"del k",
++		"hset k f v",
++		"hpexpireat k 9999999999999 fields 1 f",
++	}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}
++
++// A single-field Valkey hash with zero TTL produces exactly del and hset.
++func TestReadHashValkeySingleFieldNoTTL(t *testing.T) {
++	buf := buildValkeyBuf([]valkeyEntry{{"f", "v", 0}})
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "k", 22)
++
++	cmds := collectCmds(o)
++	want := []string{"del k", "hset k f v"}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}
++
++// Three-field hash with alternating TTL presence.
++func TestReadHashValkeyThreeFields(t *testing.T) {
++	entries := []valkeyEntry{
++		{"a", "1", 5000},
++		{"b", "2", 0},
++		{"c", "3", 7000},
++	}
++	buf := buildValkeyBuf(entries)
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "h", 22)
++
++	cmds := collectCmds(o)
++	want := []string{
++		"del h",
++		"hset h a 1",
++		"hpexpireat h 5000 fields 1 a",
++		"hset h b 2",
++		"hset h c 3",
++		"hpexpireat h 7000 fields 1 c",
++	}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}
++
++// Large millisecond timestamps must be preserved without truncation.
++func TestReadHashValkeyLargeTTL(t *testing.T) {
++	const largeTTL int64 = 4102444800000 // year 2100 in ms
++	buf := buildValkeyBuf([]valkeyEntry{{"f", "v", largeTTL}})
++
++	o := new(HashObject)
++	o.SetIsValkey(true)
++	o.LoadFromBuffer(buf, "k", 22)
++
++	cmds := collectCmds(o)
++	if len(cmds) != 3 {
++		t.Fatalf("want 3 commands, got %d: %v", len(cmds), cmds)
++	}
++	want := "hpexpireat k 4102444800000 fields 1 f"
++	if cmds[2] != want {
++		t.Errorf("cmd[2] = %q, want %q", cmds[2], want)
++	}
++}
++
++// ParseObject must propagate the Valkey flag so type-22 hashes use the
++// Valkey field/value/TTL layout rather than the Redis pre-GA format.
++func TestParseObjectValkeyType22(t *testing.T) {
++	const ttl int64 = 1700000000000
++	buf := buildValkeyBuf([]valkeyEntry{{"fld", "val", ttl}})
++
++	o := ParseObject(buf, 22, "mykey", true)
++	cmds := collectCmds(o)
++
++	want := []string{
++		"del mykey",
++		"hset mykey fld val",
++		"hpexpireat mykey 1700000000000 fields 1 fld",
++	}
++	if len(cmds) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(cmds), cmds, len(want), want)
++	}
++	for i, w := range want {
++		if cmds[i] != w {
++			t.Errorf("cmd[%d] = %q, want %q", i, cmds[i], w)
++		}
++	}
++}

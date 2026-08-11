@@ -1,10 +1,11 @@
 ---
 id: difficulty-levers-must-discriminate
 status: locally-verified
-last_verified: 2026-08-07
+last_verified: 2026-08-11
 verified_by:
   - 20260803_111822__xlwings_xlwings__2719
   - 20260805_080500__statrs-dev_statrs__315
+  - 20260807_080545__tair-opensource_redisshake__1005
 evidence: "15 candidate behaviours run against 6 independent implementations of the same feature. 13 produced identical results everywhere and were discarded. The 2 that separated implementations were shipped, and one of them is a bug the upstream PR author wrote"
 applies_to:
   languages: [any]
@@ -142,3 +143,40 @@ caught by exactly the new test, which is what makes the row above a measurement 
 
 See also [[raising-difficulty-on-a-wrapper-task]], [[non-derivable-private-names]],
 [[diagnosing-platform-only-failures]], [[source-pr-cross-check]].
+
+## The lever-class catalogue, with what each one measured (redisshake 1005)
+
+Four rounds, four classes, deliberately different each time so a zero would mean something. All
+four returned **0 of 4 against a local control**, and the task was then **accepted** carrying the
+fourth. Read the classes as a search order, and read every number in the last column as a ceiling
+(LEDGER L35, L51).
+
+| Class | What it does | Measured | Worth trying again? |
+|---|---|---|---|
+| **More scope** | adapt a related later PR that adds surface to specify | 0 of 4 | Last resort. Once a format is written down, implementing it is mechanical. Same finding as statrs 315 and LEDGER L50 |
+| **Less handed over** | delete the sentences where the instruction states the answer to its own hard parts | 0 of 4 locally, and **it is the one that actually bit on the platform** | **Yes, first.** Costs no id budget, no scope, no reviewer risk |
+| **A real upstream defect** | adapt a later PR that fixes a genuine bug, so the natural implementation is the wrong one | 0 of 4 | Yes. Cheap and it improves the bundle whatever the screen says |
+| **A liveness bug** | a loop condition that can never become false, so nothing fails, nothing logs, the run just stops | 0 of 4 | Yes, and it is the class that most deserves a re-measure against the graded models |
+
+## Which withheld facts are levers, and which are not
+
+The round-2 withholding was written off in this task's own answers as *"only one sensible value
+for a reserved marker in a signed millisecond field, and I am not going to claim otherwise."* The
+platform artifact then showed gpt-5.5 losing **seven graded assertions** to exactly that marker.
+
+The dismissal was not wrong about the reasoning, it was wrong about the question. The test is not
+*is there a sensible value*, it is:
+
+> **Does the natural wrong reading compile, run, and produce output that looks plausible?**
+
+`-1` in a signed 8-byte field read as unsigned is `18446744073709551615`. That is not zero, so a
+`!= 0` guard passes, the code compiles, the test data flows, and the field gets an expiry instead
+of being left alone. Nothing crashes. That is a lever.
+
+Contrast it with the same task's header-length digits, also withheld, which no implementation ever
+got wrong: getting that wrong fails immediately and loudly on the first byte, so the implementer
+fixes it in the same minute they write it.
+
+**So the rule for withholding: keep it withheld when the wrong reading is silent, and state it
+when the wrong reading is loud.** A loud wrong reading is not difficulty, it is a debugging speed
+bump, and stating it costs nothing.

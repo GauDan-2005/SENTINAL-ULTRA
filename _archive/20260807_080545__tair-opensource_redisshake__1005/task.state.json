@@ -1,0 +1,24 @@
+{
+  "original_dir": "20260807_080545__tair-opensource_redisshake__1005",
+  "submission_id": "e115d5ec-345a-4234-bf45-ce9bbce9f0b1",
+  "repo": "tair-opensource/redisshake",
+  "pr": "1005",
+  "verdict": "Fixable",
+  "status": "accepted",
+  "claimed": "2026-08-07",
+  "rounds": 4,
+  "last_upload": "2026-08-09",
+  "checks": {
+    "static": "pass",
+    "prescriptiveness": "pass",
+    "difficulty": "blocked FAIL EASY on rounds 0-3; no round-4 result supplied",
+    "oracle": "pass",
+    "quality": "pass (verdict ok; test_coverage 3.5 was the only mark-down, closed in round 3)"
+  },
+  "blocking": null,
+  "next_action": "CLOSED. Accepted 2026-08-11 on round 4, zip 64436d2f894104af. Archived under _archive/. No further action.",
+  "zip_sha256": "64436d2f894104af1831c38df17bde88357a3a0d811c59ec110bf96da12b2c1c",
+  "outcome": "accepted",
+  "closed": "2026-08-11",
+  "submission_quality_score": null
+}

@@ -148,6 +148,18 @@ A strike count of **2 forces the remove-the-dependency path**. It is not a nudge
 
 **5. Update `submission_answer.txt` - this is the step that gets skipped.** The file has to describe the bundle you are actually uploading now, not the one you uploaded last week. Do not regenerate it from scratch and do not leave it alone: edit the answers your changes affected and add the ones the changes created, and leave everything else as it stands.
 
+**Re-derive every count in Files Changed from the live bundle, never from last round's prose.** This is the one place the answers audit was not looking, and the drift shipped inside an **accepted** submission: redisshake 1005's Files Changed entry 5 read `fail_to_pass 10 to 14 and pass_to_pass 1 to 11` against a live config of **20 and 13**, entry 4 named three graded files against **seven**, and the post-fix checkbox one line below read `counted: 20`, so the file contradicted itself on the same page. Nothing caught it, including the reviewer. A per-file "changed X to Y" sentence gets written in round 0 and then never re-read, because the round that changes X to Z edits the config and the issue block and considers itself done.
+
+```bash
+# measure first, then read every count in the answers against these
+python3 -c "import json;g=json.load(open('tasks/<name>/work/tests/config.json'))['grading'];print('f2p',len(g['fail_to_pass']),'p2p',len(g['pass_to_pass']))"
+grep -c '^new file mode' tasks/<name>/work/tests/tests.patch      # graded files created
+grep -c '^diff --git'   tasks/<name>/work/solution/golden.patch   # golden file count
+grep -nE '[0-9]+ to [0-9]+|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b' tasks/<name>/answers/submission_answer.txt
+```
+
+**The spelled-out half of that grep is the half that matters** - three of redisshake's four stale numbers were words, not digits, so a numeric grep could never have found them. And re-decide the `Send to reviewer:` line every round: that accepted file still read `Send to reviewer: No ... the checks have not run against it` while the task sat in front of a reviewer.
+
 **Supersede, do not only append.** A round that replaces a mechanism makes every earlier block describing that mechanism false, and appending a new block does not repair them - the file then describes two mutually exclusive verifiers, which is what a reviewer reads. Before adding anything, grep the answers file for the mechanism you replaced and edit **every** block that still describes it, noting the superseded design in a single clause rather than deleting the history. libcrux shipped a round where issue 2 and Files Changed entry 2 still described a git-based test-tree restore that a later entry in the same file explained had been removed. List the greps you ran in `task.md`, so the next round can see what was checked.
 
 **A verdict change rewrites the whole file, so archive the old one first.** Moving between paths changes the template, so "edit it, do not regenerate it" cannot be followed literally, because the new file asks different questions. Copy the current file to `answers/superseded/submission_answer.<old-verdict>.txt` before writing the new one, and make sure every numbered issue block also exists in `task.md`. `tasks/` is gitignored, so the overwrite is the only copy there was. libcrux 1165 moved from Fixable to Invalid in round 5 and 17 issue blocks stopped existing; the substance survived only because `task.md` carried it in prose. Every number in the answers file has to be re-derivable from `task.md` for the same reason: libcrux's revision figure silently reverted twice, and the arithmetic checks pass on a reverted value.
@@ -182,6 +194,17 @@ Into `task.md`: what the feedback said, the freshness-check result, what you cha
 ```
 
 The answers file's "all revisions" figure is **copied from the last Cumulative cell**, not recalled and not re-estimated. Then update the status and the round number in `INDEX.md`. The record is what makes the next round cheap; without it you re-derive the history every time.
+
+**And the open-caveat table, which is the one that stops a limit quietly turning into its opposite.** A caveat has no owner: a finding gets a file:line and a probe, a caveat gets a clause at the end of a paragraph that each round writes a little shorter because it was in the last one too. redisshake 1005 stated "the control runs on a newer model than the screen, so 4 of 4 is a ceiling not a forecast" in round 2, demoted it in round 3, and in round 4 wrote "two independent measurement systems now agree" with nothing measured in between. The platform then refuted it.
+
+```
+## Open caveats
+| Caveat | Stated in round | What would retire it | Retired? |
+|---|---|---|---|
+| control model is newer than the graded models, so n of n is a ceiling | 2 | a control on the graded models, or an artifact showing a graded model failing | NO, open at round 4 |
+```
+
+Two habits go with the table. **Make the qualifier part of the value** - write "4 of 4 against Opus 5", never "4 of 4", so the number cannot be quoted bare three rounds later. And before shipping, grep the round for a caveat argued away rather than measured away: `grep -niE 'no longer buys|now agree|is settled|conclusively|the earlier hedge' tasks/<name>/task.md tasks/<name>/answers/submission_answer.txt`. Every hit needs a measurement on the same line or the sentence comes out. See `learning/stated-caveats-decay.md`.
 
 Then hand the user the changed answers, in the platform's order, saying which ones moved since the last round so they only have to re-paste those.
 

@@ -1,7 +1,7 @@
 ---
 id: airgapped-means-no-egress-not-no-sockets
 status: platform-confirmed
-last_verified: 2026-08-09
+last_verified: 2026-08-11
 verified_by:
   - 20260808_213817__openziti_ziti-sdk-c__668
   - 20260807_080545__tair-opensource_redisshake__1005
@@ -101,3 +101,29 @@ exactly what the coverage axis is looking for.
 
 See also [[quality-check-criteria]], [[probe-the-instruction-you-already-wrote]],
 [[cmake-reconfigure-needs-network]], [[oracle-bug-vs-pr-scope]].
+
+## Second confirmation, in Go, and this one was ACCEPTED (redisshake 1005, 2026-08-11)
+
+Same reasoning error, same fix, different language, and it closed the only mark-down the agentic
+judge ever gave the task. The judge scored `test_coverage` 3.5 with the reason spelled out: *a
+solution that adds the parser but never wires the scan path could pass.* That gap had been
+**found and disclosed twice** in Comments for Reviewer on the grounds that the path needs a live
+server. Wrong for the second time, and third confirmation of LEDGER L18: describing a gap is not
+closing it, and the judge does not read your disclosure as a mitigation.
+
+The Go shape, which is shorter than the libuv one:
+
+- `net.Listen("tcp", "127.0.0.1:0")` inside the test process, read the port back off
+  `l.Addr()`, hand the reader `127.0.0.1:<port>` as its address
+- Speak only the handful of commands the client actually sends. **The client requires `+PONG` to
+  `PING`** - answering `+OK` kills the connection instantly and the test dies with empty output,
+  which reads exactly like a hang
+- Answer `INFO server` the way the real server answers, then hand back a `DUMP` payload **whose
+  layout only decodes correctly if that answer reached the decoder**. That is what makes it grade
+  the wiring rather than the parsing
+- `go` the accept loop, close per response, and let the test's own cleanup drop the listener
+
+**Both directions get a test.** The Valkey reply case fails when `restore()` is wired to a fixed
+`false`; the Redis reply case passes at base, so it guards the reverse mistake of using the new
+layout for everything. Run it five times before believing it, because a socket plus goroutines is
+where flakiness would live if there were any.

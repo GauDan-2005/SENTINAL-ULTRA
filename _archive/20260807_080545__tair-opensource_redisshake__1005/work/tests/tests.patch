@@ -1,0 +1,1381 @@
+diff --git a/internal/aof/sentinel_aof_bulk_test.go b/internal/aof/sentinel_aof_bulk_test.go
+new file mode 100644
+index 0000000..77c64aa
+--- /dev/null
++++ b/internal/aof/sentinel_aof_bulk_test.go
+@@ -0,0 +1,157 @@
++package aof
++
++import (
++	"bytes"
++	"context"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"testing"
++
++	"RedisShake/internal/entry"
++)
++
++// An append-only file is a stream of RESP commands, and the arguments of those commands are
++// length prefixed because they are allowed to contain anything. A RESTORE carries a raw
++// snapshot value, which is binary and routinely contains the same bytes that end a line.
++//
++// The loader ends the process on a malformed file, so each load runs in a child copy of this
++// test binary and the parent reads the result off its output.
++
++const (
++	sentinelAOFBulkChildFlag = "SENTINEL_AOFBULK_CHILD"
++	sentinelAOFBulkChildPath = "SENTINEL_AOFBULK_PATH"
++	sentinelAOFBulkArg       = "SENTINELARG "
++	sentinelAOFBulkStatus    = "SENTINELSTATUS "
++)
++
++// sentinelRESP builds one RESP command, length prefixing every argument exactly as the wire
++// format does.
++func sentinelRESP(argv ...string) []byte {
++	var b bytes.Buffer
++	fmt.Fprintf(&b, "*%d\r\n", len(argv))
++	for _, a := range argv {
++		fmt.Fprintf(&b, "$%d\r\n", len(a))
++		b.WriteString(a)
++		b.WriteString("\r\n")
++	}
++	return b.Bytes()
++}
++
++// TestSentinelAOFBulkHelper is the child half of sentinelLoadAOF and is not graded.
++func TestSentinelAOFBulkHelper(t *testing.T) {
++	if os.Getenv(sentinelAOFBulkChildFlag) != "1" {
++		t.Skip("helper process for sentinelLoadAOF")
++	}
++	ch := make(chan *entry.Entry, 4096)
++	ld := NewLoader(os.Getenv(sentinelAOFBulkChildPath), ch)
++	go func() {
++		defer close(ch)
++		status := ld.LoadSingleAppendOnlyFile(context.Background(), 0)
++		os.Stderr.WriteString(sentinelAOFBulkStatus + strconv.Itoa(status) + "\n")
++	}()
++	var out bytes.Buffer
++	for e := range ch {
++		out.WriteString(sentinelAOFBulkArg)
++		out.WriteString(strconv.Itoa(len(e.Argv)))
++		for _, a := range e.Argv {
++			out.WriteString(" ")
++			out.WriteString(strconv.Quote(a))
++		}
++		out.WriteString("\n")
++	}
++	fmt.Print(out.String())
++}
++
++// sentinelLoadAOF writes an append-only file, loads it in a child process and returns the
++// argument lists the loader produced.
++func sentinelLoadAOF(t *testing.T, data []byte) [][]string {
++	t.Helper()
++	path := filepath.Join(t.TempDir(), "appendonly.aof.1.incr.aof")
++	if err := os.WriteFile(path, data, 0o600); err != nil {
++		t.Fatalf("could not write the test file: %v", err)
++	}
++	cmd := exec.Command(os.Args[0], "-test.run=^TestSentinelAOFBulkHelper$")
++	cmd.Env = append(os.Environ(),
++		sentinelAOFBulkChildFlag+"=1",
++		sentinelAOFBulkChildPath+"="+path,
++	)
++	raw, _ := cmd.CombinedOutput()
++	var got [][]string
++	for _, line := range strings.Split(string(raw), "\n") {
++		line = strings.TrimRight(line, "\r")
++		if !strings.HasPrefix(line, sentinelAOFBulkArg) {
++			continue
++		}
++		rest := strings.TrimPrefix(line, sentinelAOFBulkArg)
++		sp := strings.SplitN(rest, " ", 2)
++		n, err := strconv.Atoi(sp[0])
++		if err != nil || len(sp) < 2 {
++			continue
++		}
++		var argv []string
++		remainder := sp[1]
++		for i := 0; i < n; i++ {
++			q, err := strconv.QuotedPrefix(remainder)
++			if err != nil {
++				t.Fatalf("could not read argument %d back from %q", i, remainder)
++			}
++			u, err := strconv.Unquote(q)
++			if err != nil {
++				t.Fatalf("could not unquote argument %d", i)
++			}
++			argv = append(argv, u)
++			remainder = strings.TrimPrefix(remainder[len(q):], " ")
++		}
++		got = append(got, argv)
++	}
++	if len(got) == 0 {
++		t.Fatalf("the loader produced no commands at all. child output:\n%s", string(raw))
++	}
++	return got
++}
++
++// A snapshot value inside a RESTORE is binary. It contains the byte pair that ends a line,
++// and it has to survive the trip whole, because the argument said how long it was.
++func TestSentinelAOFKeepsBinaryArgumentsWhole(t *testing.T) {
++	payload := "\x00\x03abc\r\nmore\rand\nmore\x0b\x00\xc0\x42"
++	got := sentinelLoadAOF(t, sentinelRESP("RESTORE", "bin", "0", payload))
++	if len(got) != 1 {
++		t.Fatalf("got %d commands, want 1: %q", len(got), got)
++	}
++	if len(got[0]) != 4 {
++		t.Fatalf("got %d arguments %q, want 4", len(got[0]), got[0])
++	}
++	if got[0][3] != payload {
++		t.Errorf("the value argument came back as %q, want %q", got[0][3], payload)
++	}
++}
++
++// Whatever the loader does with one such argument, it has to leave the stream positioned for
++// the next command, so a binary argument must not swallow or strand the bytes after it.
++func TestSentinelAOFResumesAfterABinaryArgument(t *testing.T) {
++	var f bytes.Buffer
++	f.Write(sentinelRESP("RESTORE", "bin", "0", "head\r\n\x00tail"))
++	f.Write(sentinelRESP("SET", "after", "value"))
++	got := sentinelLoadAOF(t, f.Bytes())
++	if len(got) != 2 {
++		t.Fatalf("got %d commands, want 2: %q", len(got), got)
++	}
++	if got[1][0] != "SET" || got[1][1] != "after" || got[1][2] != "value" {
++		t.Errorf("the command after the binary one came back as %q, want [SET after value]", got[1])
++	}
++}
++
++// An ordinary text command still loads the way it always did.
++func TestSentinelAOFStillReadsPlainCommands(t *testing.T) {
++	got := sentinelLoadAOF(t, sentinelRESP("SET", "plain", "value"))
++	if len(got) != 1 || len(got[0]) != 3 {
++		t.Fatalf("got %q, want one three argument command", got)
++	}
++	if got[0][0] != "SET" || got[0][1] != "plain" || got[0][2] != "value" {
++		t.Errorf("got %q, want [SET plain value]", got[0])
++	}
++}
+diff --git a/internal/client/sentinel_server_type_test.go b/internal/client/sentinel_server_type_test.go
+new file mode 100644
+index 0000000..7a965f5
+--- /dev/null
++++ b/internal/client/sentinel_server_type_test.go
+@@ -0,0 +1,85 @@
++package client
++
++import (
++	"strings"
++	"testing"
++)
++
++// The scan path has no file header to read, so it has to ask the server what it is. These
++// tests feed the reply of a real INFO server call and check the answer. The replies below
++// are the shape the two servers actually send, section header and all.
++
++// sentinelValkeyInfo is the reply a Valkey 9 server sends to that call, kept in the order
++// and shape it arrives in.
++const sentinelValkeyInfo = `# Server
++redis_version:7.2.4
++server_name:valkey
++valkey_version:9.0.0
++valkey_release_stage:ga
++redis_git_sha1:00000000
++redis_git_dirty:0
++server_mode:standalone
++os:Linux 6.2.0 x86_64
++arch_bits:64
++`
++
++// sentinelRedisInfo is what a Redis 8 server answers.
++const sentinelRedisInfo = `# Server
++redis_version:8.0.1
++redis_git_sha1:00000000
++redis_git_dirty:0
++redis_build_id:aa1d3c8e
++redis_mode:standalone
++os:Linux 6.2.0 x86_64
++arch_bits:64
++`
++
++// A Valkey server has to come back as Valkey, for the reply it really sends rather than for a
++// trimmed one. Getting this backwards means every hash the scan path restores from that server
++// is decoded with the wrong layout.
++func TestSentinelServerTypeValkeyReportsValkey(t *testing.T) {
++	// once as written, and once with the line endings the wire actually uses
++	for _, reply := range []string{
++		sentinelValkeyInfo,
++		strings.ReplaceAll(sentinelValkeyInfo, "\n", "\r\n"),
++	} {
++		got, err := ParseServerVersion(reply)
++		if err != nil {
++			t.Fatalf("reading a Valkey reply returned an error: %v", err)
++		}
++		if !got {
++			t.Errorf("a Valkey server was read as Redis. Its reply carries a redis_version line for compatibility as well as its own, so the whole reply has to be considered")
++		}
++	}
++}
++
++// A Redis server has to come back as Redis.
++func TestSentinelServerTypeRedisReportsRedis(t *testing.T) {
++	got, err := ParseServerVersion(sentinelRedisInfo)
++	if err != nil {
++		t.Fatalf("reading a Redis reply returned an error: %v", err)
++	}
++	if got {
++		t.Errorf("a Redis server was read as Valkey")
++	}
++}
++
++// A reply with no version line at all is not an answer, so it has to be reported as an error
++// rather than quietly counted as one of the two.
++func TestSentinelServerTypeReportsMissingVersion(t *testing.T) {
++	for _, reply := range []string{"", "# Server\nos:Linux\narch_bits:64\n"} {
++		if _, err := ParseServerVersion(reply); err == nil {
++			t.Errorf("a reply with no version line was accepted: %q", reply)
++		}
++	}
++}
++
++// A version line belonging to another section must not be mistaken for the server's own. A
++// replica reports its primary's version under a different key, and that key ends in the same
++// text the server's own key does.
++func TestSentinelServerTypeIgnoresOtherVersionKeys(t *testing.T) {
++	reply := "# Replication\nrole:replica\nmaster_redis_version:7.2.4\nslave_read_only:1\n"
++	if _, err := ParseServerVersion(reply); err == nil {
++		t.Errorf("master_redis_version was taken for the server's own version line")
++	}
++}
+diff --git a/internal/commands/sentinel_hash_stream_cmds_test.go b/internal/commands/sentinel_hash_stream_cmds_test.go
+new file mode 100644
+index 0000000..527a9ec
+--- /dev/null
++++ b/internal/commands/sentinel_hash_stream_cmds_test.go
+@@ -0,0 +1,115 @@
++package commands
++
++import (
++	"testing"
++)
++
++// sentinelSameKeys reports whether two key lists match.
++func sentinelSameKeys(a, b []string) bool {
++	if len(a) != len(b) {
++		return false
++	}
++	for i := range a {
++		if a[i] != b[i] {
++			return false
++		}
++	}
++	return true
++}
++
++// sentinelSameIndexes reports whether two index lists match.
++func sentinelSameIndexes(a, b []int) bool {
++	if len(a) != len(b) {
++		return false
++	}
++	for i := range a {
++		if a[i] != b[i] {
++			return false
++		}
++	}
++	return true
++}
++
++// sentinelIndexOneReference asks the table where the key sits for a command that
++// has always kept its key in argument position one. Whatever the table reports
++// for that command is what a newly routed command with its key in the same
++// place has to report, so the check does not depend on how positions are
++// numbered.
++func sentinelIndexOneReference(t *testing.T) []int {
++	t.Helper()
++	_, group, keys, indexes := CalcKeys([]string{"HGET", "refhash", "f1"})
++	if group != "HASH" || !sentinelSameKeys(keys, []string{"refhash"}) {
++		t.Fatalf("the reference command HGET is not routed as expected: group=%q keys=%v", group, keys)
++	}
++	return indexes
++}
++
++type sentinelRouting struct {
++	argv  []string
++	group string
++	keys  []string
++}
++
++func sentinelCheckRouting(t *testing.T, cases []sentinelRouting) {
++	t.Helper()
++	want := sentinelIndexOneReference(t)
++	for _, c := range cases {
++		name, group, keys, indexes := CalcKeys(c.argv)
++		if group != c.group {
++			t.Errorf("%v routed to group %q, want %q", c.argv, group, c.group)
++		}
++		if !sentinelSameKeys(keys, c.keys) {
++			t.Errorf("%v reported keys %v, want %v (command read as %s)", c.argv, keys, c.keys, name)
++		}
++		if !sentinelSameIndexes(indexes, want) {
++			t.Errorf("%v reported key positions %v, want %v, the same place HGET reports", c.argv, indexes, want)
++		}
++	}
++}
++
++// The Redis 8 hash commands have to reach the table, report the hash group and
++// point at the key in position one, or a cluster run sends them to the wrong
++// node.
++func TestSentinelHashFieldCommandsRouteWithKeyAtIndexOne(t *testing.T) {
++	sentinelCheckRouting(t, []sentinelRouting{
++		{[]string{"HGETDEL", "myhash", "FIELDS", "1", "f1"}, "HASH", []string{"myhash"}},
++		{[]string{"HGETEX", "myhash", "FIELDS", "1", "f1"}, "HASH", []string{"myhash"}},
++		{[]string{"HSETEX", "myhash", "EX", "100", "FIELDS", "1", "f1", "v1"}, "HASH", []string{"myhash"}},
++	})
++}
++
++// The Redis 8.2 stream commands are routed the same way, under the stream
++// group.
++func TestSentinelStreamCommandsRouteWithKeyAtIndexOne(t *testing.T) {
++	sentinelCheckRouting(t, []sentinelRouting{
++		{[]string{"XACKDEL", "mystream", "grp", "id1"}, "STREAM", []string{"mystream"}},
++		{[]string{"XDELEX", "mystream", "id1", "id2"}, "STREAM", []string{"mystream"}},
++	})
++}
++
++// The older hash field expiry commands were already routed and have to stay
++// that way, because live traffic carries them and a hash rewrite emits
++// hpexpireat. This one passes before the change as well as after it.
++func TestSentinelLegacyHashTTLCommandsStillRoute(t *testing.T) {
++	legacy := []string{
++		"HEXPIRE", "HEXPIREAT", "HPEXPIRE", "HPEXPIREAT",
++		"HTTL", "HPTTL", "HEXPIRETIME", "HPEXPIRETIME", "HPERSIST",
++	}
++	want := sentinelIndexOneReference(t)
++	for _, name := range legacy {
++		if _, ok := redisCommands[name]; !ok {
++			t.Errorf("%s is no longer in the command table", name)
++			continue
++		}
++		_, group, keys, indexes := CalcKeys([]string{name, "myhash", "FIELDS", "1", "f1"})
++		if group != "HASH" {
++			t.Errorf("%s routed to group %q, want HASH", name, group)
++		}
++		if !sentinelSameKeys(keys, []string{"myhash"}) {
++			t.Errorf("%s reported keys %v, want [myhash]", name, keys)
++		}
++		if !sentinelSameIndexes(indexes, want) {
++			t.Errorf("%s reported key positions %v, want %v, the same place HGET reports", name, indexes, want)
++		}
++	}
++}
+diff --git a/internal/rdb/sentinel_valkey_rdb_test.go b/internal/rdb/sentinel_valkey_rdb_test.go
+new file mode 100644
+index 0000000..84a6c46
+--- /dev/null
++++ b/internal/rdb/sentinel_valkey_rdb_test.go
+@@ -0,0 +1,428 @@
++package rdb
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"testing"
++
++	"RedisShake/internal/entry"
++)
++
++// These tests drive the loader the way a replication run does: they hand it a
++// whole RDB file and read back the commands it produces. Nothing here reaches
++// into the decoder, so any wiring that turns a Valkey file into the right
++// command stream passes.
++//
++// The loader ends the process when it meets a file it cannot read, so every
++// load runs inside a child copy of this test binary. That keeps one unreadable
++// file from ending the whole package run, and it lets a failure name the test
++// that caused it.
++
++const (
++	sentinelRDBChildFlag = "SENTINEL_RDB_CHILD"
++	sentinelRDBChildPath = "SENTINEL_RDB_PATH"
++	sentinelRDBCmdPrefix = "SENTINELCMD "
++	sentinelRDBDoneLine  = "SENTINELDONE"
++)
++
++// sentinelNoExpiry is the reserved marker the Valkey layout uses for a field that never
++// expires. The Redis layout further down spells the same idea with a different value, which
++// is why the two payload builders read this field differently.
++const sentinelNoExpiry int64 = -1
++
++// sentinelField is one hash field with its millisecond expiry.
++type sentinelField struct {
++	name  string
++	value string
++	ttlMs int64
++}
++
++// sentinelKeyBlock is one key as it sits in an RDB file.
++type sentinelKeyBlock struct {
++	name     string
++	typeByte byte
++	payload  []byte
++	expireMs int64
++}
++
++// sentinelWriteRDBLen writes a length the way the format does. Values under 64 fit in one
++// byte with the top two bits clear. Anything larger up to 16383 uses the two byte form,
++// flagged by the top two bits being 01. A reader that just takes the next byte agrees with
++// this only for the small case, which is the point of the large fixtures below.
++func sentinelWriteRDBLen(buf *bytes.Buffer, n int) {
++	switch {
++	case n < 64:
++		buf.WriteByte(byte(n))
++	case n < 16384:
++		buf.WriteByte(0x40 | byte(n>>8))
++		buf.WriteByte(byte(n))
++	default:
++		panic("sentinel helper only encodes lengths below 16384")
++	}
++}
++
++// sentinelWriteStr writes an RDB string, length prefix then bytes.
++func sentinelWriteStr(buf *bytes.Buffer, s string) {
++	sentinelWriteRDBLen(buf, len(s))
++	buf.WriteString(s)
++}
++
++// sentinelWriteLen64 writes an RDB 64 bit length, which carries a big endian
++// payload after the 0x81 marker byte.
++func sentinelWriteLen64(buf *bytes.Buffer, v uint64) {
++	buf.WriteByte(0x81)
++	var b [8]byte
++	binary.BigEndian.PutUint64(b[:], v)
++	buf.Write(b[:])
++}
++
++// sentinelValkeyHashPayload encodes Valkey 9.0's TTL bearing hash body: a count,
++// then per entry the field, the value and an eight byte little endian
++// millisecond expiry.
++func sentinelValkeyHashPayload(fields []sentinelField) []byte {
++	var b bytes.Buffer
++	sentinelWriteRDBLen(&b, len(fields))
++	for _, f := range fields {
++		sentinelWriteStr(&b, f.name)
++		sentinelWriteStr(&b, f.value)
++		_ = binary.Write(&b, binary.LittleEndian, f.ttlMs)
++	}
++	return b.Bytes()
++}
++
++// sentinelRedisHashPayload encodes the Redis 8.0 pre GA body that shares the
++// same type byte: a count, then per entry the expiry as an RDB length, then the
++// field and the value.
++func sentinelRedisHashPayload(fields []sentinelField) []byte {
++	var b bytes.Buffer
++	sentinelWriteRDBLen(&b, len(fields))
++	for _, f := range fields {
++		if f.ttlMs == 0 {
++			b.WriteByte(0)
++		} else {
++			sentinelWriteLen64(&b, uint64(f.ttlMs))
++		}
++		sentinelWriteStr(&b, f.name)
++		sentinelWriteStr(&b, f.value)
++	}
++	return b.Bytes()
++}
++
++// sentinelPlainHashPayload encodes an ordinary hash. This layout carries no expiry data
++// at all, so the expiry on each field is ignored here.
++func sentinelPlainHashPayload(fields []sentinelField) []byte {
++	var b bytes.Buffer
++	sentinelWriteRDBLen(&b, len(fields))
++	for _, f := range fields {
++		sentinelWriteStr(&b, f.name)
++		sentinelWriteStr(&b, f.value)
++	}
++	return b.Bytes()
++}
++
++// sentinelBuildRDB assembles a whole RDB file: the nine byte header, a select
++// for database zero, one block per key and the end marker.
++func sentinelBuildRDB(header string, keys []sentinelKeyBlock) []byte {
++	var b bytes.Buffer
++	if len(header) != 9 {
++		panic("an RDB header is nine bytes")
++	}
++	b.WriteString(header)
++	b.WriteByte(0xFE)
++	b.WriteByte(0x00)
++	for _, k := range keys {
++		if k.expireMs != 0 {
++			b.WriteByte(0xFC)
++			_ = binary.Write(&b, binary.LittleEndian, uint64(k.expireMs))
++		}
++		b.WriteByte(k.typeByte)
++		sentinelWriteStr(&b, k.name)
++		b.Write(k.payload)
++	}
++	b.WriteByte(0xFF)
++	return b.Bytes()
++}
++
++// TestSentinelRDBLoaderHelper is the child half of sentinelLoadRDB and is not
++// graded. It does nothing when the suite runs normally.
++func TestSentinelRDBLoaderHelper(t *testing.T) {
++	if os.Getenv(sentinelRDBChildFlag) != "1" {
++		t.Skip("helper process for sentinelLoadRDB")
++	}
++	ch := make(chan *entry.Entry, 8192)
++	ld := NewLoader("sentinel", nil, os.Getenv(sentinelRDBChildPath), ch)
++	go func() {
++		defer close(ch)
++		ld.ParseRDB(context.Background())
++	}()
++	var out bytes.Buffer
++	for e := range ch {
++		out.WriteString(sentinelRDBCmdPrefix)
++		out.WriteString(strings.Join(e.Argv, " "))
++		out.WriteString("\n")
++	}
++	out.WriteString(sentinelRDBDoneLine + "\n")
++	fmt.Print(out.String())
++}
++
++// sentinelLoadRDB writes rdbBytes to a file, loads it in a child process and
++// returns the commands the loader produced.
++func sentinelLoadRDB(t *testing.T, rdbBytes []byte) []string {
++	t.Helper()
++	path := filepath.Join(t.TempDir(), "dump.rdb")
++	if err := os.WriteFile(path, rdbBytes, 0o600); err != nil {
++		t.Fatalf("could not write the test rdb file: %v", err)
++	}
++	cmd := exec.Command(os.Args[0], "-test.run=^TestSentinelRDBLoaderHelper$")
++	cmd.Env = append(os.Environ(),
++		sentinelRDBChildFlag+"=1",
++		sentinelRDBChildPath+"="+path,
++	)
++	raw, err := cmd.CombinedOutput()
++	text := string(raw)
++	if !strings.Contains(text, sentinelRDBDoneLine) {
++		t.Fatalf("the loader did not read the rdb file to the end. error=%v\noutput:\n%s", err, text)
++	}
++	var cmds []string
++	for _, line := range strings.Split(text, "\n") {
++		line = strings.TrimRight(line, "\r")
++		if strings.HasPrefix(line, sentinelRDBCmdPrefix) {
++			cmds = append(cmds, strings.TrimPrefix(line, sentinelRDBCmdPrefix))
++		}
++	}
++	return cmds
++}
++
++// sentinelWantCommands compares the produced commands with the expected list.
++func sentinelWantCommands(t *testing.T, got []string, want []string) {
++	t.Helper()
++	if len(got) != len(want) {
++		t.Fatalf("got %d commands %v, want %d %v", len(got), got, len(want), want)
++	}
++	for i := range want {
++		if got[i] != want[i] {
++			t.Errorf("command %d is %q, want %q", i, got[i], want[i])
++		}
++	}
++}
++
++func sentinelValkeyRDB(key string, fields []sentinelField) []byte {
++	return sentinelBuildRDB("VALKEY080", []sentinelKeyBlock{
++		{name: key, typeByte: 22, payload: sentinelValkeyHashPayload(fields)},
++	})
++}
++
++// A Valkey source stores each field as field, value and an eight byte
++// millisecond expiry. A field that carries an expiry gets both an hset and an
++// hpexpireat, and the two arrive next to each other.
++func TestSentinelValkeyRDBDecodesFieldsWithMillisecondTTL(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("myhash", []sentinelField{
++		{"f1", "v1", 1893456000000},
++		{"f2", "v2", sentinelNoExpiry},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del myhash",
++		"hset myhash f1 v1",
++		"hpexpireat myhash 1893456000000 fields 1 f1",
++		"hset myhash f2 v2",
++	})
++}
++
++// A field with no expiry gets an hset and nothing else.
++func TestSentinelValkeyRDBOmitsExpireForFieldsWithoutTTL(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("h", []sentinelField{
++		{"a", "1", sentinelNoExpiry},
++		{"b", "2", sentinelNoExpiry},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del h",
++		"hset h a 1",
++		"hset h b 2",
++	})
++}
++
++// When every field expires, every field gets both commands.
++func TestSentinelValkeyRDBEmitsExpireForEveryExpiringField(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("h", []sentinelField{
++		{"x", "p", 1000},
++		{"y", "q", 2000},
++		{"z", "r", 1}, // one millisecond is the smallest expiry that still counts as set
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del h",
++		"hset h x p",
++		"hpexpireat h 1000 fields 1 x",
++		"hset h y q",
++		"hpexpireat h 2000 fields 1 y",
++		"hset h z r",
++		"hpexpireat h 1 fields 1 z",
++	})
++}
++
++// A timestamp past the range of a 32 bit value has to survive whole, and the
++// eight bytes it occupies have to be consumed, or the field after it decodes
++// from the wrong offset.
++func TestSentinelValkeyRDBPreservesLargeTimestampsAndFieldAlignment(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("k", []sentinelField{
++		{"f", "v", 4102444800000},
++		{"g", "w", sentinelNoExpiry},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del k",
++		"hset k f v",
++		"hpexpireat k 4102444800000 fields 1 f",
++		"hset k g w",
++	})
++}
++
++// Fields come back in the order the file stores them, with the expiring and non
++// expiring ones interleaved.
++func TestSentinelValkeyRDBKeepsFieldOrder(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("h", []sentinelField{
++		{"a", "1", 5000},
++		{"b", "2", sentinelNoExpiry},
++		{"c", "3", 7000},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del h",
++		"hset h a 1",
++		"hpexpireat h 5000 fields 1 a",
++		"hset h b 2",
++		"hset h c 3",
++		"hpexpireat h 7000 fields 1 c",
++	})
++}
++
++// The same type byte means something different on a Redis source, where the
++// expiry comes first and is written as a length. Reading a Redis file with the
++// Valkey layout is the failure this guards against.
++func TestSentinelRedisRDBUsesTheRedisLayoutForTheSameTypeByte(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelBuildRDB("REDIS0011", []sentinelKeyBlock{
++		{name: "rh", typeByte: 22, payload: sentinelRedisHashPayload([]sentinelField{
++			{"f1", "v1", 1893456000000},
++			{"f2", "v2", 0}, // the Redis layout spells "no expiry" as 0, not as -1
++		})},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del rh",
++		"hset rh f1 v1",
++		"hpexpireat rh 1893456000000 fields 1 f1",
++		"hset rh f2 v2",
++	})
++}
++
++// A Valkey file names itself in its header and numbers its version differently
++// from a Redis one. The loader has to read that header even when the file holds
++// nothing but ordinary keys.
++func TestSentinelValkeyRDBHeaderIsRead(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelBuildRDB("VALKEY080", []sentinelKeyBlock{
++		{name: "plain", typeByte: 4, payload: sentinelPlainHashPayload([]sentinelField{
++			{"a", "1", 0},
++			{"b", "2", 0},
++		})},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del plain",
++		"hset plain a 1",
++		"hset plain b 2",
++	})
++}
++
++// Several keys in one file each get their own del, and no expiry carries over
++// from the key before.
++func TestSentinelValkeyRDBDecodesSeveralKeysInOneFile(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelBuildRDB("VALKEY080", []sentinelKeyBlock{
++		{name: "one", typeByte: 22, payload: sentinelValkeyHashPayload([]sentinelField{
++			{"a", "1", 3000},
++		})},
++		{name: "two", typeByte: 22, expireMs: 4102444800000, payload: sentinelValkeyHashPayload([]sentinelField{
++			{"b", "2", sentinelNoExpiry},
++		})},
++	}))
++	// the second key carries an expiry of its own, which is separate from its fields' and
++	// still has to be replicated
++	if len(got) != 6 {
++		t.Fatalf("got %d commands %v, want 6", len(got), got)
++	}
++	sentinelWantCommands(t, got[:5], []string{
++		"del one",
++		"hset one a 1",
++		"hpexpireat one 3000 fields 1 a",
++		"del two",
++		"hset two b 2",
++	})
++	if !strings.HasPrefix(got[5], "PEXPIRE two ") {
++		t.Errorf("command 5 is %q, want a PEXPIRE for two", got[5])
++	}
++}
++
++// A Redis file still loads the way it always did. This one passes before the
++// change as well as after it, so it guards the header work against a regression.
++func TestSentinelRedisRDBHeaderStillRead(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelBuildRDB("REDIS0011", []sentinelKeyBlock{
++		{name: "plain", typeByte: 4, payload: sentinelPlainHashPayload([]sentinelField{
++			{"a", "1", 0},
++		})},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del plain",
++		"hset plain a 1",
++	})
++}
++
++// A production hash is not three fields of two bytes. Once the entry count passes 63 or a
++// value passes 63 bytes the format stops writing the length in a single byte, so a reader
++// that takes the next byte and calls it the length starts decoding garbage from there on.
++func TestSentinelValkeyRDBDecodesLargeCountsAndLongValues(t *testing.T) {
++	const fieldCount = 100
++	longValue := strings.Repeat("v", 200)
++	ttlFor := func(i int) int64 {
++		if i == 0 {
++			return sentinelNoExpiry
++		}
++		return int64(i)
++	}
++
++	fields := make([]sentinelField, 0, fieldCount)
++	for i := 0; i < fieldCount; i++ {
++		fields = append(fields, sentinelField{
++			name:  "field" + strconv.Itoa(i),
++			value: longValue,
++			ttlMs: ttlFor(i),
++		})
++	}
++
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("big", fields))
++
++	want := []string{"del big"}
++	for i, f := range fields {
++		want = append(want, "hset big "+f.name+" "+f.value)
++		if i != 0 {
++			want = append(want, "hpexpireat big "+strconv.Itoa(i)+" fields 1 "+f.name)
++		}
++	}
++	sentinelWantCommands(t, got, want)
++}
++
++// Zero is not the never-expires marker, it is a timestamp from 1970 that has already
++// gone. A field stored that way has to keep its expiry rather than lose it, which is
++// what tells a reader that gates on the marker apart from one that gates on zero.
++func TestSentinelValkeyRDBTreatsZeroAsAnOrdinaryTimestamp(t *testing.T) {
++	got := sentinelLoadRDB(t, sentinelValkeyRDB("z", []sentinelField{
++		{"gone", "v", 0},
++		{"stays", "w", sentinelNoExpiry},
++	}))
++	sentinelWantCommands(t, got, []string{
++		"del z",
++		"hset z gone v",
++		"hpexpireat z 0 fields 1 gone",
++		"hset z stays w",
++	})
++}
+diff --git a/internal/reader/sentinel_scan_wiring_test.go b/internal/reader/sentinel_scan_wiring_test.go
+new file mode 100644
+index 0000000..1ec10eb
+--- /dev/null
++++ b/internal/reader/sentinel_scan_wiring_test.go
+@@ -0,0 +1,266 @@
++package reader
++
++import (
++	"bufio"
++	"bytes"
++	"context"
++	"encoding/binary"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"os/exec"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++
++	"RedisShake/internal/config"
++)
++
++// The scan path never sees a snapshot header, so the only way it can know which kind of server
++// it is copying from is to ask. These tests stand a server in front of the reader that answers
++// like a Valkey one and hand it a hash whose layout only decodes correctly if the answer to
++// that question reached the decoder.
++//
++// The reader ends the process on anything it cannot parse, so the whole thing runs in a child
++// copy of this test binary and the parent reads the commands off its output.
++
++const (
++	sentinelScanChildFlag = "SENTINEL_SCAN_CHILD"
++	sentinelScanFlavor    = "SENTINEL_SCAN_FLAVOR"
++	sentinelScanCmd       = "SENTINELSCANCMD "
++	sentinelScanDone      = "SENTINELSCANDONE"
++)
++
++// sentinelValkeyServerInfo is the reply a Valkey server sends to INFO server.
++const sentinelValkeyServerInfo = "# Server\r\nredis_version:7.2.4\r\nserver_name:valkey\r\nvalkey_version:9.0.0\r\nvalkey_release_stage:ga\r\n"
++
++// sentinelRedisServerInfo is the reply a Redis server sends.
++const sentinelRedisServerInfo = "# Server\r\nredis_version:8.0.1\r\nredis_mode:standalone\r\n"
++
++// sentinelScanDumpPayload builds the body of a DUMP reply for a TTL-bearing hash: the type
++// byte, the entries, then the two version bytes and eight checksum bytes a DUMP always ends
++// with, which the reader strips before decoding.
++func sentinelScanDumpPayload(valkeyLayout bool) string {
++	var body bytes.Buffer
++	body.WriteByte(2)
++	if valkeyLayout {
++		// field, value, then an eight byte little endian expiry
++		for _, f := range []struct {
++			name, value string
++			ttl         int64
++		}{{"f1", "v1", 1893456000000}, {"f2", "v2", -1}} {
++			body.WriteByte(byte(len(f.name)))
++			body.WriteString(f.name)
++			body.WriteByte(byte(len(f.value)))
++			body.WriteString(f.value)
++			_ = binary.Write(&body, binary.LittleEndian, f.ttl)
++		}
++	} else {
++		// the Redis layout for the same type byte: expiry first, as a length, then the
++		// field and the value
++		for _, f := range []struct{ name, value string }{{"f1", "v1"}, {"f2", "v2"}} {
++			body.WriteByte(0)
++			body.WriteByte(byte(len(f.name)))
++			body.WriteString(f.name)
++			body.WriteByte(byte(len(f.value)))
++			body.WriteString(f.value)
++		}
++	}
++	var d bytes.Buffer
++	d.WriteByte(22)
++	d.Write(body.Bytes())
++	d.Write([]byte{0, 0})
++	d.Write(make([]byte, 8))
++	return d.String()
++}
++
++// sentinelServeOneClient answers the handful of commands the scan reader actually sends.
++func sentinelServeOneClient(conn net.Conn, info string, dump string) {
++	defer conn.Close()
++	rd := bufio.NewReader(conn)
++	for {
++		argv, err := sentinelReadCommand(rd)
++		if err != nil || len(argv) == 0 {
++			return
++		}
++		switch strings.ToLower(argv[0]) {
++		case "ping":
++			fmt.Fprint(conn, "+PONG\r\n")
++		case "info":
++			fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(info), info)
++		case "scan":
++			// one key, then a zero cursor so the scan finishes
++			fmt.Fprint(conn, "*2\r\n$1\r\n0\r\n*1\r\n$1\r\nh\r\n")
++		case "dump":
++			fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(dump), dump)
++		case "pttl":
++			fmt.Fprint(conn, ":-1\r\n")
++		case "select", "readonly":
++			fmt.Fprint(conn, "+OK\r\n")
++		default:
++			fmt.Fprint(conn, "+OK\r\n")
++		}
++	}
++}
++
++// sentinelReadCommand reads one RESP array of bulk strings.
++func sentinelReadCommand(rd *bufio.Reader) ([]string, error) {
++	line, err := rd.ReadString('\n')
++	if err != nil {
++		return nil, err
++	}
++	line = strings.TrimRight(line, "\r\n")
++	if len(line) == 0 || line[0] != '*' {
++		return nil, fmt.Errorf("not an array: %q", line)
++	}
++	n, err := strconv.Atoi(line[1:])
++	if err != nil {
++		return nil, err
++	}
++	argv := make([]string, 0, n)
++	for i := 0; i < n; i++ {
++		head, err := rd.ReadString('\n')
++		if err != nil {
++			return nil, err
++		}
++		head = strings.TrimRight(head, "\r\n")
++		if len(head) == 0 || head[0] != '$' {
++			return nil, fmt.Errorf("not a bulk string: %q", head)
++		}
++		l, err := strconv.Atoi(head[1:])
++		if err != nil {
++			return nil, err
++		}
++		buf := make([]byte, l+2)
++		if _, err := io.ReadFull(rd, buf); err != nil {
++			return nil, err
++		}
++		argv = append(argv, string(buf[:l]))
++	}
++	return argv, nil
++}
++
++// TestSentinelScanWiringHelper is the child half of sentinelScanAgainst and is not graded.
++func TestSentinelScanWiringHelper(t *testing.T) {
++	if os.Getenv(sentinelScanChildFlag) != "1" {
++		t.Skip("helper process for sentinelScanAgainst")
++	}
++	valkey := os.Getenv(sentinelScanFlavor) == "valkey"
++	info := sentinelRedisServerInfo
++	if valkey {
++		info = sentinelValkeyServerInfo
++	}
++	dump := sentinelScanDumpPayload(valkey)
++
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		return
++	}
++	defer ln.Close()
++	go func() {
++		for {
++			conn, err := ln.Accept()
++			if err != nil {
++				return
++			}
++			go sentinelServeOneClient(conn, info, dump)
++		}
++	}()
++
++	// small enough that the dump above counts as oversized, which is the branch that decodes
++	// the value here instead of forwarding it untouched
++	config.Opt.Advanced.TargetRedisProtoMaxBulkLen = 1
++
++	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
++	defer cancel()
++	r := NewScanStandaloneReader(ctx, &ScanReaderOptions{
++		Address: ln.Addr().String(),
++		Scan:    true,
++		DBS:     []int{0},
++		Count:   1,
++	})
++	chs := r.StartRead(ctx)
++
++	var out bytes.Buffer
++	deadline := time.After(15 * time.Second)
++	seen := 0
++loop:
++	for {
++		select {
++		case e, ok := <-chs[0]:
++			if !ok {
++				break loop
++			}
++			out.WriteString(sentinelScanCmd)
++			out.WriteString(strings.Join(e.Argv, " "))
++			out.WriteString("\n")
++			seen++
++			if seen >= 3 {
++				break loop
++			}
++		case <-deadline:
++			break loop
++		}
++	}
++	out.WriteString(sentinelScanDone + "\n")
++	fmt.Print(out.String())
++}
++
++// sentinelScanAgainst runs the reader against a server of the given flavor in a child process
++// and returns the commands it produced.
++func sentinelScanAgainst(t *testing.T, flavor string) []string {
++	t.Helper()
++	cmd := exec.Command(os.Args[0], "-test.run=^TestSentinelScanWiringHelper$")
++	cmd.Env = append(os.Environ(), sentinelScanChildFlag+"=1", sentinelScanFlavor+"="+flavor)
++	raw, err := cmd.CombinedOutput()
++	text := string(raw)
++	if !strings.Contains(text, sentinelScanDone) {
++		t.Fatalf("the scan reader did not finish against a %s server. error=%v\noutput:\n%s", flavor, err, text)
++	}
++	var cmds []string
++	for _, line := range strings.Split(text, "\n") {
++		line = strings.TrimRight(line, "\r")
++		if strings.HasPrefix(line, sentinelScanCmd) {
++			cmds = append(cmds, strings.TrimPrefix(line, sentinelScanCmd))
++		}
++	}
++	return cmds
++}
++
++// Copying from a Valkey server over the scan path has to decode its hashes with the Valkey
++// layout. There is no header to read here, so the only way to get this right is to have asked
++// the server what it is and carried the answer through to the decoder.
++func TestSentinelScanReaderUsesTheServerAnswer(t *testing.T) {
++	got := sentinelScanAgainst(t, "valkey")
++	want := []string{
++		"del h",
++		"hset h f1 v1",
++		"hpexpireat h 1893456000000 fields 1 f1",
++	}
++	if len(got) < len(want) {
++		t.Fatalf("got %d commands %v, want at least %d %v", len(got), got, len(want), want)
++	}
++	for i := range want {
++		if got[i] != want[i] {
++			t.Errorf("command %d is %q, want %q. The scan path decoded a Valkey hash without using the answer it got from the server", i, got[i], want[i])
++		}
++	}
++}
++
++// Copying from a Redis server over the same path must not use the Valkey layout.
++func TestSentinelScanReaderKeepsRedisServersOnTheRedisLayout(t *testing.T) {
++	got := sentinelScanAgainst(t, "redis")
++	if len(got) < 1 {
++		t.Fatalf("the scan reader produced no commands for a Redis server")
++	}
++	if got[0] != "del h" {
++		t.Errorf("command 0 is %q, want %q", got[0], "del h")
++	}
++	for _, c := range got {
++		if strings.HasPrefix(c, "hpexpireat h 1893456000000") {
++			t.Errorf("a Redis server's hash was decoded with the Valkey layout: %q", c)
++		}
++	}
++}
+diff --git a/internal/reader/sentinel_valkey_aof_test.go b/internal/reader/sentinel_valkey_aof_test.go
+new file mode 100644
+index 0000000..e49cf46
+--- /dev/null
++++ b/internal/reader/sentinel_valkey_aof_test.go
+@@ -0,0 +1,116 @@
++package reader
++
++import (
++	"context"
++	"encoding/binary"
++	"bytes"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"testing"
++
++	"RedisShake/internal/entry"
++)
++
++// An append only file can begin with a snapshot instead of a command stream,
++// and the reader tells the two apart by the name at the start of the file. A
++// Valkey snapshot names itself differently from a Redis one, so a reader that
++// only knows the Redis name reads the snapshot as if it were commands.
++//
++// The reader ends the process on a file it cannot read, so this runs in a child
++// copy of the test binary and the parent reads the result off its output. That
++// keeps the rest of the package alive.
++
++const (
++	sentinelAOFChildFlag = "SENTINEL_AOF_CHILD"
++	sentinelAOFChildPath = "SENTINEL_AOF_PATH"
++	sentinelAOFResult    = "SENTINELAOFRESULT "
++)
++
++// sentinelSnapshotWithHeader builds a small snapshot that opens with the given
++// nine byte header and holds one ordinary hash.
++func sentinelSnapshotWithHeader(header string) []byte {
++	if len(header) != 9 {
++		panic("a snapshot header is nine bytes")
++	}
++	var b bytes.Buffer
++	b.WriteString(header)
++	b.WriteByte(0xFE)
++	b.WriteByte(0x00)
++	b.WriteByte(4)
++	b.WriteByte(byte(len("aofhash")))
++	b.WriteString("aofhash")
++	b.WriteByte(1)
++	b.WriteByte(byte(len("f")))
++	b.WriteString("f")
++	b.WriteByte(byte(len("v")))
++	b.WriteString("v")
++	b.WriteByte(0xFF)
++	var checksum [8]byte
++	binary.LittleEndian.PutUint64(checksum[:], 0)
++	b.Write(checksum[:])
++	return b.Bytes()
++}
++
++// TestSentinelAOFReaderHelper is the child half of sentinelReadAOFBaseFile and
++// is not graded. It does nothing when the suite runs normally.
++func TestSentinelAOFReaderHelper(t *testing.T) {
++	if os.Getenv(sentinelAOFChildFlag) != "1" {
++		t.Skip("helper process for sentinelReadAOFBaseFile")
++	}
++	full := os.Getenv(sentinelAOFChildPath)
++	ch := make(chan *entry.Entry, 8192)
++	info := NewAOFFileInfo(full, ch)
++	status := info.ParsingSingleAppendOnlyFile(context.Background(), filepath.Base(full), 0)
++	os.Stdout.WriteString(sentinelAOFResult + strconv.Itoa(status) + "\n")
++}
++
++// sentinelReadAOFBaseFile writes the bytes to a file, hands it to the reader in
++// a child process and returns the status the reader reported.
++func sentinelReadAOFBaseFile(t *testing.T, data []byte) int {
++	t.Helper()
++	full := filepath.Join(t.TempDir(), "appendonly.aof.1.base.rdb")
++	if err := os.WriteFile(full, data, 0o600); err != nil {
++		t.Fatalf("could not write the test file: %v", err)
++	}
++	cmd := exec.Command(os.Args[0], "-test.run=^TestSentinelAOFReaderHelper$")
++	cmd.Env = append(os.Environ(),
++		sentinelAOFChildFlag+"=1",
++		sentinelAOFChildPath+"="+full,
++	)
++	raw, err := cmd.CombinedOutput()
++	text := string(raw)
++	for _, line := range strings.Split(text, "\n") {
++		line = strings.TrimRight(line, "\r")
++		if strings.HasPrefix(line, sentinelAOFResult) {
++			status, convErr := strconv.Atoi(strings.TrimPrefix(line, sentinelAOFResult))
++			if convErr != nil {
++				t.Fatalf("could not read the reported status from %q", line)
++			}
++			return status
++		}
++	}
++	t.Fatalf("the reader never reported a status. error=%v\noutput:\n%s", err, text)
++	return -1
++}
++
++// A base file that names Valkey at the start is a snapshot and has to be read
++// as one.
++func TestSentinelValkeyAOFBaseFileIsReadAsASnapshot(t *testing.T) {
++	got := sentinelReadAOFBaseFile(t, sentinelSnapshotWithHeader("VALKEY080"))
++	if got != AOFOk {
++		t.Errorf("reading a base file that names Valkey reported status %d, want %d", got, AOFOk)
++	}
++}
++
++// A base file that names Redis is a snapshot too and always was. This one passes
++// before the change as well as after it, so it catches the check being rewritten to
++// recognise only the new flavor.
++func TestSentinelRedisAOFBaseFileStillReadAsASnapshot(t *testing.T) {
++	got := sentinelReadAOFBaseFile(t, sentinelSnapshotWithHeader("REDIS0011"))
++	if got != AOFOk {
++		t.Errorf("reading a base file that names Redis reported status %d, want %d", got, AOFOk)
++	}
++}
+diff --git a/internal/writer/sentinel_writer_liveness_test.go b/internal/writer/sentinel_writer_liveness_test.go
+new file mode 100644
+index 0000000..ec3e21c
+--- /dev/null
++++ b/internal/writer/sentinel_writer_liveness_test.go
+@@ -0,0 +1,172 @@
++package writer
++
++import (
++	"bufio"
++	"context"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"os/exec"
++	"strconv"
++	"strings"
++	"testing"
++	"time"
++
++	"RedisShake/internal/config"
++	"RedisShake/internal/entry"
++)
++
++// A hash field can hold a value larger than the target's query buffer allows in one go. The
++// writer throttles on how much it has already sent and not yet had answered, and an entry that
++// is on its own bigger than that allowance has to go out anyway, because nothing will ever come
++// back to make room for it.
++//
++// The writer ends the process on a protocol error, so this runs in a child copy of the test
++// binary and the parent reads the verdict off its output.
++
++const (
++	sentinelWriterChildFlag = "SENTINEL_WRITER_CHILD"
++	sentinelWriterSent      = "SENTINELWRITER SENT"
++	sentinelWriterStuck     = "SENTINELWRITER STUCK"
++)
++
++// sentinelReadOneCommand reads a single RESP array of bulk strings.
++func sentinelReadOneCommand(rd *bufio.Reader) ([]string, error) {
++	line, err := rd.ReadString('\n')
++	if err != nil {
++		return nil, err
++	}
++	line = strings.TrimRight(line, "\r\n")
++	if len(line) == 0 || line[0] != '*' {
++		return nil, fmt.Errorf("not an array: %q", line)
++	}
++	n, err := strconv.Atoi(line[1:])
++	if err != nil {
++		return nil, err
++	}
++	argv := make([]string, 0, n)
++	for i := 0; i < n; i++ {
++		head, err := rd.ReadString('\n')
++		if err != nil {
++			return nil, err
++		}
++		head = strings.TrimRight(head, "\r\n")
++		if len(head) == 0 || head[0] != '$' {
++			return nil, fmt.Errorf("not a bulk string: %q", head)
++		}
++		l, err := strconv.Atoi(head[1:])
++		if err != nil {
++			return nil, err
++		}
++		buf := make([]byte, l+2)
++		if _, err := io.ReadFull(rd, buf); err != nil {
++			return nil, err
++		}
++		argv = append(argv, string(buf[:l]))
++	}
++	return argv, nil
++}
++
++// TestSentinelWriterLivenessHelper is the child half and is not graded.
++func TestSentinelWriterLivenessHelper(t *testing.T) {
++	if os.Getenv(sentinelWriterChildFlag) != "1" {
++		t.Skip("helper process for sentinelWriteOversized")
++	}
++
++	arrived := make(chan string, 8)
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		return
++	}
++	defer ln.Close()
++	go func() {
++		for {
++			conn, err := ln.Accept()
++			if err != nil {
++				return
++			}
++			go func(c net.Conn) {
++				defer c.Close()
++				rd := bufio.NewReader(c)
++				for {
++					argv, err := sentinelReadOneCommand(rd)
++					if err != nil {
++						return
++					}
++					name := ""
++					if len(argv) > 0 {
++						name = strings.ToUpper(argv[0])
++						select {
++						case arrived <- name:
++						default:
++						}
++					}
++					if name == "PING" {
++						fmt.Fprint(c, "+PONG\r\n")
++					} else {
++						fmt.Fprint(c, "+OK\r\n")
++					}
++				}
++			}(conn)
++		}
++	}()
++
++	config.Opt.Advanced.PipelineCountLimit = 128
++	config.Opt.Advanced.TargetRedisMaxQPS = 1000
++	// the allowance is far smaller than the one entry below, and nothing else is in flight
++	config.Opt.Advanced.TargetRedisClientMaxQuerybufLen = 200
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	w := NewRedisStandaloneWriter(ctx, &RedisWriterOptions{Address: ln.Addr().String()})
++	w.StartWrite(ctx)
++
++	e := entry.NewEntry()
++	e.DbId = 0
++	e.Argv = []string{"hset", "big", "field", strings.Repeat("v", 4096)}
++	e.CmdName = "hset"
++	go w.Write(e)
++
++	deadline := time.After(10 * time.Second)
++	for {
++		select {
++		case cmd := <-arrived:
++			if cmd == "HSET" {
++				fmt.Println(sentinelWriterSent)
++				return
++			}
++		case <-deadline:
++			fmt.Println(sentinelWriterStuck)
++			return
++		}
++	}
++}
++
++// sentinelWriteOversized runs the child and reports whether the entry ever reached the target.
++func sentinelWriteOversized(t *testing.T) bool {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
++	defer cancel()
++	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSentinelWriterLivenessHelper$")
++	cmd.Env = append(os.Environ(), sentinelWriterChildFlag+"=1")
++	raw, _ := cmd.CombinedOutput()
++	text := string(raw)
++	if strings.Contains(text, sentinelWriterSent) {
++		return true
++	}
++	if strings.Contains(text, sentinelWriterStuck) {
++		return false
++	}
++	t.Fatalf("the writer child reported neither outcome. output:\n%s", text)
++	return false
++}
++
++// One entry larger than the whole allowance, with nothing outstanding, still has to be sent.
++// Waiting for room that only arrives when something already sent is answered is waiting for
++// something that cannot happen, and the copy stops there for good.
++func TestSentinelWriterForwardsAnOversizedEntry(t *testing.T) {
++	if !sentinelWriteOversized(t) {
++		t.Errorf("an entry bigger than the target's allowance never left the writer, so a hash field larger than that allowance stops the copy permanently")
++	}
++}

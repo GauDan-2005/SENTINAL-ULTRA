@@ -195,3 +195,18 @@ Stub out one requirement the instruction states, in a throwaway copy, and re-run
 - **Test the wiring, not only the helper.** If the PR's point is that some path now uses a new helper, at least one f2p must go through that path. A perfect helper nobody calls can green the whole suite. This is the same failure the `No CLI/entry-point invocation` auto-REMOVE pattern describes.
 - **No serialization accidents.** Do not pin object numbers, byte offsets, creation-order ids or other artifacts of how something happens to be written out. Assert the structure and the observable values.
 - **"Any equivalent wording" is a contract.** If the instruction says a message may be phrased freely, the matcher has to accept the paraphrases - including every example the instruction itself gives. A regex demanding two literal tokens within 40 characters is not flexible wording.
+
+### 10.9 A process-killing error path needs a child process, not a try/except (practice)
+
+Added 2026-08-11 from redisshake 1005, accepted carrying this in five graded test files.
+
+Some runners execute a whole package or module in **one process**: Go is the clearest case, and any suite sharing an interpreter has the same exposure. A library whose error path ends in `log.Panicf`, `log.Fatal`, `os.Exit` or `sys.exit` then does not fail one test - it takes the binary down and every other graded id in that unit is reported **missing**. On a task about feeding a parser malformed input, that is the main path rather than an edge case.
+
+- **Find it before designing the tests:** `grep -rnE 'log\.(Panicf|Fatalf|Panic|Fatal)|os\.Exit|sys\.exit' environment/repo/<pkg>`
+- **Do not wrap it.** Catching the exit is not available, and a broad `try/except` around a test body is banned by the Section 4 checklist anyway
+- **Re-exec the test binary as a helper.** The graded test spawns its own binary filtered to a helper test, passes the input through the environment, and reads the result back out of the child's combined output. The helper skips when its flag is absent and appears in **neither** `fail_to_pass` nor `pass_to_pass`. Ignore the child's exit status deliberately, because a crash there is the measurement
+- **Encode the result, do not scrape it.** Print a prefixed line with an argument count and quoted arguments; read it back with the language's own unquoting. Binary payloads and embedded newlines survive that and a whitespace split does not
+- **Use a killable child with a deadline for a liveness assertion.** A loop that never terminates cannot be measured by a test that waits for it. Go's `exec.CommandContext` with a 10 s deadline separated a base tree that sat on the full deadline from a fixed one returning in 0.017 s
+- **Disclose it in Comments for Reviewer**, because a reader opening the file will ask why two tests skip
+
+The payoff shows up in the NOP as well as the oracle: the graded ids still execute and report individually at base, instead of the whole unit reading as a compile-shaped zero that `verify-in-the-image.md` warns proves nothing.

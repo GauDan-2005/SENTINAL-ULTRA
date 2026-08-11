@@ -1,0 +1,44 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "/usr/local/go/bin/go test -json ./..."
+    ],
+    "selected_test_files_to_run": [
+      "internal/commands/hash_field_cmds_test.go",
+      "internal/rdb/types/hash_valkey_test.go"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "RedisShake/internal/commands::TestHashFieldCommandKeys",
+      "RedisShake/internal/commands::TestStreamCommandKeys",
+      "RedisShake/internal/rdb/types::TestReadHashValkey",
+      "RedisShake/internal/rdb/types::TestReadHashValkeyZeroTTL",
+      "RedisShake/internal/rdb/types::TestReadHashValkeyAllExpiring",
+      "RedisShake/internal/rdb/types::TestReadHashValkeySingleField",
+      "RedisShake/internal/rdb/types::TestReadHashValkeySingleFieldNoTTL",
+      "RedisShake/internal/rdb/types::TestReadHashValkeyThreeFields",
+      "RedisShake/internal/rdb/types::TestReadHashValkeyLargeTTL",
+      "RedisShake/internal/rdb/types::TestParseObjectValkeyType22"
+    ],
+    "pass_to_pass": [
+      "RedisShake/internal/commands::TestHashFieldTTLCommandsRegistered"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "go-test",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

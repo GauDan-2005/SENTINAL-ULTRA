@@ -1,9 +1,10 @@
 ---
 id: answers-file-drift
-status: locally-verified
+status: platform-confirmed
 last_verified: 2026-08-11
 verified_by:
   - 20260805_080500__statrs-dev_statrs__315
+  - 20260807_080545__tair-opensource_redisshake__1005
 evidence: "One submission_answer.txt edited across five rounds. An adversarial audit run as five independent lenses returned 34 findings that deduplicated to about nine real ones, and several would have shipped. Separately, two batches of edits were silently discarded by a python script that asserted its way to an error before its single write at the end, both caught only by a later re-read"
 applies_to:
   languages: [any]
@@ -169,3 +170,46 @@ a legality claim about a PR it never names.
 
 See also [[not-fixable-is-a-written-argument]], [[peer-review-bounces]],
 [[accepted-bundle-reference]], [[diagnosing-platform-only-failures]].
+
+## Second instance, and this one SHIPPED and was accepted (redisshake 1005, 2026-08-11)
+
+The statrs audit above caught its findings before upload. redisshake 1005 did not, and the drift
+went to a reviewer inside an **accepted** submission. Four stale numbers in one file, all of them
+counts, all of them left behind by a later round:
+
+| Where | Says | Live value |
+|---|---|---|
+| Files Changed entry 5 | `fail_to_pass 10 to 14 and pass_to_pass 1 to 11` | **20 and 13** |
+| Files Changed entry 4 | "three new ones replace them", naming three files | `tests.patch` creates **seven** |
+| Issue block 13 | "The set is now 19 tests" | **20** |
+| Issue block 3 vs Comments | "Twelve separate breaks" vs "I broke the oracle thirteen times" | 13 |
+
+The post-fix checkbox one line below entry 5 reads `counted: 20`, so **the file contradicts
+itself on the same page** and neither the round audit nor a reviewer flagged it. Acceptance is
+not evidence that this is acceptable (LEDGER L53): it is evidence that a reviewer did not open
+`tests/config.json` to check.
+
+**Why the existing checklist missed it.** Lens 1 below measures the live numbers and greps the
+file for what it claims, which catches a stale count in a headline sentence. It does not walk
+**Files Changed entry by entry**, and Files Changed is where a per-file "changed X to Y" sentence
+is written once in round 0 and then never re-read, because the round that changes X to Z edits the
+config and the issue block and considers itself done.
+
+**The added step.** Every count in Files Changed is re-derived from the live bundle, never carried
+forward from the previous round's prose:
+
+```bash
+# the numbers Files Changed is allowed to state, measured fresh
+python3 -c "import json;g=json.load(open('tasks/<name>/work/tests/config.json'))['grading'];print('f2p',len(g['fail_to_pass']),'p2p',len(g['pass_to_pass']))"
+grep -c '^new file mode' tasks/<name>/work/tests/tests.patch     # graded files created
+grep -c '^diff --git'   tasks/<name>/work/solution/golden.patch  # golden file count
+# then read every "N to M" and every spelled-out count in the Files Changed block against those
+grep -nE '[0-9]+ to [0-9]+|(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)' tasks/<name>/answers/submission_answer.txt
+```
+
+The spelled-out half of that grep is the part that matters. Every one of redisshake's four stale
+numbers except entry 5 was a **word**, not a digit, so a numeric grep could never have found them.
+
+**And re-decide the `Send to reviewer:` line every round.** redisshake's accepted file still read
+`Send to reviewer: No. This is the round 4 resubmission and the checks have not run against it`
+while the task was in front of a reviewer.

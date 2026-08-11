@@ -20,18 +20,32 @@ contradicts: []
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, accepted 2026-08-04 after six rounds.
 
-**There are now two accepted bundles.** `20260805_080500__statrs-dev_statrs__315` was accepted
+**There are now three accepted bundles**, plus one accepted Path C submission with no bundle at
+all (libcrux 1165, written up in `not-fixable-is-a-written-argument.md`).
+`20260807_080545__tair-opensource_redisshake__1005` was accepted 2026-08-11 on round 4, Go with
+`go test`, `implementation / feature`, difficulty hard, 5 uploads, 225 minutes plus 315 of
+revisions. It is the reference for three things the other two do not show: an oracle carrying
+**three** case-1 corrections adapted from three different later PRs, a graded suite that stands a
+**fake server on a loopback socket inside the verifier**, and a bundle accepted after the
+difficulty screen had blocked it **four consecutive times** (see
+`when-fail-easy-is-not-not-fixable.md`). `20260805_080500__statrs-dev_statrs__315` was accepted
 2026-08-11 after five uploads across rounds 0 to 4. Its measurements are in
 [calibration.tsv](calibration.tsv) and its full record in
 `_archive/20260805_080500__statrs-dev_statrs__315/task.md`. Where the two agree, the number is
 worth something; where they differ, there is no normal. They agree on: an instruction whose
-longest prose paragraph sits under 800 characters (kvdex 717, statrs 769), a populated
-`pass_to_pass` guard, script modes at 0755, a silent `git fsck`, and an oracle whose runtime has
-large headroom against the verifier timeout. They differ on nearly everything else, including the
+longest prose paragraph sits under 800 characters (kvdex 717, statrs 769, redisshake 680), a
+populated `pass_to_pass` guard, script modes at 0755, a silent `git fsck`, a git-independent
+test-tree restore, an exit-code gate in the grader, and an oracle whose runtime has large headroom
+against the verifier timeout. All three also ship an instruction that names **no internal file
+path and no library to use**. Where all three agree the number is worth more than where two do. They differ on nearly everything else, including the
 `tests.patch` shape, the graded totals and the number of rounds. statrs is also the first accepted
 bundle here whose `golden.patch` was **edited** rather than shipped as received, under
 `docs/guidelines.md:286` case 1 and then again to expand scope, so it is the reference for what an
-accepted oracle edit looks like.
+accepted oracle edit looks like. redisshake 1005 is the second and the wider one, at three
+corrections in one patch, all three still unfixed upstream, each declared in its own issue block.
+**Two of the three accepted bundles carry an edited oracle**, so a case-1 correction is now the
+normal shape here rather than the exception, and `oracle-bug-vs-pr-scope.md` carries what makes
+one survivable.
 Deno/TypeScript, `evolution_and_maintenance / migration`, difficulty hard, verdict Fixable
 throughout, PR scope never touched.
 

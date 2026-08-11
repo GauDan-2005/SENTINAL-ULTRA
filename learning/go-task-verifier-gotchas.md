@@ -1,7 +1,7 @@
 ---
 id: go-task-verifier-gotchas
 status: locally-verified
-last_verified: 2026-08-06
+last_verified: 2026-08-11
 verified_by:
   - 20260805_080500__hyperledger-firefly_firefly__1123
 evidence: "go test ./... exits 1 on a fully correct oracle tree for three pre-existing reasons; golden.patch omitting a generated doc file the PR carries turned a green repo test red; a Go signature migration makes the base test files stop compiling, so every agent edits exactly what tests.patch patches"
@@ -219,3 +219,65 @@ A 300 s `[verifier] timeout_sec` would have held, and it was raised to 900 anywa
 a slower builder. The bundle shipped with `[verifier] timeout_sec` 300 against an
 `execution.timeout_sec` of 1800, so the inner limit could never fire. Check that pair on every
 task: the inner one has to be the smaller of the two.
+
+## 5. A logger that ends in `os.Exit` takes the whole package down, so isolate the call in a child test binary
+
+Added 2026-08-11 from redisshake 1005, which was **accepted** carrying this shape in five graded
+test files.
+
+Go runs every test in a package inside **one process**. A library whose error path ends in
+`log.Panicf`, `log.Fatalf` or a bare `os.Exit` therefore does not fail one test, it kills the
+binary, and every other graded id in that package is reported missing. On a task where the whole
+point is feeding the parser a malformed or unexpected input, that is not an edge case, it is the
+main path. The tell is one line:
+
+```bash
+grep -rnE 'log\.(Panicf|Fatalf|Panic|Fatal)|os\.Exit' environment/repo/internal/<pkg> | head
+```
+
+RedisShake's own logger ends `Panicf` with `os.Exit(1)`, so a single unreadable snapshot loaded
+in-process would have destroyed every result in `internal/rdb`.
+
+**The fix is a helper process, which is a Go standard-library idiom and needs no dependency.** The
+test re-execs its own binary with a `-test.run` filter that matches only the helper, hands the
+work in through the environment, and reads the result back out of the child's combined output:
+
+```go
+// the helper: skipped in an ordinary run, and NOT in fail_to_pass
+func TestSentinelAOFBulkHelper(t *testing.T) {
+    if os.Getenv(sentinelAOFBulkChildFlag) != "1" {
+        t.Skip("helper process for sentinelLoadAOF")
+    }
+    ld := NewLoader(os.Getenv(sentinelAOFBulkChildPath), ch)
+    // ... print each result on a prefixed line
+}
+
+// the graded test drives it
+cmd := exec.Command(os.Args[0], "-test.run=^TestSentinelAOFBulkHelper$")
+cmd.Env = append(os.Environ(), sentinelAOFBulkChildFlag+"=1", sentinelAOFBulkChildPath+"="+path)
+raw, _ := cmd.CombinedOutput()   // a crash here is data, not a lost package
+```
+
+Five things that make it hold up, all of them learned the expensive way:
+
+- **`raw, _ := cmd.CombinedOutput()` deliberately ignores the error.** A child that panics exits
+  nonzero, and that is the case being measured. Assert on the parsed output, not on the exit
+- **The helper must skip when the flag is absent**, or it runs on every ordinary invocation
+- **The helper is not graded.** It appears in neither `fail_to_pass` nor `pass_to_pass`. Say so in
+  Comments for Reviewer, because a reader who opens the file will wonder
+- **Encode the result, do not scrape it.** These tests print a prefixed line carrying an argument
+  count and then `strconv.Quote`-ed arguments, and the parent reads them back with
+  `strconv.QuotedPrefix` plus `Unquote`. Binary payloads and embedded newlines survive that;
+  a `strings.Split` on whitespace does not
+- **Use `exec.CommandContext` with a deadline for a liveness test.** The redisshake writer test
+  measures a loop that never terminates, so the child has to be killable. Base sits on the full
+  10 second deadline; the fixed tree returns in 0.017s
+
+Cost: it is the difference between one failing id and a package-wide zero. It also makes the NOP
+readable, since the graded ids still execute and report individually at base.
+
+**This is one of the two Go facts that shaped the whole redisshake verifier.** The other is at
+section 3 above: Go compiles a package as a unit, so one non-derivable name in a graded test file
+takes down every id in that package. Both are the same property seen from different ends, and
+between them they explain an arrival `pass_at_k` of 0/3 that was a build failure rather than
+difficulty (LEDGER L27).

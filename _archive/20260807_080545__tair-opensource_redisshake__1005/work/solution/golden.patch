@@ -1,0 +1,2581 @@
+diff --git a/internal/aof/aof.go b/internal/aof/aof.go
+index d793341..001147d 100644
+--- a/internal/aof/aof.go
++++ b/internal/aof/aof.go
+@@ -134,21 +134,23 @@ func (ld *Loader) LoadSingleAppendOnlyFile(ctx context.Context, timestamp int64)
+ 
+ 			for j := 0; j < int(argc); j++ {
+ 				line, err := ReadCompleteLine(reader)
+-				if err != nil || line[0] != '$' {
++				if err != nil || len(line) == 0 || line[0] != '$' {
+ 					log.Infof("Bad File format reading the append only File %v:make a backup of your AOF File, then use ./redis-check-AOF --fix <FileName.manifest>", filePath)
+ 					ret = Failed
+ 					return ret
+ 				}
+ 				v64, _ := strconv.ParseInt(string(line[1:]), 10, 64)
+-				var argString []byte
+-				argString, err = ReadCompleteLine(reader)
+-				if err != nil {
++				// Read exactly v64 bytes plus the trailing CRLF. The payload of a bulk
++				// string may contain '\r' or '\n' itself, for instance a binary RDB dump
++				// carried by a RESTORE command, and a line-based read would stop inside it
++				// and leave the stream offset wrong for everything after.
++				buf := make([]byte, v64+2)
++				if _, err := io.ReadFull(reader, buf); err != nil {
+ 					log.Infof("Unrecoverable error reading the append only File %v: %v", filePath, err)
+ 					ret = Failed
+ 					return ret
+ 				}
+-				argString = argString[:v64]
+-				argv = append(argv, string(argString))
++				argv = append(argv, string(buf[:v64]))
+ 			}
+ 			e.Argv = append(e.Argv, argv...)
+ 			ld.ch <- e
+diff --git a/internal/client/func.go b/internal/client/func.go
+index 1957e15..f2ac1c5 100644
+--- a/internal/client/func.go
++++ b/internal/client/func.go
+@@ -2,6 +2,7 @@ package client
+ 
+ import (
+ 	"bytes"
++	"errors"
+ 	"strings"
+ 
+ 	"RedisShake/internal/client/proto"
+@@ -26,3 +27,36 @@ func (r *Redis) IsCluster() bool {
+ 	reply := r.DoWithStringReply("INFO", "Cluster")
+ 	return strings.Contains(reply, "cluster_enabled:1")
+ }
++
++// ParseServerVersion reports whether the server an INFO reply describes is Valkey.
++//
++// A Valkey server also publishes a redis_version line so that Redis clients keep working,
++// and it publishes that line before its own, so a reply cannot be judged by whichever
++// version line turns up first.
++func ParseServerVersion(serverInfo string) (isValkey bool, err error) {
++	sawRedis := false
++	for _, line := range strings.Split(serverInfo, "\n") {
++		line = strings.TrimSpace(line)
++		if strings.HasPrefix(line, "valkey_version:") {
++			return true, nil
++		}
++		if strings.HasPrefix(line, "redis_version:") {
++			sawRedis = true
++		}
++	}
++	if sawRedis {
++		return false, nil
++	}
++	return false, errors.New("server version not found in info string")
++}
++
++// IsValkey reports whether the connected server is Valkey.
++func (r *Redis) IsValkey() bool {
++	reply := r.DoWithStringReply("INFO", "server")
++	isValkey, err := ParseServerVersion(reply)
++	if err != nil {
++		log.Warnf("failed to detect server type: %v, assuming Redis", err)
++		return false
++	}
++	return isValkey
++}
+diff --git a/internal/commands/table.go b/internal/commands/table.go
+index 16dc982..3f3cf1f 100644
+--- a/internal/commands/table.go
++++ b/internal/commands/table.go
+@@ -3276,6 +3276,60 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"HEXPIRE": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HEXPIREAT": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HEXPIRETIME": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"HGET": {
+ 		"HASH",
+ 		[]keySpec{
+@@ -3312,6 +3366,42 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"HGETDEL": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HGETEX": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"HINCRBY": {
+ 		"HASH",
+ 		[]keySpec{
+@@ -3420,6 +3510,96 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"HPERSIST": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HPEXPIRE": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HPEXPIREAT": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HPEXPIRETIME": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
++	"HPTTL": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"HRANDFIELD": {
+ 		"HASH",
+ 		[]keySpec{
+@@ -3474,6 +3654,24 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"HSETEX": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"HSETNX": {
+ 		"HASH",
+ 		[]keySpec{
+@@ -3510,6 +3708,24 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"HTTL": {
++		"HASH",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"HVALS": {
+ 		"HASH",
+ 		[]keySpec{
+@@ -4183,6 +4399,24 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"XACKDEL": {
++		"STREAM",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"XADD": {
+ 		"STREAM",
+ 		[]keySpec{
+@@ -4255,6 +4489,24 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
++	"XDELEX": {
++		"STREAM",
++		[]keySpec{
++			{
++				"index",
++				1,
++				"",
++				0,
++				"range",
++				0,
++				1,
++				0,
++				0,
++				0,
++				0,
++			},
++		},
++	},
+ 	"XGROUP-CREATE": {
+ 		"STREAM",
+ 		[]keySpec{
+@@ -4740,166 +4992,4 @@ var redisCommands = map[string]redisCommand{
+ 			},
+ 		},
+ 	},
+-	"HPEXPIREAT": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HEXPIREAT": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HEXPIRE": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HPEXPIRE": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HPERSIST": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HEXPIRETIME": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HPEXPIRETIME": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HTTL": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+-	"HPTTL": {
+-		"HASH",
+-		[]keySpec{
+-			{
+-				"index",
+-				1,
+-				"",
+-				0,
+-				"range",
+-				0,
+-				1,
+-				0,
+-				0,
+-				0,
+-				0,
+-			},
+-		},
+-	},
+ }
+diff --git a/internal/rdb/rdb.go b/internal/rdb/rdb.go
+index 27a0c2a..f22d074 100644
+--- a/internal/rdb/rdb.go
++++ b/internal/rdb/rdb.go
+@@ -57,6 +57,7 @@ type Loader struct {
+ 
+ 	name       string
+ 	updateFunc func(int64)
++	isValkey   bool // true if reading a Valkey RDB (VALKEY magic string)
+ }
+ 
+ func NewLoader(name string, updateFunc func(int64), filPath string, ch chan *entry.Entry) *Loader {
+@@ -89,10 +90,18 @@ func (ld *Loader) ParseRDB(ctx context.Context) int {
+ 	if err != nil {
+ 		log.Panicf(err.Error())
+ 	}
+-	if !bytes.Equal(buf[:5], []byte("REDIS")) {
+-		log.Panicf("verify magic string, invalid file format. bytes=[%v]", buf[:5])
++	var version int
++	if bytes.Equal(buf[:5], []byte("REDIS")) {
++		// Redis format: "REDIS" (5 bytes) + version (4 bytes), e.g., "REDIS0012"
++		version, err = strconv.Atoi(string(buf[5:]))
++		ld.isValkey = false
++	} else if bytes.Equal(buf[:6], []byte("VALKEY")) {
++		// Valkey 9.0+ format: "VALKEY" (6 bytes) + version (3 bytes), e.g., "VALKEY080"
++		version, err = strconv.Atoi(string(buf[6:]))
++		ld.isValkey = true
++	} else {
++		log.Panicf("verify magic string, invalid file format. bytes=[%v]", buf[:6])
+ 	}
+-	version, err := strconv.Atoi(string(buf[5:]))
+ 	if err != nil {
+ 		log.Panicf(err.Error())
+ 	}
+@@ -201,7 +210,7 @@ func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
+ 			return
+ 		default:
+ 			key := structure.ReadString(rd)
+-			o := types.ParseObject(rd, typeByte, key)
++			o := types.ParseObject(rd, typeByte, key, ld.isValkey)
+ 			cmdC := o.Rewrite()
+ 			for cmd := range cmdC {
+ 				e := entry.NewEntry()
+diff --git a/internal/rdb/types/hash.go b/internal/rdb/types/hash.go
+index aa374f8..a15393f 100644
+--- a/internal/rdb/types/hash.go
++++ b/internal/rdb/types/hash.go
+@@ -13,6 +13,11 @@ type HashObject struct {
+ 	typeByte byte
+ 	rd       io.Reader
+ 	cmdC     chan RedisCmd
++	isValkey bool
++}
++
++func (o *HashObject) SetIsValkey(isValkey bool) {
++	o.isValkey = isValkey
+ }
+ 
+ func (o *HashObject) LoadFromBuffer(rd io.Reader, key string, typeByte byte) {
+@@ -35,13 +40,18 @@ func (o *HashObject) Rewrite() <-chan RedisCmd {
+ 			o.readHashZiplist()
+ 		case rdbTypeHashListpack:
+ 			o.readHashListpack()
+-		case rdbTypeHashMetadataPreGa:
+-			o.readHashTtl(true)
+-		case rdbTypeHashListpackExPre:
++		case rdbTypeHashWithExpiry22:
++			// Type 22: Redis uses RDB_TYPE_HASH_METADATA_PRE_GA, Valkey uses RDB_TYPE_HASH_2
++			if o.isValkey {
++				o.readHashValkey() // Valkey 9.0 HASH_2 format: field, value, TTL (8-byte ms)
++			} else {
++				o.readHashTtl(true) // Redis 8.0 format: TTL (length), field, value
++			}
++		case rdbTypeHashWithExpiry23:
+ 			o.readHashListpackTtl(true)
+-		case rdbTypeHashMetadata:
++		case rdbTypeHashWithExpiry24:
+ 			o.readHashTtl(false)
+-		case rdbTypeHashListpackEx:
++		case rdbTypeHashWithExpiry25:
+ 			o.readHashListpackTtl(false)
+ 		default:
+ 			log.Panicf("unknown hash type. typeByte=[%d]", o.typeByte)
+@@ -86,6 +96,23 @@ func (o *HashObject) readHashListpack() {
+ 	}
+ }
+ 
++// readHashValkey reads Valkey 9.0's RDB_TYPE_HASH_2 format
++// Format: size, then for each entry: field (string), value (string), TTL (8-byte ms timestamp)
++func (o *HashObject) readHashValkey() {
++	rd := o.rd
++	size := int(structure.ReadLength(rd))
++	for i := 0; i < size; i++ {
++		key := structure.ReadString(rd)
++		value := structure.ReadString(rd)
++		// TTL is an 8-byte little-endian millisecond timestamp, or -1 for a field that
++		expireAt := int64(structure.ReadUint64(rd)) // never expires. 0 is a real past time.
++		o.cmdC <- RedisCmd{"hset", o.key, key, value}
++		if expireAt != -1 {
++			o.cmdC <- RedisCmd{"hpexpireat", o.key, strconv.FormatInt(expireAt, 10), "fields", "1", key}
++		}
++	}
++}
++
+ 
+ func (o *HashObject) readHashListpackTtl(isPre bool)  {
+ 	rd := o.rd
+diff --git a/internal/rdb/types/interface.go b/internal/rdb/types/interface.go
+index e8ccf76..97472df 100644
+--- a/internal/rdb/types/interface.go
++++ b/internal/rdb/types/interface.go
+@@ -49,11 +49,15 @@ const (
+ 	rdbTypeSetListpack      = 20 // RDB_TYPE_SET_LISTPACK
+ 	rdbTypeStreamListpacks3 = 21 // RDB_TYPE_STREAM_LISTPACKS_3
+ 
+-	// https://github.com/redis/redis/pull/13391
+-	rdbTypeHashMetadataPreGa = 22 // RDB_TYPE_HASH_METADATA_PRE_GA
+-	rdbTypeHashListpackExPre = 23 // RDB_TYPE_HASH_LISTPACK_EX_PRE_GA
+-	rdbTypeHashMetadata      = 24 // RDB_TYPE_HASH_METADATA
+-	rdbTypeHashListpackEx    = 25 // RDB_TYPE_HASH_LISTPACK_EX
++	// Hash with field expiration (type 22-25)
++	// Note: Type 22 has different formats:
++	//   - Redis 8.0: RDB_TYPE_HASH_METADATA_PRE_GA (format: TTL, field, value)
++	//   - Valkey 9.0: RDB_TYPE_HASH_2 (format: field, value, TTL as 8-byte ms)
++	// See: https://github.com/redis/redis/pull/13391
++	rdbTypeHashWithExpiry22 = 22
++	rdbTypeHashWithExpiry23 = 23 // Redis: RDB_TYPE_HASH_LISTPACK_EX_PRE_GA
++	rdbTypeHashWithExpiry24 = 24 // Redis: RDB_TYPE_HASH_METADATA
++	rdbTypeHashWithExpiry25 = 25 // Redis: RDB_TYPE_HASH_LISTPACK_EX
+ 
+ 	moduleTypeNameCharSet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+ 
+@@ -73,7 +77,13 @@ type RedisObject interface {
+ 	Rewrite() <-chan RedisCmd
+ }
+ 
+-func ParseObject(rd io.Reader, typeByte byte, key string) RedisObject {
++// HashObjectValkey is interface for hash objects that need Valkey format detection
++type HashObjectValkey interface {
++	RedisObject
++	SetIsValkey(isValkey bool)
++}
++
++func ParseObject(rd io.Reader, typeByte byte, key string, isValkey bool) RedisObject {
+ 	switch typeByte {
+ 	case rdbTypeString: // string
+ 		o := new(StringObject)
+@@ -92,8 +102,9 @@ func ParseObject(rd io.Reader, typeByte byte, key string) RedisObject {
+ 		o.LoadFromBuffer(rd, key, typeByte)
+ 		return o
+ 	case rdbTypeHash, rdbTypeHashZipmap, rdbTypeHashZiplist, rdbTypeHashListpack,
+-		rdbTypeHashMetadataPreGa, rdbTypeHashListpackExPre, rdbTypeHashMetadata, rdbTypeHashListpackEx: // hash
++		rdbTypeHashWithExpiry22, rdbTypeHashWithExpiry23, rdbTypeHashWithExpiry24, rdbTypeHashWithExpiry25: // hash
+ 		o := new(HashObject)
++		o.SetIsValkey(isValkey)
+ 		o.LoadFromBuffer(rd, key, typeByte)
+ 		return o
+ 	case rdbTypeStreamListpacks, rdbTypeStreamListpacks2, rdbTypeStreamListpacks3: // stream
+diff --git a/internal/reader/parsing_aof.go b/internal/reader/parsing_aof.go
+index be813e7..c9bb51e 100644
+--- a/internal/reader/parsing_aof.go
++++ b/internal/reader/parsing_aof.go
+@@ -715,8 +715,10 @@ func (aofInfo *INFO) ParsingSingleAppendOnlyFile(ctx context.Context, FileName s
+ 		}
+ 	}
+ 	defer fp.Close()
+-	sig := make([]byte, 5)
+-	if n, err := fp.Read(sig); err != nil || n != 5 || !bytes.Equal(sig, []byte("REDIS")) {
++	sig := make([]byte, 6)
++	n, err := fp.Read(sig)
++	isRDB := (err == nil) && ((n >= 5 && bytes.Equal(sig[:5], []byte("REDIS"))) || (n >= 6 && bytes.Equal(sig[:6], []byte("VALKEY"))))
++	if !isRDB {
+ 		if _, err := fp.Seek(0, 0); err != nil {
+ 			log.Infof("Unrecoverable error reading the append only File %v: %v", FileName, err)
+ 			return AOFFailed
+diff --git a/internal/reader/scan_standalone_reader.go b/internal/reader/scan_standalone_reader.go
+index 4be0d7c..34de8ca 100644
+--- a/internal/reader/scan_standalone_reader.go
++++ b/internal/reader/scan_standalone_reader.go
+@@ -52,6 +52,7 @@ type scanStandaloneReader struct {
+ 	needDumpQueue   *utils.UniqueQueue
+ 	needRestoreChan chan *needRestoreItem
+ 	dumpClient      *client.Redis
++	isValkey        bool
+ 	subWG           sync.WaitGroup
+ 
+ 	stat struct {
+@@ -206,6 +207,8 @@ func (r *scanStandaloneReader) scan() {
+ func (r *scanStandaloneReader) dump() {
+ 	nowDbId := 0
+ 	r.dumpClient = client.NewRedisClient(r.ctx, r.opts.Address, r.opts.Username, r.opts.Password, r.opts.Tls, r.opts.TlsConfig, r.opts.PreferReplica)
++	r.isValkey = r.dumpClient.IsValkey()
++	log.Infof("[%s] detected server type: %s", r.stat.Name, map[bool]string{true: "Valkey", false: "Redis"}[r.isValkey])
+ 	// Support prefer_replica=true in both Cluster and Standalone mode
+ 	if r.opts.PreferReplica {
+ 		r.dumpClient.Do("READONLY")
+@@ -295,7 +298,7 @@ func (r *scanStandaloneReader) restore() {
+ 			log.Warnf("key=[%s] dump len=[%d] too large, split it. This is not a good practice in Redis.", key, len(dump))
+ 			typeByte := dump[0]
+ 			anotherReader := strings.NewReader(dump[1 : len(dump)-10])
+-			o := types.ParseObject(anotherReader, typeByte, key)
++			o := types.ParseObject(anotherReader, typeByte, key, r.isValkey)
+ 			cmdC := o.Rewrite()
+ 			for cmd := range cmdC {
+ 				e := entry.NewEntry()
+diff --git a/internal/writer/redis_standalone_writer.go b/internal/writer/redis_standalone_writer.go
+index b807094..7bb5456 100644
+--- a/internal/writer/redis_standalone_writer.go
++++ b/internal/writer/redis_standalone_writer.go
+@@ -123,8 +123,19 @@ func (w *redisStandaloneWriter) processWrite(ctx context.Context) {
+ 			}
+ 			// send
+ 			bytes := e.Serialize()
+-			for e.SerializedSize+atomic.LoadInt64(&w.stat.UnansweredBytes) > config.Opt.Advanced.TargetRedisClientMaxQuerybufLen {
+-				time.Sleep(1 * time.Nanosecond)
++			// Only wait while the target still owes us answers. An entry that is on its own
++			// larger than the allowance can never be made room for, because the reply that
++			// would free the space is for a command that was never sent.
++			for unanswered := atomic.LoadInt64(&w.stat.UnansweredBytes); unanswered > 0 && e.SerializedSize+unanswered > config.Opt.Advanced.TargetRedisClientMaxQuerybufLen; unanswered = atomic.LoadInt64(&w.stat.UnansweredBytes) {
++				time.Sleep(time.Millisecond)
++			}
++			if e.SerializedSize > config.Opt.Advanced.TargetRedisClientMaxQuerybufLen {
++				key := ""
++				if len(e.Keys) > 0 {
++					key = e.Keys[0]
++				}
++				log.Warnf("[%s] entry serialized size=%d exceeds target_redis_client_max_querybuf_len=%d, sending anyway. cmd=[%s] key=[%s]",
++					w.stat.Name, e.SerializedSize, config.Opt.Advanced.TargetRedisClientMaxQuerybufLen, e.CmdName, key)
+ 			}
+ 			rl.Take()
+ 			log.Debugf("[%s] send cmd. cmd=[%s]", w.stat.Name, e.String())
+diff --git a/scripts/commands/hexpire.json b/scripts/commands/hexpire.json
+new file mode 100644
+index 0000000..a08a1d1
+--- /dev/null
++++ b/scripts/commands/hexpire.json
+@@ -0,0 +1,118 @@
++{
++    "HEXPIRE": {
++        "summary": "Set expiry for hash field using relative time to expire (seconds)",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -6,
++        "function": "hexpireCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "Specified NX | XX | GT | LT condition not met",
++                        "const": 0
++                    },
++                    {
++                        "description": "Expiration time was set or updated.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Field deleted because the specified expiration time is in the past.",
++                        "const": 2
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "seconds",
++                "type": "integer"
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "nx",
++                        "type": "pure-token",
++                        "token": "NX"
++                    },
++                    {
++                        "name": "xx",
++                        "type": "pure-token",
++                        "token": "XX"
++                    },
++                    {
++                        "name": "gt",
++                        "type": "pure-token",
++                        "token": "GT"
++                    },
++                    {
++                        "name": "lt",
++                        "type": "pure-token",
++                        "token": "LT"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/hexpireat.json b/scripts/commands/hexpireat.json
+new file mode 100644
+index 0000000..7e8ea33
+--- /dev/null
++++ b/scripts/commands/hexpireat.json
+@@ -0,0 +1,118 @@
++{
++    "HEXPIREAT": {
++        "summary": "Set expiry for hash field using an absolute Unix timestamp (seconds)",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -6,
++        "function": "hexpireatCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "Specified NX | XX | GT | LT condition not met",
++                        "const": 0
++                    },
++                    {
++                        "description": "Expiration time was set or updated.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Field deleted because the specified expiration time is in the past.",
++                        "const": 2
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "unix-time-seconds",
++                "type": "unix-time"
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "nx",
++                        "type": "pure-token",
++                        "token": "NX"
++                    },
++                    {
++                        "name": "xx",
++                        "type": "pure-token",
++                        "token": "XX"
++                    },
++                    {
++                        "name": "gt",
++                        "type": "pure-token",
++                        "token": "GT"
++                    },
++                    {
++                        "name": "lt",
++                        "type": "pure-token",
++                        "token": "LT"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+\ No newline at end of file
+diff --git a/scripts/commands/hexpiretime.json b/scripts/commands/hexpiretime.json
+new file mode 100644
+index 0000000..28c1e5f
+--- /dev/null
++++ b/scripts/commands/hexpiretime.json
+@@ -0,0 +1,84 @@
++{
++    "HEXPIRETIME": {
++        "summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -5,
++        "function": "hexpiretimeCommand",
++        "history": [],
++        "command_flags": [
++            "READONLY",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RO",
++                    "ACCESS"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "The field exists but has no associated expire.",
++                        "const": -1
++                    },
++                    {
++                        "description": "Expiration Unix timestamp in seconds.",
++                        "type": "integer",
++                        "minimum": 1
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/hgetdel.json b/scripts/commands/hgetdel.json
+new file mode 100644
+index 0000000..af748fb
+--- /dev/null
++++ b/scripts/commands/hgetdel.json
+@@ -0,0 +1,78 @@
++{
++    "HGETDEL": {
++        "summary": "Returns the value of a field and deletes it from the hash.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "8.0.0",
++        "arity": -5,
++        "function": "hgetdelCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "ACCESS",
++                    "DELETE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "List of values associated with the given fields, in the same order as they are requested.",
++            "type": "array",
++            "minItems": 1,
++            "items": {
++                "oneOf": [
++                    {
++                        "type": "string"
++                    },
++                    {
++                        "type": "null"
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
++
+diff --git a/scripts/commands/hgetex.json b/scripts/commands/hgetex.json
+new file mode 100644
+index 0000000..02889ca
+--- /dev/null
++++ b/scripts/commands/hgetex.json
+@@ -0,0 +1,111 @@
++{
++    "HGETEX": {
++        "summary": "Get the value of one or more fields of a given hash key, and optionally set their expiration.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "8.0.0",
++        "arity": -5,
++        "function": "hgetexCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "notes": "RW and UPDATE because it changes the TTL",
++                "flags": [
++                    "RW",
++                    "ACCESS",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "List of values associated with the given fields, in the same order as they are requested.",
++            "type": "array",
++            "minItems": 1,
++            "items": {
++                "oneOf": [
++                    {
++                        "type": "string"
++                    },
++                    {
++                        "type": "null"
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "expiration",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "seconds",
++                        "type": "integer",
++                        "token": "EX"
++                    },
++                    {
++                        "name": "milliseconds",
++                        "type": "integer",
++                        "token": "PX"
++                    },
++                    {
++                        "name": "unix-time-seconds",
++                        "type": "unix-time",
++                        "token": "EXAT"
++                    },
++                    {
++                        "name": "unix-time-milliseconds",
++                        "type": "unix-time",
++                        "token": "PXAT"
++                    },
++                    {
++                        "name": "persist",
++                        "type": "pure-token",
++                        "token": "PERSIST"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
++
+diff --git a/scripts/commands/hpersist.json b/scripts/commands/hpersist.json
+new file mode 100644
+index 0000000..e7c1cb1
+--- /dev/null
++++ b/scripts/commands/hpersist.json
+@@ -0,0 +1,83 @@
++{
++    "HPERSIST": {
++        "summary": "Removes the expiration time for each specified field",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -5,
++        "function": "hpersistCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "The field exists but has no associated expire.",
++                        "const": -1
++                    },
++                    {
++                        "description": "Expiration time was removed",
++                        "const": 1
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/hpexpire.json b/scripts/commands/hpexpire.json
+new file mode 100644
+index 0000000..269eb4e
+--- /dev/null
++++ b/scripts/commands/hpexpire.json
+@@ -0,0 +1,118 @@
++{
++    "HPEXPIRE": {
++        "summary": "Set expiry for hash field using relative time to expire (milliseconds)",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -6,
++        "function": "hpexpireCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "Specified NX | XX | GT | LT condition not met",
++                        "const": 0
++                    },
++                    {
++                        "description": "Expiration time was set or updated.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Field deleted because the specified expiration time is in the past.",
++                        "const": 2
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "milliseconds",
++                "type": "integer"
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "nx",
++                        "type": "pure-token",
++                        "token": "NX"
++                    },
++                    {
++                        "name": "xx",
++                        "type": "pure-token",
++                        "token": "XX"
++                    },
++                    {
++                        "name": "gt",
++                        "type": "pure-token",
++                        "token": "GT"
++                    },
++                    {
++                        "name": "lt",
++                        "type": "pure-token",
++                        "token": "LT"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+\ No newline at end of file
+diff --git a/scripts/commands/hpexpireat.json b/scripts/commands/hpexpireat.json
+new file mode 100644
+index 0000000..f5f1319
+--- /dev/null
++++ b/scripts/commands/hpexpireat.json
+@@ -0,0 +1,118 @@
++{
++    "HPEXPIREAT": {
++        "summary": "Set expiry for hash field using an absolute Unix timestamp (milliseconds)",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -6,
++        "function": "hpexpireatCommand",
++        "history": [],
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "Specified NX | XX | GT | LT condition not met",
++                        "const": 0
++                    },
++                    {
++                        "description": "Expiration time was set or updated.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Field deleted because the specified expiration time is in the past.",
++                        "const": 2
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "unix-time-milliseconds",
++                "type": "unix-time"
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "nx",
++                        "type": "pure-token",
++                        "token": "NX"
++                    },
++                    {
++                        "name": "xx",
++                        "type": "pure-token",
++                        "token": "XX"
++                    },
++                    {
++                        "name": "gt",
++                        "type": "pure-token",
++                        "token": "GT"
++                    },
++                    {
++                        "name": "lt",
++                        "type": "pure-token",
++                        "token": "LT"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+\ No newline at end of file
+diff --git a/scripts/commands/hpexpiretime.json b/scripts/commands/hpexpiretime.json
+new file mode 100644
+index 0000000..67406cb
+--- /dev/null
++++ b/scripts/commands/hpexpiretime.json
+@@ -0,0 +1,84 @@
++{
++    "HPEXPIRETIME": {
++        "summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -5,
++        "function": "hpexpiretimeCommand",
++        "history": [],
++        "command_flags": [
++            "READONLY",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RO",
++                    "ACCESS"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "The field exists but has no associated expire.",
++                        "const": -1
++                    },
++                    {
++                        "description": "Expiration Unix timestamp in milliseconds.",
++                        "type": "integer",
++                        "minimum": 1
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/hpttl.json b/scripts/commands/hpttl.json
+new file mode 100644
+index 0000000..c5cde0e
+--- /dev/null
++++ b/scripts/commands/hpttl.json
+@@ -0,0 +1,87 @@
++{
++    "HPTTL": {
++        "summary": "Returns the TTL in milliseconds of a hash field.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -5,
++        "function": "hpttlCommand",
++        "history": [],
++        "command_flags": [
++            "READONLY",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "command_tips": [
++            "NONDETERMINISTIC_OUTPUT"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RO",
++                    "ACCESS"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "The field exists but has no associated expire.",
++                        "const": -1
++                    },
++                    {
++                        "description": "TTL in milliseconds.",
++                        "type": "integer",
++                        "minimum": 1
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/hsetex.json b/scripts/commands/hsetex.json
+new file mode 100644
+index 0000000..6f6a6c6
+--- /dev/null
++++ b/scripts/commands/hsetex.json
+@@ -0,0 +1,132 @@
++{
++    "HSETEX": {
++        "summary": "Set the value of one or more fields of a given hash key, and optionally set their expiration.",
++        "complexity": "O(N) where N is the number of fields being set.",
++        "group": "hash",
++        "since": "8.0.0",
++        "arity": -6,
++        "function": "hsetexCommand",
++        "command_flags": [
++            "WRITE",
++            "DENYOOM",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "oneOf": [
++                {
++                    "description": "No field was set (due to FXX or FNX flags).",
++                    "const": 0
++                },
++                {
++                    "description": "All the fields were set.",
++                    "const": 1
++                }
++            ]
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "fnx",
++                        "type": "pure-token",
++                        "token": "FNX"
++                    },
++                    {
++                        "name": "fxx",
++                        "type": "pure-token",
++                        "token": "FXX"
++                    }
++                ]
++            },
++            {
++                "name": "expiration",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "seconds",
++                        "type": "integer",
++                        "token": "EX"
++                    },
++                    {
++                        "name": "milliseconds",
++                        "type": "integer",
++                        "token": "PX"
++                    },
++                    {
++                        "name": "unix-time-seconds",
++                        "type": "unix-time",
++                        "token": "EXAT"
++                    },
++                    {
++                        "name": "unix-time-milliseconds",
++                        "type": "unix-time",
++                        "token": "PXAT"
++                    },
++                    {
++                        "name": "keepttl",
++                        "type": "pure-token",
++                        "token": "KEEPTTL"
++                    }
++                ]
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "data",
++                        "type": "block",
++                        "multiple": true,
++                        "arguments": [
++                            {
++                                "name": "field",
++                                "type": "string"
++                            },
++                            {
++                                "name": "value",
++                                "type": "string"
++                            }
++                        ]
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/httl.json b/scripts/commands/httl.json
+new file mode 100644
+index 0000000..1f5310a
+--- /dev/null
++++ b/scripts/commands/httl.json
+@@ -0,0 +1,87 @@
++{
++    "HTTL": {
++        "summary": "Returns the TTL in seconds of a hash field.",
++        "complexity": "O(N) where N is the number of specified fields",
++        "group": "hash",
++        "since": "7.4.0",
++        "arity": -5,
++        "function": "httlCommand",
++        "history": [],
++        "command_flags": [
++            "READONLY",
++            "FAST"
++        ],
++        "acl_categories": [
++            "HASH"
++        ],
++        "command_tips": [
++            "NONDETERMINISTIC_OUTPUT"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RO",
++                    "ACCESS"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns empty array if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The field does not exist.",
++                        "const": -2
++                    },
++                    {
++                        "description": "The field exists but has no associated expire.",
++                        "const": -1
++                    },
++                    {
++                        "description": "TTL in seconds.",
++                        "type": "integer",
++                        "minimum": 1
++                    }
++                ]
++            }
++        },
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "fields",
++                "token": "FIELDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numfields",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "field",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ]
++    }
++}
+diff --git a/scripts/commands/xackdel.json b/scripts/commands/xackdel.json
+new file mode 100644
+index 0000000..f33d128
+--- /dev/null
++++ b/scripts/commands/xackdel.json
+@@ -0,0 +1,109 @@
++{
++    "XACKDEL": {
++        "summary": "Acknowledges and deletes one or multiple messages for a stream consumer group.",
++        "complexity": "O(1) for each message ID processed.",
++        "group": "stream",
++        "since": "8.2.0",
++        "arity": -6,
++        "function": "xackdelCommand",
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "STREAM"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "UPDATE",
++                    "DELETE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "group",
++                "type": "string"
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "keepref",
++                        "type": "pure-token",
++                        "token": "KEEPREF"
++                    },
++                    {
++                        "name": "delref",
++                        "type": "pure-token",
++                        "token": "DELREF"
++                    },
++                    {
++                        "name": "acked",
++                        "type": "pure-token",
++                        "token": "ACKED"
++                    }
++                ]
++            },
++            {
++                "name": "ids",
++                "token": "IDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numids",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "id",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns an array with -1 for each requested ID if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The id does not exist in the provided stream key.",
++                        "const": -1
++                    },
++                    {
++                        "description": "Entry was acknowledged and deleted from the stream.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Entry was acknowledged but not deleted, there are still dangling references.",
++                        "const": 2
++                    }
++                ]
++            }
++        }
++    }
++}
+diff --git a/scripts/commands/xdelex.json b/scripts/commands/xdelex.json
+new file mode 100644
+index 0000000..cdb886e
+--- /dev/null
++++ b/scripts/commands/xdelex.json
+@@ -0,0 +1,104 @@
++{
++    "XDELEX": {
++        "summary": "Deletes one or multiple entries from the stream.",
++        "complexity": "O(1) for each single item to delete in the stream, regardless of the stream size.",
++        "group": "stream",
++        "since": "8.2.0",
++        "arity": -5,
++        "function": "xdelexCommand",
++        "command_flags": [
++            "WRITE",
++            "FAST"
++        ],
++        "acl_categories": [
++            "STREAM"
++        ],
++        "key_specs": [
++            {
++                "flags": [
++                    "RW",
++                    "DELETE"
++                ],
++                "begin_search": {
++                    "index": {
++                        "pos": 1
++                    }
++                },
++                "find_keys": {
++                    "range": {
++                        "lastkey": 0,
++                        "step": 1,
++                        "limit": 0
++                    }
++                }
++            }
++        ],
++        "arguments": [
++            {
++                "name": "key",
++                "type": "key",
++                "key_spec_index": 0
++            },
++            {
++                "name": "condition",
++                "type": "oneof",
++                "optional": true,
++                "arguments": [
++                    {
++                        "name": "keepref",
++                        "type": "pure-token",
++                        "token": "KEEPREF"
++                    },
++                    {
++                        "name": "delref",
++                        "type": "pure-token",
++                        "token": "DELREF"
++                    },
++                    {
++                        "name": "acked",
++                        "type": "pure-token",
++                        "token": "ACKED"
++                    }
++                ]
++            },
++            {
++                "name": "ids",
++                "token": "IDS",
++                "type": "block",
++                "arguments": [
++                    {
++                        "name": "numids",
++                        "type": "integer"
++                    },
++                    {
++                        "name": "id",
++                        "type": "string",
++                        "multiple": true
++                    }
++                ]
++            }
++        ],
++        "reply_schema": {
++            "description": "Array of results. Returns an array with -1 for each requested ID if the key does not exist.",
++            "type": "array",
++            "minItems": 0,
++            "maxItems": 4294967295,
++            "items": {
++                "oneOf": [
++                    {
++                        "description": "The id does not exist in the provided stream key.",
++                        "const": -1
++                    },
++                    {
++                        "description": "Entry was deleted from the stream.",
++                        "const": 1
++                    },
++                    {
++                        "description": "Entry was not deleted, but there are still dangling references.",
++                        "const": 2
++                    }
++                ]
++            }
++        }
++    }
++}
+diff --git a/scripts/table.json b/scripts/table.json
+index af15fc1..51c85f8 100644
+--- a/scripts/table.json
++++ b/scripts/table.json
+@@ -2571,6 +2571,54 @@
+                     }
+                 }
+             ],
++            "HEXPIRE": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HEXPIREAT": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HEXPIRETIME": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "HGET": [
+                 {
+                     "begin_search": {
+@@ -2603,6 +2651,38 @@
+                     }
+                 }
+             ],
++            "HGETDEL": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HGETEX": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "HINCRBY": [
+                 {
+                     "begin_search": {
+@@ -2699,6 +2779,86 @@
+                     }
+                 }
+             ],
++            "HPERSIST": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HPEXPIRE": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HPEXPIREAT": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HPEXPIRETIME": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
++            "HPTTL": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "HRANDFIELD": [
+                 {
+                     "begin_search": {
+@@ -2747,6 +2907,22 @@
+                     }
+                 }
+             ],
++            "HSETEX": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "HSETNX": [
+                 {
+                     "begin_search": {
+@@ -2779,6 +2955,22 @@
+                     }
+                 }
+             ],
++            "HTTL": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "HVALS": [
+                 {
+                     "begin_search": {
+@@ -3310,6 +3502,22 @@
+                     }
+                 }
+             ],
++            "XACKDEL": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "XADD": [
+                 {
+                     "begin_search": {
+@@ -3374,6 +3582,22 @@
+                     }
+                 }
+             ],
++            "XDELEX": [
++                {
++                    "begin_search": {
++                        "index": {
++                            "pos": 1
++                        }
++                    },
++                    "find_keys": {
++                        "range": {
++                            "lastkey": 0,
++                            "step": 1,
++                            "limit": 0
++                        }
++                    }
++                }
++            ],
+             "XGROUP-CREATE": [
+                 {
+                     "begin_search": {

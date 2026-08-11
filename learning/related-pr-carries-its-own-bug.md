@@ -1,7 +1,7 @@
 ---
 id: related-pr-carries-its-own-bug
 status: platform-confirmed
-last_verified: 2026-08-07
+last_verified: 2026-08-11
 verified_by:
   - 20260807_080545__tair-opensource_redisshake__1005
 evidence: "Difficulty screen returned FAIL EASY at 8 of 8 agent solves. The related later PR adapted as the lever carried a bug of its own, and 4 of 5 plausible implementations of its one function fail the graded test built from real server output"
@@ -104,3 +104,27 @@ marker. A task can carry two of these, and both are difficulty as well as correc
 
 See also [[difficulty-levers-must-discriminate]], [[oracle-bug-vs-pr-scope]],
 [[raising-difficulty-on-a-wrapper-task]], [[source-pr-cross-check]].
+
+## Outcome, 2026-08-11: ACCEPTED, with three adaptations in one golden patch
+
+The task closed accepted on round 4, carrying adaptations from **three** different later PRs at
+once (1038 server type detection, 1048 the append-only length-prefixed read, and the writer half
+of 1043). What survived review, and the bounds that kept it inside `docs/faq.md`:
+
+- **Each one is related by the source PR's own output or its own TODO.** 1038 closes the TODO PR
+  1005 left in the scan path. 1048 fixes the append-only path PR 1005 already changes. 1043's
+  writer bug is reached by PR 1005's own decoder output, since a large Valkey hash field becomes
+  exactly the oversized single command that trips it
+- **Half a PR is a legitimate adaptation and a declared one.** PR 1043's `rdb.go` half was
+  **rejected** because it sits on PR 1018's RESTORE machinery, and importing that would change
+  what PR 1005 is about. The answers said so under PR additions rather than leaving the reviewer
+  to notice the asymmetry
+- **None was copied wholesale.** The graded tests are the submitter's; the upstream test files do
+  not ship
+
+**The caution this note opens with is now measured from the other side.** "The upstream author
+got it wrong" is strong evidence a **trap** exists. It is not evidence that agents fall into it:
+4 of 5 hand-written plausible versions of PR 1038's parser fail the graded test, and **all four
+honest implementations passed**, because they wrote exact field matching where upstream wrote a
+first-match scan. Use the author's mistake to find the trap, then measure whether anyone actually
+walks into it, and remember the control is a ceiling (LEDGER L35).
