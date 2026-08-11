@@ -38,7 +38,7 @@ _Owner of CLAUDE.md **Section 11**. Loaded every session._
 - Reworking a task after blank feedback or a dropped eval result, or resubmitting blindly and burning a revision slot, before checking whether the failure even reproduces
 - Reading a review-gate block as an infra failure and retrying instead of fixing what the judge flagged. Per `docs/faq.md`, "My eval says Review gate blocked at the agentic judge / difficulty screen - what does that mean?", the one infra case is a message that explicitly says the difficulty screen failed with an infra error
 - Diagnosing "Not run: difficulty screen" as a second failure, when it only means the agentic judge blocked first and the later stage never ran
-- Vague issue descriptions or unfixable explanations (these get submissions rejected)
+- Vague issue descriptions or unfixable explanations (these get submissions rejected). On Path C there is no zip at all, so that explanation plus Comments for Reviewer is everything the reviewer reads - see Section 2, Path C
 - Skipping the Step 1.5 ask for the task zip and platform data, or generating those values instead of waiting for the user
 - Not cross-checking platform Category, Difficulty, Tags, and Languages against task.toml and the actual repo code
 - Inventing any of the handling-time numbers instead of asking the user
@@ -127,3 +127,7 @@ _Owner of CLAUDE.md **Section 11**. Loaded every session._
 - Chasing a prescriptiveness finding that quotes a requirement a graded test asserts - that finding is asking you to break `test_faithfulness`, which blocks
 - Treating a past prescriptiveness pass as settled - any later instruction edit re-runs it, and it has come back red on text unchanged since the passing round
 - Diagnosing a non-reproducing platform failure by guessing - measure each hypothesis (time the cold build, read the offline cache, time the verifier) and record the dead ends so nobody repeats the sweep
+- Routing a "too easy" result to Fixable trigger 8 without measuring whether any lever actually raises difficulty. The trigger is conditional on being able to add to the PR (`docs/guidelines.md:65`), and when every lever measures zero the verdict is Not Fixable, not a Fixable task you gave up on
+- Leaving an accepted or rejected task sitting in `tasks/`. Step 11 closes it: outcome into `task.md`, `INDEX.md` set and the `pending-revision` count dropped, learnings and the calibration row harvested, folder moved to `_archive/`, which is the only tracked-in-git copy there will ever be
+- Overwriting `submission_answer.txt` when the verdict moves between paths without archiving the old one. `tasks/` is gitignored, so a Fixable-to-Invalid rewrite is how 17 issue blocks stopped existing on libcrux 1165
+- Letting any number live only in `submission_answer.txt`. Every figure in it has to be re-derivable from `task.md`, or a full rewrite silently reverts it - libcrux's revision figure did that twice

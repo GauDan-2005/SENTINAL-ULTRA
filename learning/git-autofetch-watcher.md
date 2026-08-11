@@ -1,7 +1,7 @@
 ---
 id: git-autofetch-watcher
 status: locally-verified
-last_verified: 2026-08-04
+last_verified: 2026-08-08
 verified_by:
   - workspace-wide (measured on this machine, all three live tasks plus _archive)
 evidence: "Two mtime snapshots three minutes apart, taken while only root-level files were being edited. Six FETCH_HEAD files rewritten in a single 0.09-second burst at 22:05:13 and again at 22:08:13"
@@ -69,6 +69,29 @@ both ship a periodic autofetch, and it recurses into nested repositories.
   never from an earlier round's result.
 - If the bundle can be closed out in one sitting, turn the editor's autofetch off first. In
   VS Code and Cursor that is `git.autofetch: false`.
+
+## It is not only `FETCH_HEAD`: a build-tool cache appeared the same way
+
+Added 2026-08-08, firefly 1123 round 3. `bin/rezip.sh` **refused to build a zip** and named
+`work/environment/repo/smart_contracts/corda/cordapp_kat/.gradle`, five files of Gradle daemon state
+with lock files and `last-build.bin`.
+
+Nothing in the session ran Gradle. Checked before touching it, and every answer mattered:
+
+- **untracked** (`git ls-files` returns nothing), so deleting it is not a tracked-source edit
+- **absent from `download/original/`**, so it did not arrive in the bundle
+- **absent from the uploaded zip the reviewer had reviewed**, so it never reached the platform
+- mtime **more than a day after** the previous zip was built, so it appeared *between sessions*
+
+Same class as the `FETCH_HEAD` writer above, most likely the same editor indexing a Gradle project
+it found in the tree. The consequence is worse: a stray dev artifact in the shipped repo **hard-caps
+the packaging axis at 1**, which is a real scored penalty rather than a failed whitelist.
+
+**Two rules out of it.** A tree you verified in a previous session is not still verified, so re-run
+the stray sweep at the start of every round, not only on arrival. And build the zip through
+`bin/rezip.sh` rather than a hand-rolled `zip`: the scripted path caught this in one second, and it
+is the same path that carries the loose-ref step in [[empty-git-refs]] that a hand-rolled zip had
+already gone around once.
 
 ## What this does not explain
 

@@ -1,0 +1,460 @@
+diff --git a/libcrux-ml-kem/tests/sentinel_pqcp_absent.rs b/libcrux-ml-kem/tests/sentinel_pqcp_absent.rs
+new file mode 100644
+index 00000000..786d9f77
+--- /dev/null
++++ b/libcrux-ml-kem/tests/sentinel_pqcp_absent.rs
+@@ -0,0 +1,12 @@
++//! Verifier-only probe.
++//!
++//! The harness compiles this in a configuration where the `pqcp` feature is
++//! off. There the module must not exist, so this file must fail to compile. If
++//! it does compile, the new API is reachable without its feature.
++
++#![cfg(not(feature = "pqcp"))]
++
++#[test]
++fn pqcp_module_is_not_reachable_without_the_feature() {
++    let _ = libcrux_ml_kem::mlkem768::pqcp::PK_LEN;
++}
+diff --git a/libcrux-ml-kem/tests/sentinel_pqcp_verifier.rs b/libcrux-ml-kem/tests/sentinel_pqcp_verifier.rs
+new file mode 100644
+index 00000000..aa25bb12
+--- /dev/null
++++ b/libcrux-ml-kem/tests/sentinel_pqcp_verifier.rs
+@@ -0,0 +1,415 @@
++//! Tests for the PQCP common API introduced under the `pqcp` feature.
++//!
++//! These cover every function in the packed and unpacked surface, across all
++//! three parameter sets, including the internally-sampled (`rand`) variants,
++//! the marshal/parse round-trips, the aliases, the key checks, and what happens
++//! to a destination key when a parse is rejected.
++
++#![cfg(all(feature = "pqcp", feature = "rand"))]
++
++/// Public keys taken from the project's own invalid-modulus vectors. They are
++/// the right length for the parameter set but are not well formed, so length
++/// alone cannot be what a key check looks at.
++fn invalid_public_keys(parameter_set: &str) -> Vec<Vec<u8>> {
++    let path = format!(
++        "{}/tests/kats/invalid_modulus/ML-KEM-{}.txt",
++        env!("CARGO_MANIFEST_DIR"),
++        parameter_set
++    );
++    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {path}: {e}"));
++    text.lines()
++        .filter(|line| !line.trim().is_empty())
++        .map(|line| hex::decode(line.trim()).expect("vector is hex"))
++        .collect()
++}
++
++macro_rules! pqcp_tests {
++    ($variant:ident, $parameter_set:literal, $vector_count:literal) => {
++        mod $variant {
++            use super::invalid_public_keys;
++            use libcrux_ml_kem::$variant::pqcp::*;
++            use libcrux_ml_kem::$variant::unpacked::{init_key_pair, init_public_key};
++            use rand::RngCore;
++
++            /// Keys and ciphertexts made through the byte-array API round-trip,
++            /// whether the randomness comes from the caller or from an rng.
++            #[test]
++            fn packed_roundtrip() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_derand(&mut ct, &mut ss_enc, &pk, encaps_coins).unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec(&mut ss_dec, &ct, &sk).unwrap();
++                assert_eq!(ss_enc, ss_dec);
++
++                // The same round-trip with the seeds sampled internally.
++                let mut pk2 = [0u8; PK_LEN];
++                let mut sk2 = [0u8; SK_LEN];
++                crypto_kem_keypair(&mut pk2, &mut sk2, &mut rng).unwrap();
++
++                let mut ct2 = [0u8; CT_LEN];
++                let mut ss_enc2 = [0u8; SS_LEN];
++                crypto_kem_enc(&mut ct2, &mut ss_enc2, &pk2, &mut rng).unwrap();
++
++                let mut ss_dec2 = [0u8; SS_LEN];
++                crypto_kem_dec(&mut ss_dec2, &ct2, &sk2).unwrap();
++                assert_eq!(ss_enc2, ss_dec2);
++
++                // Two keypairs from the same seed agree, and a different seed
++                // gives a different key.
++                let mut pk3 = [0u8; PK_LEN];
++                let mut sk3 = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk3, &mut sk3, coins).unwrap();
++                assert_eq!(pk, pk3);
++                assert_eq!(sk, sk3);
++                assert_ne!(pk, pk2);
++            }
++
++            /// The struct API round-trips through its own types, the seed alias
++            /// matches the function it aliases, and a key pair parsed back from
++            /// serialized bytes still decapsulates.
++            #[test]
++            fn unpacked_roundtrip() {
++                let mut rng = rand::rng();
++
++                let mut key_pair = init_key_pair();
++                crypto_kem_keypair_struct(&mut key_pair, &mut rng);
++
++                let mut pk = [0u8; PK_LEN];
++                crypto_kem_marshal_pk(&mut pk, key_pair.public_key()).unwrap();
++
++                let mut parsed_pk = init_public_key();
++                crypto_kem_parse_pk(&pk, &mut parsed_pk).unwrap();
++
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_derand_struct(&mut ct, &mut ss_enc, &parsed_pk, encaps_coins)
++                    .unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec, &ct, &key_pair).unwrap();
++                assert_eq!(ss_enc, ss_dec);
++
++                // `sk_from_seed` has to behave like `keypair_derand_struct`.
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++
++                let mut seeded = init_key_pair();
++                crypto_kem_keypair_derand_struct(&mut seeded, coins);
++
++                let mut aliased = init_key_pair();
++                crypto_kem_sk_from_seed(&mut aliased, coins);
++
++                let mut sk = [0u8; SK_LEN];
++                let mut sk_aliased = [0u8; SK_LEN];
++                crypto_kem_marshal_sk(&mut sk, &seeded).unwrap();
++                crypto_kem_marshal_sk(&mut sk_aliased, &aliased).unwrap();
++                assert_eq!(sk, sk_aliased);
++
++                // Deriving the public key from the key pair matches its own.
++                let mut derived_pk = init_public_key();
++                crypto_kem_pk_from_sk(&mut derived_pk, &seeded);
++
++                let mut pk_from_derived = [0u8; PK_LEN];
++                let mut pk_from_pair = [0u8; PK_LEN];
++                crypto_kem_marshal_pk(&mut pk_from_derived, &derived_pk).unwrap();
++                crypto_kem_marshal_pk(&mut pk_from_pair, seeded.public_key()).unwrap();
++                assert_eq!(pk_from_derived, pk_from_pair);
++
++                // A key pair parsed from the serialized private key still works.
++                let mut parsed = init_key_pair();
++                crypto_kem_parse_sk(&sk, &mut parsed).unwrap();
++
++                let mut ct2 = [0u8; CT_LEN];
++                let mut ss_enc2 = [0u8; SS_LEN];
++                crypto_kem_enc_struct(&mut ct2, &mut ss_enc2, &derived_pk, &mut rng).unwrap();
++
++                let mut ss_dec2 = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec2, &ct2, &parsed).unwrap();
++                assert_eq!(ss_enc2, ss_dec2);
++            }
++
++            /// A well-formed key passes the checks. Keys that are the right
++            /// length but not well formed are rejected, by the checks and by
++            /// the parse functions, with the error that says which key it was.
++            #[test]
++            fn key_checks_reject_invalid_keys() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++                crypto_kem_check_pk(&pk).unwrap();
++                crypto_kem_check_sk(&sk).unwrap();
++
++                let vectors = invalid_public_keys($parameter_set);
++                // Fixture guard. These vectors live in the repo the agent works in, so a
++                // truncated file would quietly shrink what this test actually checks.
++                assert_eq!(vectors.len(), $vector_count);
++                for vector in vectors {
++                    let bad: [u8; PK_LEN] = vector.as_slice().try_into().unwrap();
++
++                    let err = crypto_kem_check_pk(&bad).unwrap_err();
++                    assert!(matches!(err, PQCPError::InvalidPublicKey));
++
++                    let mut destination = init_public_key();
++                    let err = crypto_kem_parse_pk(&bad, &mut destination).unwrap_err();
++                    assert!(matches!(err, PQCPError::InvalidPublicKey));
++                }
++
++                let bad_sk = [0xffu8; SK_LEN];
++                let err = crypto_kem_check_sk(&bad_sk).unwrap_err();
++                assert!(matches!(err, PQCPError::InvalidPrivateKey));
++
++                // A private key carries the encapsulation key and a digest of
++                // it. Altering either one breaks that binding, and a check that
++                // only looks at encoding bounds will not notice.
++                let mut sk_digest = sk;
++                sk_digest[SK_LEN - 33] ^= 0xff;
++                let err = crypto_kem_check_sk(&sk_digest).unwrap_err();
++                assert!(matches!(err, PQCPError::InvalidPrivateKey));
++
++                let mut sk_ek = sk;
++                sk_ek[SK_LEN - 40] ^= 0xff;
++                let err = crypto_kem_check_sk(&sk_ek).unwrap_err();
++                assert!(matches!(err, PQCPError::InvalidPrivateKey));
++
++                // The rejection secret sits outside the binding, so a key that
++                // differs only there is still well formed.
++                let mut sk_reject = sk;
++                sk_reject[SK_LEN - 1] ^= 0xff;
++                crypto_kem_check_sk(&sk_reject).unwrap();
++
++                // Encapsulation and decapsulation do not validate their keys, so
++                // the keys rejected above still travel through those paths without
++                // an error. Only the check and parse entry points judge a key.
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++                let mut ct_unvalidated = [0u8; CT_LEN];
++                let mut ss_unvalidated = [0u8; SS_LEN];
++                crypto_kem_enc_derand(
++                    &mut ct_unvalidated,
++                    &mut ss_unvalidated,
++                    &[0xffu8; PK_LEN],
++                    encaps_coins,
++                )
++                .unwrap();
++
++                let mut ss_from_bad_sk = [0u8; SS_LEN];
++                crypto_kem_dec(&mut ss_from_bad_sk, &ct_unvalidated, &bad_sk).unwrap();
++
++                // and the same on the struct side, against a key pair nothing populated
++                let untouched = init_key_pair();
++                let mut ct_struct = [0u8; CT_LEN];
++                let mut ss_struct = [0u8; SS_LEN];
++                crypto_kem_enc_derand_struct(
++                    &mut ct_struct,
++                    &mut ss_struct,
++                    untouched.public_key(),
++                    encaps_coins,
++                )
++                .unwrap();
++                let mut ss_dec_struct = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec_struct, &ct_struct, &untouched).unwrap();
++
++                let mut destination = init_key_pair();
++                let err = crypto_kem_parse_sk(&bad_sk, &mut destination).unwrap_err();
++                assert!(matches!(err, PQCPError::InvalidPrivateKey));
++            }
++
++            /// Decapsulation does not report failure. A ciphertext that was not
++            /// produced for this key still yields a shared secret, and that
++            /// secret is stable, wrong, and tied to this key's rejection secret.
++            #[test]
++            fn implicit_rejection_is_stable_and_key_bound() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++                let mut ct = [0u8; CT_LEN];
++                let mut ss = [0u8; SS_LEN];
++                crypto_kem_enc_derand(&mut ct, &mut ss, &pk, encaps_coins).unwrap();
++
++                let mut foreign = ct;
++                foreign[0] ^= 0xff;
++
++                // No error, and the same answer both times.
++                let mut first = [0u8; SS_LEN];
++                let mut second = [0u8; SS_LEN];
++                crypto_kem_dec(&mut first, &foreign, &sk).unwrap();
++                crypto_kem_dec(&mut second, &foreign, &sk).unwrap();
++                assert_eq!(first, second);
++                assert_ne!(first, ss);
++
++                // Tied to this key's rejection secret, not to the ciphertext alone.
++                let mut sk_reject = sk;
++                sk_reject[SK_LEN - 1] ^= 0xff;
++                let mut other = [0u8; SS_LEN];
++                crypto_kem_dec(&mut other, &foreign, &sk_reject).unwrap();
++                assert_ne!(first, other);
++
++                // A genuine ciphertext is unaffected by that same byte.
++                let mut genuine = [0u8; SS_LEN];
++                crypto_kem_dec(&mut genuine, &ct, &sk_reject).unwrap();
++                assert_eq!(genuine, ss);
++            }
++
++            /// A rejected parse leaves the destination key as it was, so a
++            /// caller that reuses a buffer still holds the key it parsed before.
++            #[test]
++            fn parse_failures_leave_output_unchanged() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++                let mut destination_pk = init_public_key();
++                crypto_kem_parse_pk(&pk, &mut destination_pk).unwrap();
++
++                let bad_pk = invalid_public_keys($parameter_set)
++                    .into_iter()
++                    .next()
++                    .expect("at least one vector");
++                let bad_pk: [u8; PK_LEN] = bad_pk.as_slice().try_into().unwrap();
++                assert!(crypto_kem_parse_pk(&bad_pk, &mut destination_pk).is_err());
++
++                let mut after = [0u8; PK_LEN];
++                crypto_kem_marshal_pk(&mut after, &destination_pk).unwrap();
++                assert_eq!(pk, after);
++
++                let mut destination_pair = init_key_pair();
++                crypto_kem_parse_sk(&sk, &mut destination_pair).unwrap();
++                assert!(crypto_kem_parse_sk(&[0xffu8; SK_LEN], &mut destination_pair).is_err());
++
++                let mut after_sk = [0u8; SK_LEN];
++                crypto_kem_marshal_sk(&mut after_sk, &destination_pair).unwrap();
++                assert_eq!(sk, after_sk);
++
++                // The untouched key still decapsulates what was encapsulated to it.
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_derand_struct(&mut ct, &mut ss_enc, &destination_pk, encaps_coins)
++                    .unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec, &ct, &destination_pair).unwrap();
++                assert_eq!(ss_enc, ss_dec);
++            }
++        }
++    };
++}
++
++#[cfg(feature = "mlkem512")]
++pqcp_tests!(mlkem512, "512", 775);
++
++#[cfg(feature = "mlkem768")]
++pqcp_tests!(mlkem768, "768", 780);
++
++#[cfg(feature = "mlkem1024")]
++pqcp_tests!(mlkem1024, "1024", 1040);
++
++/// The two halves of the API describe the same key material: bytes produced by
++/// the packed functions have to be readable by the struct functions, and a
++/// ciphertext made against one has to decapsulate through the other.
++#[cfg(feature = "mlkem768")]
++#[test]
++fn packed_and_struct_apis_interoperate() {
++    use libcrux_ml_kem::mlkem768::pqcp::*;
++    use libcrux_ml_kem::mlkem768::unpacked::init_key_pair;
++    use rand::RngCore;
++
++    let mut rng = rand::rng();
++
++    let mut coins = [0u8; KEYGEN_SEED_LEN];
++    rng.fill_bytes(&mut coins);
++
++    let mut pk = [0u8; PK_LEN];
++    let mut sk = [0u8; SK_LEN];
++    crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++    // The serialized private key parses into an unpacked key pair whose public
++    // key serializes back to the same bytes the packed API produced.
++    let mut parsed_pair = init_key_pair();
++    crypto_kem_parse_sk(&sk, &mut parsed_pair).unwrap();
++
++    let mut pk_from_pair = [0u8; PK_LEN];
++    crypto_kem_marshal_pk(&mut pk_from_pair, parsed_pair.public_key()).unwrap();
++    assert_eq!(pk, pk_from_pair);
++
++    // A ciphertext from the packed API decapsulates through the struct API.
++    let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++    rng.fill_bytes(&mut encaps_coins);
++
++    let mut ct = [0u8; CT_LEN];
++    let mut ss_enc = [0u8; SS_LEN];
++    crypto_kem_enc_derand(&mut ct, &mut ss_enc, &pk, encaps_coins).unwrap();
++
++    let mut ss_dec = [0u8; SS_LEN];
++    crypto_kem_dec_struct(&mut ss_dec, &ct, &parsed_pair).unwrap();
++    assert_eq!(ss_enc, ss_dec);
++}
++
++/// Integrating code lives outside this crate, so it has to be able to name the
++/// error type and match on every variant the API documents.
++#[cfg(feature = "mlkem768")]
++#[test]
++fn error_type_is_public_and_matchable() {
++    use libcrux_ml_kem::mlkem768::pqcp::{crypto_kem_check_pk, crypto_kem_check_sk, PQCPError};
++    use libcrux_ml_kem::mlkem768::pqcp::{PK_LEN, SK_LEN};
++
++    let variants = [
++        PQCPError::KeyGeneration,
++        PQCPError::Encapsulation,
++        PQCPError::Decapsulation,
++        PQCPError::InvalidPublicKey,
++        PQCPError::InvalidPrivateKey,
++    ];
++
++    for variant in variants {
++        // The match is exhaustive, so the enum cannot carry a different set.
++        let name = match variant {
++            PQCPError::KeyGeneration => "KeyGeneration",
++            PQCPError::Encapsulation => "Encapsulation",
++            PQCPError::Decapsulation => "Decapsulation",
++            PQCPError::InvalidPublicKey => "InvalidPublicKey",
++            PQCPError::InvalidPrivateKey => "InvalidPrivateKey",
++        };
++        assert_eq!(format!("{variant:?}"), name);
++    }
++
++    // And the fallible entry points really report through it.
++    let checked: Result<(), PQCPError> = crypto_kem_check_pk(&[0xffu8; PK_LEN]);
++    assert!(matches!(checked, Err(PQCPError::InvalidPublicKey)));
++
++    let checked: Result<(), PQCPError> = crypto_kem_check_sk(&[0xffu8; SK_LEN]);
++    assert!(matches!(checked, Err(PQCPError::InvalidPrivateKey)));
++}
+diff --git a/libcrux-ml-kem/tests/sentinel_rand_absent.rs b/libcrux-ml-kem/tests/sentinel_rand_absent.rs
+new file mode 100644
+index 00000000..3a0ce733
+--- /dev/null
++++ b/libcrux-ml-kem/tests/sentinel_rand_absent.rs
+@@ -0,0 +1,15 @@
++//! Verifier-only probe.
++//!
++//! The harness compiles this with `pqcp` on and `rand` off. The four
++//! randomness-sampling entry points must not exist there, so this file must
++//! fail to compile. If it compiles, they were not gated on `rand`.
++
++#![cfg(all(feature = "pqcp", not(feature = "rand")))]
++
++use libcrux_ml_kem::mlkem768::pqcp::crypto_kem_enc as _;
++use libcrux_ml_kem::mlkem768::pqcp::crypto_kem_enc_struct as _;
++use libcrux_ml_kem::mlkem768::pqcp::crypto_kem_keypair as _;
++use libcrux_ml_kem::mlkem768::pqcp::crypto_kem_keypair_struct as _;
++
++#[test]
++fn rand_gated_functions_are_absent_without_the_rand_feature() {}

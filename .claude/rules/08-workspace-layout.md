@@ -66,7 +66,8 @@ SENTINAL-ULTRA/                      # Workspace root (WSL: Ubuntu-22.04, ext4)
   facts.yml                          # The settled facts, machine-readable
   prompts.md                         # Reusable prompt templates for the submitter
   .gitignore
-  _archive/                          # Finished tasks moved here whole, same folder shape
+  _archive/                          # Finished tasks moved here whole by Step 11, same folder shape.
+                                     # Tracked in git; tasks/ is NOT, so this move is what makes a task recoverable
     20260719_045042__oliver-oloughlin_kvdex__245/   # The one platform-ACCEPTED bundle. READ-ONLY reference
     superseded/                      # Retired root documents (Sentinel_CLAUDE.md, res.md). TODO.md was
                                      # rewritten as root prompts.md; revision.md moved to chat_transcripts/

@@ -4,6 +4,7 @@ status: platform-confirmed
 last_verified: 2026-08-09
 verified_by:
   - 20260803_111822__xlwings_xlwings__2719
+  - 20260805_080500__hyperledger-firefly_firefly__1123
 evidence: "Difficulty screen went 87.5% to 75% to 37.5% solves. The round that cleared it added no requirement at all: it graded the untested half of a sentence the instruction already carried. The platform artifact names that new id in two of the three opus failures"
 applies_to:
   languages: [any]
@@ -75,6 +76,26 @@ Two mechanics that decide whether the result means anything:
 - **Decide `fail_to_pass` versus `pass_to_pass` by running the new test at the base commit**, not by
   where it feels like it belongs. If it passes at base it is a regression guard. On this task that
   check is what kept a guard out of an f2p list already at the hard ceiling of 20.
+
+## Confirmed again, by a reviewer, 2026-08-08
+
+firefly 1123 passed **every** evaluation check and then came back from peer review with two
+findings. The first was exactly this note's shape: the field table said two pool fields were never
+accepted as caller input, the oracle implemented it, and nothing asserted it, so an implementation
+exposing both as writable API input scored 1.0 on all 18 graded tests.
+
+So the line above, *"a reviewer will find it if you do not"*, is now two for two, and the cost is a
+round rather than a rewrite. **Run the clause-by-clause pass before the bundle goes up, not after a
+green board.** A full set of green checks is exactly the state in which this defect survives, because
+every check is satisfied by the tests you wrote and none of them knows about the clause you did not.
+
+The second finding was the mirror image, an assertion with no clause behind it, which is the same
+map read in the other direction. Walking it both ways costs one pass:
+
+| Direction | Failure it finds |
+|---|---|
+| clause has no assertion | a stated rule an implementation can ignore |
+| assertion has no clause | overreach, graded behaviour the agent was never told about |
 
 See also [[difficulty-levers-must-discriminate]], [[related-pr-carries-its-own-bug]],
 [[quality-check-criteria]], [[peer-review-bounces]].

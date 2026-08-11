@@ -1,4 +1,4 @@
-_Owner of CLAUDE.md **Section 1**, Steps 6 through 10. Loaded every session. Steps 1 through 5.5 are in `.claude/rules/01-workflow-steps-1-to-5.5.md`._
+_Owner of CLAUDE.md **Section 1**, Steps 6 through 11. The filename still reads `6-to-10`; it owns Step 11 as well. Loaded every session. Steps 1 through 5.5 are in `.claude/rules/01-workflow-steps-1-to-5.5.md`._
 
 ### STEP 6: Draft the form answers
 
@@ -84,7 +84,7 @@ any of the four asked numbers.
 
 Only after EVERY previous step for the current task is complete - verdict locked, fixes applied in `tasks/<name>/work/`, the task zipped into `tasks/<name>/upload/` (Fixable path), the whole Step 5.5 battery passing against that zip, platform evals passing (Fixable path), and all handling times received from the user - create `tasks/<Original Directory Name>/answers/submission_answer.txt` using the matching Section 6 template. It stores the full answer set for the task Cursor is currently working on. If a submission_answer.txt from a previous task still exists, confirm with the user before overwriting it.
 
-This closes the first submission, not the task. Most tasks come back at least once - see Step 10, which keeps this file in step with every revision.
+This closes the first submission, not the task. The task itself closes at Step 11. Most tasks come back at least once - see Step 10, which keeps this file in step with every revision.
 
 **Humanize the file as the last action, after it is written.** Draft the answers, write the file, then run the `humanizer` skill over every free-text answer in it - the issue descriptions, the difficulty paragraph, the unfixable explanation, and Comments for Reviewer - and save the humanized text back. Do this even when the same paragraphs were already humanized in chat, because they get edited, merged and re-ordered on the way into the file, and the pass that matters is the one over the text the user actually pastes. The file is not finished until that pass has run.
 
@@ -150,6 +150,8 @@ A strike count of **2 forces the remove-the-dependency path**. It is not a nudge
 
 **Supersede, do not only append.** A round that replaces a mechanism makes every earlier block describing that mechanism false, and appending a new block does not repair them - the file then describes two mutually exclusive verifiers, which is what a reviewer reads. Before adding anything, grep the answers file for the mechanism you replaced and edit **every** block that still describes it, noting the superseded design in a single clause rather than deleting the history. libcrux shipped a round where issue 2 and Files Changed entry 2 still described a git-based test-tree restore that a later entry in the same file explained had been removed. List the greps you ran in `task.md`, so the next round can see what was checked.
 
+**A verdict change rewrites the whole file, so archive the old one first.** Moving between paths changes the template, so "edit it, do not regenerate it" cannot be followed literally, because the new file asks different questions. Copy the current file to `answers/superseded/submission_answer.<old-verdict>.txt` before writing the new one, and make sure every numbered issue block also exists in `task.md`. `tasks/` is gitignored, so the overwrite is the only copy there was. libcrux 1165 moved from Fixable to Invalid in round 5 and 17 issue blocks stopped existing; the substance survived only because `task.md` carried it in prose. Every number in the answers file has to be re-derivable from `task.md` for the same reason: libcrux's revision figure silently reverted twice, and the arithmetic checks pass on a reverted value.
+
 What typically moves after a revision round:
 
 | Answer | When it changes |
@@ -183,3 +185,23 @@ The answers file's "all revisions" figure is **copied from the last Cumulative c
 
 Then hand the user the changed answers, in the platform's order, saying which ones moved since the last round so they only have to re-paste those.
 
+
+### STEP 11: Close the task (the reviewer accepted or rejected it)
+
+A task ends when the reviewer returns Accept or Reject, and the ending has work of its own. Steps 1 to 10 do not cover it, so until now a closed task simply stopped being touched and three records drifted every time: the register, the learning index, and the calibration row.
+
+**1. Confirm the outcome and which task it belongs to.** Same discipline as Step 10 item 0. Identify the task from what the message itself cites, never from the path pasted alongside it.
+
+**2. Write the closing block into `task.md`.** The reviewer's verdict verbatim under a dated heading, the Submission Quality Score if one was given, the final round number, and the last row of the handling-time ledger. This is the last write to that file.
+
+**3. Update `INDEX.md` in the same action.** Status becomes `accepted` or `rejected`, the two closing tokens the register defines. Round keeps the final round number. Then update the `pending-revision: N of 2` line under `## Active`, because closing a task is the thing that frees a slot and that count is what blocks the next claim (Step 1 item 5).
+
+**4. Harvest before the folder moves.** Answer two questions in writing. What did this task prove that no note yet says, and what did it disprove that a note still says. A new fact gets a `learning/` note with frontmatter plus a row in `learning/README.md`. A disproved claim gets a `LEDGER.md` row. The Step 1 write-back rule says how to write one. **This step is when it fires.**
+
+**5. Fill in the task's `learning/calibration.tsv` row.** Set `verdict` to the path submitted, set `outcome` to what the reviewer returned, and refresh every number the rounds moved: revision minutes, upload rounds, and any measured column that changed. A row left at its mid-flight values is worse than a missing one, because the next task reads it as measured.
+
+**6. Move the whole folder to `_archive/<Original Directory Name>/`.** Whole and unstripped, the shape Section 7 describes. `download/`, `work/`, `upload/`, `answers/`, `task.md` and `task_details.md` all travel, and rule files cite paths inside archived bundles. Move it with `git mv` and confirm with `git ls-files _archive/<name> | wc -l`. **`tasks/` is gitignored and `_archive/` is not**, so this move is the moment the record becomes recoverable. Everything before it lives on one disk with no history.
+
+**7. Repoint anything that cited the old path.** Moving the folder breaks every inbound `tasks/<name>/...` reference in `learning/`, the rule files and the README, and those are exactly the citations that made the note credible. `grep -rl 'tasks/<name>' --include='*.md' .` finds them; rewrite each to `_archive/<name>/...` and re-run `bin/doclint.sh`, which is what catches the ones you miss. On libcrux 1165 the move broke one reference in `learning/stock-bundle-defect-baseline.md` and doclint found it immediately.
+
+Then say in chat that the task is closed, which notes were added, and what the `pending-revision` count now reads.

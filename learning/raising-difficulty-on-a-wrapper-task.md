@@ -1,10 +1,10 @@
 ---
 id: raising-difficulty-on-a-wrapper-task
 status: platform-confirmed
-last_verified: 2026-08-06
+last_verified: 2026-08-11
 verified_by:
   - 20260723_030109__cryspen_libcrux__1165
-evidence: "Three difficulty screens returned easy (8/8, then 4/4, then 4/4, both models at 100%). Ten expansions tried or prototyped, all measured at zero effect. Submitted Invalid / Not Fixable on the PR-scope trigger. Caveat added 2026-08-06: all ten levers added to PR 1165's own surface, and none adapted a related later PR, which docs/faq.md sanctioned on 2026-08-05 - see the last section"
+evidence: "Three difficulty screens returned easy (8/8, then 4/4, then 4/4, both models at 100%). Ten expansions tried or prototyped, all measured at zero effect. Submitted Invalid / Not Fixable on the PR-scope trigger. Caveat added 2026-08-06: all ten levers added to PR 1165's own surface, and none adapted a related later PR, which docs/faq.md sanctioned on 2026-08-05 - see the last section. Accepted by the reviewer 2026-08-11 on that verdict, with no bundle reviewed and no difficulty re-run"
 applies_to:
   languages: [rust, any]
   runners: [cargo]
@@ -270,3 +270,21 @@ a tenth of the same kind, it is the only one of a different kind.
 lever list has to include at least one related later PR that was looked at and rejected on evidence.
 A list of ten additions to the original PR's own surface is a list of one kind of lever, however
 long it is.
+
+## The verdict was accepted (2026-08-11)
+
+The reviewer accepted it. Submitted **Invalid / Not Fixable** with the trigger box "PR scope needs
+to be changed or reduced" ticked and every Environment Issues sub-box deliberately left blank,
+because the environment was healthy and the submission said so.
+
+Two things that acceptance does **not** settle, and both matter more than the outcome:
+
+- **No bundle was reviewed.** Path C has no zip upload field, so the four rounds of verifier
+  hardening were never looked at. The acceptance validates the argument, not the work behind it.
+- **It does not say five rounds were needed.** The structural measurement that carried the verdict
+  was available at the first difficulty failure. Whether the same case would have been accepted at
+  round 3 is untested.
+
+How the argument was written, and the full validated / not-validated split, is in
+[not-fixable-is-a-written-argument.md](not-fixable-is-a-written-argument.md). This note keeps the
+evidence; that one keeps the write-up.

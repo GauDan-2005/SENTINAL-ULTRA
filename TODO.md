@@ -64,6 +64,12 @@ Check and find:
 
 Then finally learn from this task entirely and then put all your learnings and findings in CLAUDE.md, .claude/ and learning/.
 
+But make sure you dont touch these files:
+
+- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/\_archive/superseded/res.md
+- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/TODO.md
+- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/revision.md
+
 ---
 
 Another task got accepted, so learning/ and CLAUDE.md has been updated. Check and adhere to it.

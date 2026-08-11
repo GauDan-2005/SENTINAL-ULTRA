@@ -1,0 +1,158 @@
+diff --git a/libcrux-ml-kem/tests/pqcp.rs b/libcrux-ml-kem/tests/pqcp.rs
+new file mode 100644
+index 00000000..b3ed098f
+--- /dev/null
++++ b/libcrux-ml-kem/tests/pqcp.rs
+@@ -0,0 +1,152 @@
++//! Tests for the PQCP common API introduced under the `pqcp` feature.
++//!
++//! These cover every function in the packed and unpacked surface, across all
++//! three parameter sets, including the internally-sampled (`rand`) variants,
++//! the marshal/parse round-trips, the aliases, and rejection of malformed keys.
++
++#![cfg(all(feature = "pqcp", feature = "rand"))]
++
++macro_rules! pqcp_tests {
++    ($variant:ident) => {
++        mod $variant {
++            use libcrux_ml_kem::$variant::pqcp::*;
++            use libcrux_ml_kem::$variant::unpacked::{init_key_pair, init_public_key};
++            use rand::RngCore;
++
++            #[test]
++            fn packed_derand_roundtrip() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair_derand(&mut pk, &mut sk, coins).unwrap();
++
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_derand(&mut ct, &mut ss_enc, &pk, encaps_coins).unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec(&mut ss_dec, &ct, &sk).unwrap();
++
++                assert_eq!(ss_enc, ss_dec);
++            }
++
++            #[test]
++            fn packed_rand_roundtrip() {
++                let mut rng = rand::rng();
++
++                let mut pk = [0u8; PK_LEN];
++                let mut sk = [0u8; SK_LEN];
++                crypto_kem_keypair(&mut pk, &mut sk, &mut rng).unwrap();
++
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc(&mut ct, &mut ss_enc, &pk, &mut rng).unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec(&mut ss_dec, &ct, &sk).unwrap();
++
++                assert_eq!(ss_enc, ss_dec);
++            }
++
++            #[test]
++            fn unpacked_roundtrip() {
++                let mut rng = rand::rng();
++
++                let mut key_pair = init_key_pair();
++                crypto_kem_keypair_struct(&mut key_pair, &mut rng);
++
++                // Serialize and re-parse the public key.
++                let mut pk = [0u8; PK_LEN];
++                crypto_kem_marshal_pk(&mut pk, key_pair.public_key()).unwrap();
++
++                let mut parsed_pk = init_public_key();
++                crypto_kem_parse_pk(&pk, &mut parsed_pk).unwrap();
++
++                let mut encaps_coins = [0u8; ENCAPS_SEED_LEN];
++                rng.fill_bytes(&mut encaps_coins);
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_derand_struct(&mut ct, &mut ss_enc, &parsed_pk, encaps_coins)
++                    .unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec, &ct, &key_pair).unwrap();
++
++                assert_eq!(ss_enc, ss_dec);
++            }
++
++            #[test]
++            fn unpacked_seed_marshal_parse() {
++                let mut rng = rand::rng();
++
++                let mut coins = [0u8; KEYGEN_SEED_LEN];
++                rng.fill_bytes(&mut coins);
++
++                // The `sk_from_seed` alias must behave like `keypair_derand_struct`.
++                let mut key_pair = init_key_pair();
++                crypto_kem_keypair_derand_struct(&mut key_pair, coins);
++
++                let mut aliased = init_key_pair();
++                crypto_kem_sk_from_seed(&mut aliased, coins);
++
++                let mut sk = [0u8; SK_LEN];
++                let mut sk_aliased = [0u8; SK_LEN];
++                crypto_kem_marshal_sk(&mut sk, &key_pair).unwrap();
++                crypto_kem_marshal_sk(&mut sk_aliased, &aliased).unwrap();
++                assert_eq!(sk, sk_aliased);
++
++                // Deriving the public key from the key pair matches its own public key.
++                let mut derived_pk = init_public_key();
++                crypto_kem_pk_from_sk(&mut derived_pk, &key_pair);
++
++                let mut pk_from_derived = [0u8; PK_LEN];
++                let mut pk_from_pair = [0u8; PK_LEN];
++                crypto_kem_marshal_pk(&mut pk_from_derived, &derived_pk).unwrap();
++                crypto_kem_marshal_pk(&mut pk_from_pair, key_pair.public_key()).unwrap();
++                assert_eq!(pk_from_derived, pk_from_pair);
++
++                // A key pair parsed from the serialized private key still decapsulates.
++                let mut parsed = init_key_pair();
++                crypto_kem_parse_sk(&sk, &mut parsed).unwrap();
++
++                let mut ct = [0u8; CT_LEN];
++                let mut ss_enc = [0u8; SS_LEN];
++                crypto_kem_enc_struct(&mut ct, &mut ss_enc, &derived_pk, &mut rng).unwrap();
++
++                let mut ss_dec = [0u8; SS_LEN];
++                crypto_kem_dec_struct(&mut ss_dec, &ct, &parsed).unwrap();
++                assert_eq!(ss_enc, ss_dec);
++            }
++
++            #[test]
++            fn parse_pk_rejects_invalid() {
++                let bad = [0xffu8; PK_LEN];
++                let mut pk = init_public_key();
++                assert!(crypto_kem_parse_pk(&bad, &mut pk).is_err());
++            }
++
++            #[test]
++            fn parse_sk_rejects_invalid() {
++                let bad = [0xffu8; SK_LEN];
++                let mut key_pair = init_key_pair();
++                assert!(crypto_kem_parse_sk(&bad, &mut key_pair).is_err());
++            }
++        }
++    };
++}
++
++#[cfg(feature = "mlkem512")]
++pqcp_tests!(mlkem512);
++
++#[cfg(feature = "mlkem768")]
++pqcp_tests!(mlkem768);
++
++#[cfg(feature = "mlkem1024")]
++pqcp_tests!(mlkem1024);

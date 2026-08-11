@@ -22,7 +22,7 @@ contradicts: []
 
 Sources: all four tasks handled in this workspace, 2026-07-31 to 2026-08-04.
 `_archive/20260719_045042__oliver-oloughlin_kvdex__245/task.md`,
-`tasks/20260723_030109__cryspen_libcrux__1165/task.md`,
+`_archive/20260723_030109__cryspen_libcrux__1165/task.md`,
 `tasks/20260727_135618__AltBeacon_android-beacon-library__1177/task.md` and
 `tasks/20260728_153118__jqno_equalsverifier__1166/task.md`.
 

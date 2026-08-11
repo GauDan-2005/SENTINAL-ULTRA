@@ -1,0 +1,57 @@
+Submitter Answers (Invalid/Not Fixable)
+Task: 20260723_030109__cryspen_libcrux__1165
+
+What is your analysis of the Sentinel task? (both occurrences)
+Invalid/Not Fixable
+[Internal] Validity: Invalid
+
+What issue did you find with the task/components? (check all that apply)
+- [x] PR scope needs to be changed or reduced
+- [ ] Environment Issues
+
+If Environment Issues was selected above, what specific issues did you find with the task? (check all that apply)
+- [ ] Image/Dependency Build Failures
+- [ ] Oracle timeout
+- [ ] External-network dependency at build/solve time
+- [ ] Dirty git history that can't be recovered
+(None selected. The environment is healthy and I say so below, so picking any of these would be false.)
+
+Explain in more detail why this task is unfixable:
+1) The source PR is a naming layer over an implementation that is already finished. All eighteen functions in the oracle have bodies between one and seven lines, and five of them are a single line. Every one forwards to something libcrux already exports at the base commit 6146075b, such as generate_key_pair, encapsulate, decapsulate, validate_public_key, validate_private_key_only and the unpacked key helpers. There is no algorithm to write and no bug to find. The whole PR adds 450 lines and removes 4, so nothing that already exists can break while an agent works. That last part matters more than it sounds, because breaking something that already works is where agents actually fail, and this task gives them no way to do it.
+
+2) The task was already easy when it arrived and the platform had already tried to fix that. The task.toml as received records pass_at_k_opus_4_8 of 2 out of 3 and pass_at_k_gpt_5_5 of 2 out of 3, which is a two thirds pass rate against a medium bar that needs at most half. It also records agent_hardened true and hardening_cycles 1, so one hardening cycle had already run and had not moved it.
+
+3) I expanded the PR twice inside its own six files and neither expansion moved the number. The first added two key checking entry points, made the error type publicly matchable, required a rejected parse to leave its destination untouched, and required the crate to build in three more feature configurations. The screen went from 8 of 8 to 4 of 4 with both models still at 100 percent. The second added the FIPS 203 implicit rejection contract and a pairwise binding requirement on the private key check. The screen returned 4 of 4 again. Both expansions are real. I measured each one against a plausible wrong implementation that had scored full marks on the previous bundle and each one now fails it. The requirements discriminate. They do not make the work hard, because the work is still a delegating call.
+
+4) I then prototyped eight more expansions inside the same six files and every one measured out at zero. A trait based generic surface, a wrapper over the crate's own incremental encapsulation API, a parameter set dispatch based on length, zeroization on drop, and a no allocation requirement all came out as more one line forwards, and three of them compiled and passed on the first attempt with no debugging. A C extraction build gate and a conformance suite over the repository's own Wycheproof vectors are both real coverage gains but neither is a difficulty gain. The agent can run the extraction build itself in about seven seconds, and the repository already shows the required gate idiom ten times out of ten with no counter example. For the conformance suite I measured six independent public key generation routes in this crate and all six produce byte identical output that matches the published vectors, so anything that delegates is conformant without trying.
+
+5) Two stronger ideas were ruled out earlier on evidence. A C ABI layer would suit a PR whose whole framing is the reference C interface, but libcrux-ml-kem/src/lib.rs:68 sets deny(unsafe_code), so a raw pointer entry point would force an agent to weaken a crate wide lint in a cryptography library. A backend aware alias would be real work, but simd256 is force enabled across the workspace by the virtual manifest under resolver v1, so the graded tests would execute AVX2 code and the result would depend on whether the grading host has it.
+
+6) The one change that would produce failures is removing the spelled out signatures so the agent has to recall the reference C API from memory. That is difficulty from underspecification, which the guidelines rule out directly, and I measured that it overshoots badly in any case. All the graded tests compile as one binary, so a single argument order difference takes the suite from 17 passing to 0 passing. The oracle's own convention is not even self consistent, since sixteen of the eighteen functions put outputs first and the two parse functions put the input first, so an agent reasoning correctly from the dominant pattern would score zero. The agent also cannot look the convention up, because its network access is limited to the model gateway. That produces an unsolvable task rather than a medium one, and it would leave the tests grading an argument order the instruction no longer states.
+
+7) So the only remaining way to reach medium is a different and harder source PR. Doing that inside PR 1165 would mean replacing what the PR does rather than adding to it, and the guidelines say that when the only way to make a task difficult enough is to reduce or replace the PR scope, the task is not fixable. That is the box I have checked. This is not a verdict on a red screen alone. It rests on the measured shape of the oracle, on the task having been easy before anyone here touched it, and on ten expansions that were tried or prototyped and measured.
+
+Comments for Reviewer:
+This is round 5. The judge passed on the last submission, so the only thing still red is the difficulty screen, and that is what this verdict is about.
+Everything else in the bundle is healthy and I would rather it did not get lost. Across four rounds I found and fixed seventeen issues in this task, and the current bundle passes every local check. Oracle reward 1 with 38 of 38 and raw exit 0, run with solve.sh applied twice so a non idempotent script would show. NOP reward 0 with raw exit 101 and 0 of 38, and I confirmed it is 0 because the feature does not exist at the base commit rather than because the run died quietly. Nine hostile runs all drop the reward to 0 and I named the failing test in each. Three agent runs that write their own test files, rename and delete existing ones, commit, and delete .git all still score 38 of 38. All twenty static checks pass on the extracted zip, the tree is clean, fsck is silent, seven symlinks are intact and both scripts are 0755.
+If this task is re-scoped onto a harder PR, the hardened verifier is worth carrying over. The test tree restore does not use git, which matters because the verify time workspace is not a git repository. The grader fails closed on the test command's exit status. Requirements that no assertion can reach, like the crate still building with the feature off, are graded as commands instead.
+Two things I found that are worth having even though they are not difficulty levers. A solution that gates the new module only on the cargo feature, without the extraction conjunct the rest of the crate uses, currently earns full marks while breaking the crate's C extraction build. And the repository's own invalid key vectors can drive a conformance suite. I measured both and left them out because neither changes difficulty, but they are cheap coverage if someone wants them.
+On the senior engineer estimate, the task.toml carries expert_time_estimate_min of 180, which puts it in the top bucket, and I have answered accordingly. The measured shape of the work, eighteen forwarding functions generated through macros, reads lower than three hours to me, and that gap is part of the same finding.
+
+Senior engineer estimate: 40+ minutes
+
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+45 minutes
+
+How long did it take you to complete the initial task rewrite only?
+120 minutes
+
+How long did it take you to complete the additional questions on the form?
+35 minutes
+
+Total submission time: 200 minutes
+
+How long did it take you to complete all revisions?
+370 minutes

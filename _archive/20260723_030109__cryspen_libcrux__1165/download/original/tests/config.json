@@ -1,0 +1,53 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test -p libcrux-ml-kem --features pqcp,rand --test pqcp"
+    ],
+    "selected_test_files_to_run": [
+      "libcrux-ml-kem/tests/pqcp.rs"
+    ],
+    "env": {
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "mlkem512::packed_derand_roundtrip",
+      "mlkem512::packed_rand_roundtrip",
+      "mlkem512::unpacked_roundtrip",
+      "mlkem512::unpacked_seed_marshal_parse",
+      "mlkem512::parse_pk_rejects_invalid",
+      "mlkem512::parse_sk_rejects_invalid",
+      "mlkem768::packed_derand_roundtrip",
+      "mlkem768::packed_rand_roundtrip",
+      "mlkem768::unpacked_roundtrip",
+      "mlkem768::unpacked_seed_marshal_parse",
+      "mlkem768::parse_pk_rejects_invalid",
+      "mlkem768::parse_sk_rejects_invalid",
+      "mlkem1024::packed_derand_roundtrip",
+      "mlkem1024::packed_rand_roundtrip",
+      "mlkem1024::unpacked_roundtrip",
+      "mlkem1024::unpacked_seed_marshal_parse",
+      "mlkem1024::parse_pk_rejects_invalid",
+      "mlkem1024::parse_sk_rejects_invalid"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^test (?P<name>\\S+) \\.\\.\\. ok",
+      "fail_regex": "^test (?P<name>\\S+) \\.\\.\\. FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

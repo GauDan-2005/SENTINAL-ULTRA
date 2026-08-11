@@ -1,7 +1,7 @@
 ---
 id: accepted-bundle-reference
 status: platform-confirmed
-last_verified: 2026-08-04
+last_verified: 2026-08-11
 verified_by:
   - 20260719_045042__oliver-oloughlin_kvdex__245
 evidence: "The bundle as accepted on round 6, measured out of _archive/"
@@ -151,22 +151,60 @@ Measuring the four bundles here answered it in one command:
 | kvdex 245 (**accepted**) | 47 | **717** chars |
 | libcrux 1165 | 45 | 791 |
 | equalsverifier 1166 | 36 | 447 |
-| xlwings 2719 | 25 | 675 |
+| xlwings 2719 | 35 | 312 |
+| firefly 1123 | 55 | 663 |
+| hulak 118 | 49 | 603 |
+| statrs 315 | 59 | 769 |
+| openwhispr 1002 | 21 | 602 |
+| redisshake 1005 | 15 | 680 |
+| ziti-sdk-c 668 | 46 | 777 |
+| elfuse 162 | 21 | 379 |
 | AltBeacon 1177, as bounced | 13 | **2724** (second longest 2466) |
 | AltBeacon 1177, after the round 5 rewrite | 67 | 826 |
 
-So the bundles that are not being bounced on clarity all sit under 800 characters in their
-longest paragraph, and the one being bounced was at three and a half times that. The rewrite that
+So the bundles that are not being bounced on clarity all sit at or under about 830 characters in
+their longest paragraph, and the one being bounced was more than three times that. The rewrite that
 moved it was a 14-row field table plus two bullet lists, not more headings.
 
 `instr_lines` and `instr_max_para_chars` are now columns in `calibration.tsv`. Measure with
 
 ```bash
-python3 -c "
-import io,sys; t=io.open(sys.argv[1],encoding='utf-8').read()
-p=[x for x in t.split(chr(10)*2) if x.strip() and not x.lstrip().startswith(('|','-','#','*'))]
-print(t.count(chr(10)),'lines, longest prose paragraph',max(map(len,p)))" instruction.md
+python3 - instruction.md <<'EOF'
+import io, re, sys
+t = io.open(sys.argv[1], encoding='utf-8').read()
+t = re.sub('(?ms)^' + chr(96)*3 + '.*?^' + chr(96)*3 + r'[ \t]*$', '', t)   # drop fenced code
+struct = re.compile(r'^(\||#|>|[-*+][ \t]|\d+[.)][ \t])')                   # table, heading, quote, bullet, NUMBERED item
+runs, cur = [], []
+for ln in t.split(chr(10)):
+    if not ln.strip() or struct.match(ln.lstrip()):
+        if cur: runs.append(chr(10).join(cur)); cur = []
+    else:
+        cur.append(ln)
+if cur: runs.append(chr(10).join(cur))
+print(t.count(chr(10)), 'lines, longest prose paragraph', max(map(len, runs)))
+EOF
 ```
+
+**Corrected 2026-08-11 (LEDGER L45).** The script above replaces one that dropped only lines
+starting with `|`, `-`, `#` or `*`. It had two defects pulling opposite ways. It never excluded
+ordered list items, so a numbered list with no blank lines between the items counted as a single
+paragraph: libcrux 1165 was recorded in `calibration.tsv` at **2698** when its longest prose
+paragraph is **791**, xlwings at 622 when it is 312, and elfuse at 564 when it is 379. It also read
+a `**bold lead-in**` paragraph as a `*` bullet and dropped it, which hides real prose the other
+way: hulak 118 measures 420 under the old script and **603** under this one. The values in the
+table above are all re-measured with the corrected script. **The band survives this and gets
+stronger, because its only apparent counterexample was the bug.** Nothing measured here now sits
+between 830 and the 2724 that was bounced. What the sample still cannot tell you is where in that
+gap the line falls, since it holds one bounced instruction rather than a distribution. Treat the
+range as calibration and never as a threshold. The AltBeacon figures are unaffected either way:
+that instruction has never used a numbered list or a bold lead-in, so neither defect could reach
+it, and its as-received file measures 1919 identically under both scripts.
+
+libcrux's 791 is evidence rather than a footnote, despite the task closing as Not Fixable with no
+bundle for a reviewer to read. Its round 4 agentic judge scored every instruction axis 4.5 to 5.0
+against the same `instruction.md` the task closed with, since round 5 changed no bundle file. The
+judge read it even though no reviewer did.
+
 
 **Structure is not the risk it is sometimes taken for.** The accepted bundle uses headings, bullet
 lists and a table, and still scores full marks on reading like a real ticket. What costs is a

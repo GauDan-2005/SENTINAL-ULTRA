@@ -1,0 +1,80 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test -p libcrux-ml-kem --features pqcp,rand --test sentinel_pqcp_verifier",
+      "cargo test -p libcrux-ml-kem --features pqcp,rand --test self --test ml-kem -- --skip _avx2 --skip _neon",
+      "cargo build -p libcrux-ml-kem",
+      "cargo build -p libcrux-ml-kem --no-default-features --features mlkem512,mlkem768,mlkem1024,pqcp",
+      "cargo build -p libcrux-ml-kem --no-default-features --features mlkem768,std",
+      "if cargo test -p libcrux-ml-kem --no-default-features --features mlkem768,std --test sentinel_pqcp_absent >/dev/null 2>&1; then echo 'ERROR: the pqcp module is reachable without the pqcp feature'; exit 1; fi",
+      "if cargo test -p libcrux-ml-kem --no-default-features --features mlkem512,mlkem768,mlkem1024,pqcp --test sentinel_rand_absent >/dev/null 2>&1; then echo 'ERROR: the rand-gated functions are reachable without the rand feature'; exit 1; fi"
+    ],
+    "selected_test_files_to_run": [
+      "libcrux-ml-kem/tests/sentinel_pqcp_verifier.rs"
+    ],
+    "env": {
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 840
+  },
+  "grading": {
+    "fail_to_pass": [
+      "mlkem512::packed_roundtrip",
+      "mlkem512::unpacked_roundtrip",
+      "mlkem512::key_checks_reject_invalid_keys",
+      "mlkem512::implicit_rejection_is_stable_and_key_bound",
+      "mlkem512::parse_failures_leave_output_unchanged",
+      "mlkem768::packed_roundtrip",
+      "mlkem768::unpacked_roundtrip",
+      "mlkem768::key_checks_reject_invalid_keys",
+      "mlkem768::implicit_rejection_is_stable_and_key_bound",
+      "mlkem768::parse_failures_leave_output_unchanged",
+      "mlkem1024::packed_roundtrip",
+      "mlkem1024::unpacked_roundtrip",
+      "mlkem1024::key_checks_reject_invalid_keys",
+      "mlkem1024::implicit_rejection_is_stable_and_key_bound",
+      "mlkem1024::parse_failures_leave_output_unchanged",
+      "packed_and_struct_apis_interoperate",
+      "error_type_is_public_and_matchable"
+    ],
+    "pass_to_pass": [
+      "consistency_512",
+      "consistency_768",
+      "consistency_1024",
+      "consistency_unpacked_512_portable",
+      "consistency_unpacked_768_portable",
+      "consistency_unpacked_1024_portable",
+      "modified_ciphertext_512",
+      "modified_ciphertext_768",
+      "modified_ciphertext_1024",
+      "modified_ciphertext_and_implicit_rejection_value_512",
+      "modified_ciphertext_and_implicit_rejection_value_768",
+      "modified_ciphertext_and_implicit_rejection_value_1024",
+      "modified_secret_key_512",
+      "modified_secret_key_768",
+      "modified_secret_key_1024",
+      "invalid_modulus_512",
+      "invalid_modulus_768",
+      "invalid_modulus_1024",
+      "invalid_dk_512",
+      "invalid_dk_768",
+      "invalid_dk_1024"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^test (?P<name>\\S+) \\.\\.\\. ok",
+      "fail_regex": "^test (?P<name>\\S+) \\.\\.\\. FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

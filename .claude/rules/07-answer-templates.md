@@ -165,11 +165,15 @@ Specific environment issues (if applicable):
 [Image/Dependency Build Failures / Oracle timeout / External-network dependency / Dirty git history that can't be recovered]
 
 Why this task is unfixable:
-1) [issue with evidence from files]
+(there is no zip on this path, so this field and Comments for Reviewer are the entire
+submission - Section 2, Path C. One numbered block per issue, each citing files and lines, and for a
+scope or difficulty limb the measurement and the number it returned)
+1) [issue, with the file:line evidence and any measured number]
 2) ...
 
 Comments for Reviewer:
-[1 short paragraph]
+[1 short paragraph on Valid as-is and Fixable. On this path it runs longer, because there is no
+bundle, no difficulty answer and no Files Changed behind it]
 
 Senior engineer estimate: [<10 / 10-20 / 20-40 / 40+ minutes]
 Handling time

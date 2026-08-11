@@ -1,4 +1,4 @@
-_Owner of CLAUDE.md **Section 1**, Steps 1 through 5.5. Loaded every session. Steps 6 to 10 are in `.claude/rules/02-workflow-steps-6-to-10.md`._
+_Owner of CLAUDE.md **Section 1**, Steps 1 through 5.5. Loaded every session. Steps 6 to 11 are in `.claude/rules/02-workflow-steps-6-to-10.md`._
 
 ## 1. Submission Workflow
 
@@ -24,7 +24,7 @@ When a new task session begins, before asking for anything:
 | solve-sh-idempotency.md | reverse-apply fallback inverts the tree on the second oracle run | run solve.sh three times in one container |
 ```
 
-**Writing back to `learning/`.** When something in this workspace costs real time and would cost it again - a platform check that rejected a bundle, an environment quirk, a rule whose real behaviour differs from its documented wording - add or update a note in `learning/` and index it in `learning/README.md`. Record what happened with the exact error text, why it happened, the rule to apply next time, and the date and task it came from. Do not log anything already covered by `docs/` or this file; log the gap between them and reality.
+**Writing back to `learning/`.** When something in this workspace costs real time and would cost it again - a platform check that rejected a bundle, an environment quirk, a rule whose real behaviour differs from its documented wording - add or update a note in `learning/` and index it in `learning/README.md`. Record what happened with the exact error text, why it happened, the rule to apply next time, and the date and task it came from. Do not log anything already covered by `docs/` or this file; log the gap between them and reality. **A task that closes triggers this rule on its own. See Step 11.**
 
 ### STEP 1.5: Ask the user for the task zip and the platform task data (every task, do not skip)
 

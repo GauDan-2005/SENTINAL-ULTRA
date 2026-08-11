@@ -60,7 +60,7 @@ One file per section, in load order. The `## N.` heading inside each file is the
 | Section | What it owns | File |
 | ------- | ------------ | ---- |
 | 1 (Steps 1 to 5.5) | Session start, the task-data ask, reading the task, analysis, the verdict, applying fixes, the verification battery | `.claude/rules/01-workflow-steps-1-to-5.5.md` |
-| 1 (Steps 6 to 10) | Drafting the answers, the eval loop and Send gate, handling times, `submission_answer.txt`, revision rounds | `.claude/rules/02-workflow-steps-6-to-10.md` |
+| 1 (Steps 6 to 11) | Drafting the answers, the eval loop and Send gate, handling times, `submission_answer.txt`, revision rounds, closing an accepted or rejected task | `.claude/rules/02-workflow-steps-6-to-10.md` (filename unchanged; it owns Step 11 too) |
 | 2 | The submitter form - every question, per path, and the basis for answering it | `.claude/rules/03-submitter-form.md` |
 | 3 | Verdict criteria - what makes a task Valid as-is, Fixable, or Invalid | `.claude/rules/04-verdict-criteria.md` |
 | 4 | The platform evals, the rubric-panel judge, the six auto-REMOVE patterns, troubleshooting | `.claude/rules/05-evals-and-quality-check.md` |
@@ -94,6 +94,7 @@ The full text of each step is in the rule file named above. This is the sequence
 | **8** | Ask the user for the four handling-time numbers. The total is fields 1 + 2 + 3 | Invent any of the four |
 | **9** | Write `tasks/<name>/answers/submission_answer.txt`, then run `humanizer` over the text in the file as the closing action | Treat the chat-time humanizer pass as covering the file |
 | **10** | Every revision round: confirm which task the feedback is for and that it is fresh, count strikes, fix, re-run Phase A and the whole Phase B battery, update the answers file and `task.md` in one action | Ship a third variation of a fix that has already failed twice |
+| **11** | Close the task: the outcome into `task.md`, `INDEX.md` set to accepted or rejected with the `pending-revision` count dropped, the learnings and the calibration row harvested, then the whole folder moved to `_archive/` | Leave a closed task in `tasks/`, where it is gitignored and one delete from gone |
 
 The Fixable sequence is always: **fixes, then Phase A gates, then zip, then the Phase B battery, then answers.** No step moves.
 

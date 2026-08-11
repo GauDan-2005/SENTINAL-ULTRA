@@ -368,6 +368,39 @@ here and all four are worth checking before reaching for it:
    anything asks for it, in the same test. Proved by a probe that replaces the consult with an
    unconditional switch-on: without the control it passes, with it the reward drops to 0.
 
+### When the observable exists but lives in a generated artifact
+
+Added 2026-08-08 from `20260805_080500__hyperledger-firefly_firefly__1123`, peer review round 3.
+
+A third shape, between "there is a public observable" and "there is none". The instruction said two
+new pool fields were **never accepted as caller input**. The oracle implements that with a struct
+tag. A reviewer found that nothing graded it and offered three ways to close it. **Two of the three
+were wrong, and the reason generalises: a declarative tag's observable is where the tag is READ, not
+where the field is used.**
+
+```
+grep -rn "ffexcludeinput" <module cache>/ffapi/*.go
+  -> openapi3.go:121   if sg.isTrue(tag.Get("ffexcludeinput"))
+```
+
+One consumer, the schema generator. So:
+
+| Route | Verdict |
+|---|---|
+| assert a request body leaves the fields unset | **fails the oracle.** Nothing strips them at runtime. Measured: a body carrying both still populates them after unmarshal on the oracle tree. The PR does not do this |
+| grade the package that renders the generated docs | **non-derivable.** It compares markdown byte for byte and the descriptions are authored in the patch, so a correct implementation with different wording fails on prose |
+| drive the generator in-test and read the schema it produces | **correct.** Assert what the API says it will accept |
+
+The third is a genuine behavioural assertion and it kept the reflective-assertion conditions above:
+the routes are found by their **input type** rather than by name, every symbol the test touches
+exists at the base commit, `golden.patch` touches that package zero times, and the tag name appears
+**0 times in both the instruction and the tests**, so the test grades the effect and never the tag.
+
+**The check to run before accepting any option a reviewer offers.** They are reading the bundle, not
+running it, so an option can describe behaviour the PR does not have. `LEDGER.md` L20 is the same
+rule from the other side: decide which of two things moves by checking which one matches
+`golden.patch`. Measure the option in the container, then take it or say why you did not.
+
 Add a fifth in practice: **say you did it in Comments for Reviewer.** A reflective test that a
 reviewer finds for themselves reads as sleight of hand; one you declare reads as the only available
 way to grade a real requirement.
