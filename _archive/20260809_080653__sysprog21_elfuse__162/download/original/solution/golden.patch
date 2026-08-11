@@ -1,0 +1,545 @@
+diff --git a/src/core/guest.c b/src/core/guest.c
+index efc2a18..02250ce 100644
+--- a/src/core/guest.c
++++ b/src/core/guest.c
+@@ -651,17 +651,19 @@ void guest_destroy(guest_t *g)
+      * intact.
+      *
+      * The wake signals cover workers blocked outside hv_vcpu_run: futex waiters
+-     * poll futex_interrupt_requested, and any thread parked in epoll or poll
+-     * wakes off the shared pipe. Without them, host-blocked workers miss the
+-     * hv_vcpus_exit kick (which only affects threads inside hv_vcpu_run) and
+-     * the 100ms join cap in thread_join_workers detaches them, leaving live
+-     * pthreads to crash on the imminent munmap.
++     * poll futex_interrupt_requested, any thread parked in epoll or poll wakes
++     * off the shared pipe, and thread_wake_exit_waiters broadcasts the internal
++     * condvars (fork barrier, ptrace stop/wait). Without them, host-blocked
++     * workers miss the hv_vcpus_exit kick (which only affects threads inside
++     * hv_vcpu_run) and the 100ms join cap in thread_join_workers detaches
++     * them, leaving live pthreads to crash on the imminent munmap.
+      */
+     if (!proc_exit_group_requested())
+         proc_request_exit_group(0);
+     futex_interrupt_request();
+     wakeup_pipe_signal();
+     thread_interrupt_all();
++    thread_wake_exit_waiters();
+     thread_join_workers();
+     /* Destroy all remaining worker vCPUs (thread table) before tearing down the
+      * VM. This prevents hv_vm_destroy from racing with active vCPUs that may
+diff --git a/src/main.c b/src/main.c
+index 7630876..62fac80 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -706,6 +706,11 @@ int main(int argc, char **argv)
+     futex_interrupt_request();
+     wakeup_pipe_signal();
+     thread_interrupt_all();
++    /* Workers parked on internal condvars (fork barrier, ptrace stop/wait)
++     * see neither the pipe nor the vCPU kick; broadcast so they re-check the
++     * exit-group flag and terminate before the join below gives up on them.
++     */
++    thread_wake_exit_waiters();
+     thread_join_workers();
+ 
+     /* Diagnostic counter dump runs before guest_destroy so the shim_data
+diff --git a/src/runtime/forkipc.c b/src/runtime/forkipc.c
+index 35e4233..d00acf7 100644
+--- a/src/runtime/forkipc.c
++++ b/src/runtime/forkipc.c
+@@ -1288,6 +1288,11 @@ static void *vm_clone_thread_run(void *arg)
+          * harmless no-op.
+          */
+         thread_interrupt_all();
++        /* thread_interrupt_all only reaches threads inside hv_vcpu_run.
++         * Peers parked on fork_cond or another slot's ptrace_cond/resume_cond
++         * see neither the vCPU kick nor this exit, so broadcast separately.
++         */
++        thread_wake_exit_waiters();
+     }
+ 
+     hv_vcpu_destroy(vcpu);
+@@ -1812,14 +1817,19 @@ int64_t sys_clone(hv_vcpu_t vcpu,
+         close(vfork_notify_fds[0]);
+ 
+         if (nr <= 0) {
+-            int status;
+-            waitpid(child_host_pid, &status, 0);
++            int status = 0;
++            struct rusage ru;
++            if (wait4(child_host_pid, &status, 0, &ru) == child_host_pid)
++                proc_children_cpu_add(&ru);
+             proc_mark_child_exited(child_host_pid, status);
+         } else {
+             int status;
+-            pid_t waited = waitpid(child_host_pid, &status, WNOHANG);
+-            if (waited == child_host_pid)
++            struct rusage ru;
++            pid_t waited = wait4(child_host_pid, &status, WNOHANG, &ru);
++            if (waited == child_host_pid) {
++                proc_children_cpu_add(&ru);
+                 proc_mark_child_exited(child_host_pid, status);
++            }
+         }
+     }
+ 
+diff --git a/src/runtime/thread.c b/src/runtime/thread.c
+index 465de6d..7cedafe 100644
+--- a/src/runtime/thread.c
++++ b/src/runtime/thread.c
+@@ -22,8 +22,9 @@
+ 
+ #include "runtime/thread.h"
+ #include "debug/log.h"
+-#include "core/guest.h" /* guest_t (shim_data_base/ipa_base), BLOCK_2MIB */
+-#include "hvutil.h"     /* vcpu_get_gpr, vcpu_get_sysreg */
++#include "core/guest.h"   /* guest_t (shim_data_base/ipa_base), BLOCK_2MIB */
++#include "hvutil.h"       /* vcpu_get_gpr, vcpu_get_sysreg */
++#include "syscall/proc.h" /* proc_exit_group_requested */
+ 
+ /* From syscall/signal.h, included here directly to avoid pulling in the full
+  * signal header (macOS defines sa_handler as a macro that conflicts with the
+@@ -474,6 +475,16 @@ void thread_join_workers(void)
+     THREAD_FOR_EACH (t) {
+         if (t == current_thread || t->join_abandoned)
+             continue;
++        /* Never wait for the main thread (slot 0): its entry only deactivates
++         * inside guest_destroy, which runs on the main thread AFTER its own
++         * thread_join_workers. A worker waiting here (exit_group called from
++         * a worker) would burn the full cap on it, and the resulting mutual
++         * wait (worker polling main while main polls the worker) ends in
++         * pthread_detach on both sides, leaving the loser to touch guest
++         * memory after guest_destroy unmaps it.
++         */
++        if (t == &thread_table[0])
++            continue;
+         /* Inactive slots are included when they still hold an unjoined handle:
+          * a worker that exited on its own shortly before teardown and whose
+          * slot was never reused. Its pthread has terminated (or is in final
+@@ -709,14 +720,46 @@ int thread_fork_barrier_check(void)
+             pthread_cond_signal(&fork_all_quiesced_cond);
+     }
+ 
+-    /* Block until fork is complete */
+-    while (fork_quiesce_active)
++    /* Block until fork is complete. Bail out on exit_group: the resume
++     * broadcast comes from the forking thread, whose progress the teardown
++     * path does not control, so waiting for it would leave this park outside
++     * the bounded-wake guarantee. thread_wake_exit_waiters broadcasts
++     * fork_cond after the flag is set; the caller's run loop re-checks
++     * proc_exit_group_requested and exits.
++     */
++    while (fork_quiesce_active && !proc_exit_group_requested())
+         pthread_cond_wait(&fork_cond, &thread_lock);
+ 
+     pthread_mutex_unlock(&thread_lock);
+     return 1;
+ }
+ 
++void thread_wake_exit_waiters(void)
++{
++    pthread_mutex_lock(&thread_lock);
++
++    /* Fork barrier: siblings parked in thread_fork_barrier_check. Their wait
++     * loop re-checks proc_exit_group_requested on wake.
++     */
++    pthread_cond_broadcast(&fork_cond);
++
++    /* Ptrace parks: tracers blocked in thread_ptrace_wait (ptrace_cond) and
++     * tracees blocked in thread_ptrace_stop (resume_cond). Scan every slot
++     * with live condvars, not just active ones: a tracer may still be parked
++     * on a slot whose thread was deactivated. ptrace_conds_inited only
++     * transitions under thread_lock with ptrace_waiters == 0, so broadcasting
++     * here never touches a destroyed condvar.
++     */
++    THREAD_FOR_EACH (t) {
++        if (!t->ptrace_conds_inited)
++            continue;
++        pthread_cond_broadcast(&t->ptrace_cond);
++        pthread_cond_broadcast(&t->resume_cond);
++    }
++
++    pthread_mutex_unlock(&thread_lock);
++}
++
+ /* Ptrace helpers. */
+ 
+ pthread_mutex_t *thread_get_lock(void)
+@@ -1037,8 +1080,13 @@ int thread_ptrace_stop(thread_entry_t *t, int sig)
+     /* Wake the tracer (blocked in thread_ptrace_wait) */
+     pthread_cond_broadcast(&t->ptrace_cond);
+ 
+-    /* Block until tracer calls PTRACE_CONT */
+-    while (t->ptrace_stopped)
++    /* Block until tracer calls PTRACE_CONT. Bail out on exit_group: only the
++     * tracer signals resume_cond, and a tracer that exits (or calls
++     * exit_group itself) will never CONT this stop. thread_wake_exit_waiters
++     * broadcasts resume_cond; returning 0 sends the caller back to its run
++     * loop, which re-checks proc_exit_group_requested.
++     */
++    while (t->ptrace_stopped && !proc_exit_group_requested())
+         pthread_cond_wait(&t->resume_cond, &thread_lock);
+ 
+     /* Apply register changes if tracer wrote via SETREGSET */
+@@ -1093,6 +1141,16 @@ int64_t thread_ptrace_wait(int64_t tracer_tid,
+     pthread_mutex_lock(&thread_lock);
+ 
+     for (;;) {
++        /* exit_group teardown: the stop/exit notifications that would signal
++         * ptrace_cond stop arriving once workers are being torn down. Return 0
++         * ("no matching children") so the caller falls through and its
++         * blocking paths re-check proc_exit_group_requested.
++         */
++        if (proc_exit_group_requested()) {
++            pthread_mutex_unlock(&thread_lock);
++            return 0;
++        }
++
+         bool found_any = false; /* Any waitable children at all? */
+ 
+         THREAD_FOR_EACH (t) {
+diff --git a/src/runtime/thread.h b/src/runtime/thread.h
+index 68dde45..057b98e 100644
+--- a/src/runtime/thread.h
++++ b/src/runtime/thread.h
+@@ -323,6 +323,17 @@ void thread_destroy_all_vcpus(void);
+  */
+ void thread_interrupt_all(void);
+ 
++/* Wake workers parked on internal condvars (fork barrier, ptrace stop/wait)
++ * so exit_group teardown reaches them within a bounded time. hv_vcpus_exit
++ * only interrupts threads inside hv_vcpu_run, and the wakeup pipe / futex
++ * interrupt only cover guest syscall waits; a thread parked on fork_cond,
++ * ptrace_cond, or resume_cond would otherwise sleep past the join cap in
++ * thread_join_workers and still be live when guest memory is unmapped.
++ * Callers must set the exit-group flag (proc_request_exit_group) BEFORE
++ * calling this so woken waiters observe it when they re-check.
++ */
++void thread_wake_exit_waiters(void);
++
+ /* Check if any active thread has sigbit unblocked in its signal mask. Uses
+  * relaxed reads on per-thread blocked fields; false positives (stale blocked=0)
+  * cause a harmless spurious interrupt; false negatives (stale blocked=1) are
+diff --git a/src/syscall/abi.h b/src/syscall/abi.h
+index 6dff069..e4f6b82 100644
+--- a/src/syscall/abi.h
++++ b/src/syscall/abi.h
+@@ -121,6 +121,7 @@
+ #define SYS_getresgid 150
+ #define SYS_setfsuid 151
+ #define SYS_setfsgid 152
++#define SYS_times 153
+ #define SYS_setpgid 154
+ #define SYS_getpgid 155
+ #define SYS_getsid 156
+diff --git a/src/syscall/dispatch.tbl b/src/syscall/dispatch.tbl
+index b6b0767..7962dfa 100644
+--- a/src/syscall/dispatch.tbl
++++ b/src/syscall/dispatch.tbl
+@@ -126,6 +126,7 @@ SYS_clock_gettime sc_clock_gettime 0
+ SYS_clock_getres sc_clock_getres 0
+ SYS_clock_nanosleep sc_clock_nanosleep 1
+ SYS_gettimeofday sc_gettimeofday 0
++SYS_times sc_times 0
+ SYS_timerfd_create sc_timerfd_create 1
+ SYS_timerfd_settime sc_timerfd_settime 1
+ SYS_timerfd_gettime sc_timerfd_gettime 1
+diff --git a/src/syscall/proc.c b/src/syscall/proc.c
+index f6f0055..dcdf994 100644
+--- a/src/syscall/proc.c
++++ b/src/syscall/proc.c
+@@ -81,6 +81,35 @@ static pthread_mutex_t pid_lock = PTHREAD_MUTEX_INITIALIZER; /* Lock order: 6 */
+ static pthread_cond_t pid_cond =
+     PTHREAD_COND_INITIALIZER; /* Signaled on child exit */
+ 
++/* CPU time of reaped guest children, accumulated at every host reap site and
++ * reported by times(2) as tms_cutime/tms_cstime. The emulator also waits on
++ * helper subprocesses (rosettad translate, sysroot tooling) whose CPU shows up
++ * in the host's RUSAGE_CHILDREN, so times() cannot read that aggregate; only
++ * reaps of proc_table children may land here. Relaxed atomics suffice: the
++ * counters are monotonic sums and times() tolerates reading utime/stime one
++ * reap apart.
++ */
++static _Atomic uint64_t children_utime_us;
++static _Atomic uint64_t children_stime_us;
++
++void proc_children_cpu_add(const struct rusage *ru)
++{
++    atomic_fetch_add_explicit(&children_utime_us,
++                              (uint64_t) ru->ru_utime.tv_sec * 1000000 +
++                                  (uint64_t) ru->ru_utime.tv_usec,
++                              memory_order_relaxed);
++    atomic_fetch_add_explicit(&children_stime_us,
++                              (uint64_t) ru->ru_stime.tv_sec * 1000000 +
++                                  (uint64_t) ru->ru_stime.tv_usec,
++                              memory_order_relaxed);
++}
++
++void proc_children_cpu_us(uint64_t *utime_us, uint64_t *stime_us)
++{
++    *utime_us = atomic_load_explicit(&children_utime_us, memory_order_relaxed);
++    *stime_us = atomic_load_explicit(&children_stime_us, memory_order_relaxed);
++}
++
+ /* Global flag for exit_group: signals all threads to terminate. Atomic to avoid
+  * undefined behavior under C11 memory model when multiple threads read/write
+  * concurrently.
+@@ -283,9 +312,11 @@ static int proc_reap_finished(void)
+             continue;
+         }
+         int status;
+-        pid_t ret = waitpid(proc_table[i].host_pid, &status, WNOHANG);
++        struct rusage ru;
++        pid_t ret = wait4(proc_table[i].host_pid, &status, WNOHANG, &ru);
+         if (ret > 0) {
+             /* Child exited; free the slot */
++            proc_children_cpu_add(&ru);
+             proc_table[i].active = false;
+             reaped++;
+         }
+@@ -1073,9 +1104,17 @@ int64_t sys_wait4(guest_t *g,
+ 
+                 int status;
+                 struct rusage ru;
+-                pid_t ret = wait4(host_pid, &status, mac_options | WNOHANG,
+-                                  rusage_gva ? &ru : NULL);
++                pid_t ret =
++                    wait4(host_pid, &status, mac_options | WNOHANG, &ru);
+                 if (ret > 0) {
++                    /* Credit CPU only on a terminal report. mac_options may
++                     * carry WUNTRACED/WCONTINUED, and a stop/continue report
++                     * is a snapshot of a still-running child: crediting it
++                     * here would double- or triple-count the same child
++                     * across its stop, continue, and final exit reports.
++                     */
++                    if (WIFEXITED(status) || WIFSIGNALED(status))
++                        proc_children_cpu_add(&ru);
+                     if (status_gva) {
+                         int32_t linux_status = status;
+                         if (guest_write_small(g, status_gva, &linux_status,
+@@ -1107,6 +1146,16 @@ int64_t sys_wait4(guest_t *g,
+                 return 0;
+             }
+ 
++            /* exit_group teardown: stop re-arming the wait. The 100ms quantum
++             * below bounds how stale this check can be, mirroring the futex
++             * wait quanta. The errno is never guest-visible: the run loop
++             * breaks on the exit-group flag before returning to the guest.
++             */
++            if (proc_exit_group_requested()) {
++                pthread_mutex_unlock(&pid_lock);
++                return -LINUX_EINTR;
++            }
++
+             /* Blocking mode: no child exited yet. Wait on condvar for a child
+              * exit notification (signaled by proc_mark_child_exited). Use
+              * timedwait with 100ms timeout as a safety net; the condvar handles
+@@ -1146,8 +1195,7 @@ int64_t sys_wait4(guest_t *g,
+             struct rusage ru;
+             pid_t ret;
+             if (mac_options & WNOHANG) {
+-                ret = wait4(host_pid, &status, mac_options,
+-                            rusage_gva ? &ru : NULL);
++                ret = wait4(host_pid, &status, mac_options, &ru);
+             } else {
+                 /* A bare blocking wait4 has no re-check point: a worker
+                  * parked here past exit_group is invisible to
+@@ -1159,8 +1207,7 @@ int64_t sys_wait4(guest_t *g,
+                  * pid_cond on every host child exit.
+                  */
+                 for (;;) {
+-                    ret = wait4(host_pid, &status, mac_options | WNOHANG,
+-                                rusage_gva ? &ru : NULL);
++                    ret = wait4(host_pid, &status, mac_options | WNOHANG, &ru);
+                     if (ret != 0)
+                         break;
+                     if (proc_exit_group_requested())
+@@ -1173,6 +1220,9 @@ int64_t sys_wait4(guest_t *g,
+                 }
+             }
+             if (ret > 0) {
++                /* Same terminal-report gate as the P_ALL branch above. */
++                if (WIFEXITED(status) || WIFSIGNALED(status))
++                    proc_children_cpu_add(&ru);
+                 if (status_gva) {
+                     int32_t linux_status = status;
+                     if (guest_write_small(g, status_gva, &linux_status,
+@@ -1296,7 +1346,18 @@ int64_t sys_waitid(guest_t *g,
+             } else {
+                 pid_t host_pid = proc_table[i].host_pid;
+                 pthread_mutex_unlock(&pid_lock);
+-                ret = waitpid(host_pid, &status, WNOHANG);
++                struct rusage ru;
++                ret = wait4(host_pid, &status, WNOHANG, &ru);
++                /* Credit only a terminal report, and only when this call
++                 * actually consumes the reap: WNOWAIT must leave the child
++                 * waitable with its CPU uncounted until the later consuming
++                 * wait, but this inner wait4() has no WNOWAIT of its own, so
++                 * it consumes the host zombie regardless of the guest's
++                 * WNOWAIT request.
++                 */
++                if (ret > 0 && !(options & LINUX_WNOWAIT) &&
++                    (WIFEXITED(status) || WIFSIGNALED(status)))
++                    proc_children_cpu_add(&ru);
+                 if (ret == 0) {
+                     /* This child hasn't exited yet; continue checking others
+                      * (P_ALL must scan all children).
+diff --git a/src/syscall/proc.h b/src/syscall/proc.h
+index 83526e7..cb6e48a 100644
+--- a/src/syscall/proc.h
++++ b/src/syscall/proc.h
+@@ -18,6 +18,7 @@
+ #include <Hypervisor/Hypervisor.h>
+ #include <stdbool.h>
+ #include <stdint.h>
++#include <sys/resource.h>
+ #include <sys/types.h>
+ 
+ #include "core/guest.h"
+@@ -313,6 +314,15 @@ int proc_register_child(pid_t host_pid, int64_t guest_pid, int64_t pgid);
+ /* Mark a child as exited by host PID (for CLONE_VFORK wait). */
+ void proc_mark_child_exited(pid_t host_pid, int status);
+ 
++/* Accumulate a reaped guest child's rusage into the cutime/cstime counters
++ * that times(2) reports. Call at every host reap of a proc_table child; never
++ * for emulator helper subprocesses.
++ */
++void proc_children_cpu_add(const struct rusage *ru);
++
++/* Read the accumulated guest-children CPU time, in microseconds. */
++void proc_children_cpu_us(uint64_t *utime_us, uint64_t *stime_us);
++
+ /* Collect host PIDs of active (non-exited) fork children. Writes up to max_pids
+  * entries into out[].
+  *
+diff --git a/src/syscall/syscall.c b/src/syscall/syscall.c
+index 48840fd..f0268b8 100644
+--- a/src/syscall/syscall.c
++++ b/src/syscall/syscall.c
+@@ -345,6 +345,7 @@ SC_FORWARD(sc_clock_nanosleep,  sys_clock_nanosleep(g, (int) x0, (int) x1, x2, x
+ SC_FORWARD(sc_gettimeofday,     sys_gettimeofday(g, x0, x1))
+ SC_FORWARD(sc_setitimer,        sys_setitimer(g, (int) x0, x1, x2))
+ SC_FORWARD(sc_getitimer,        sys_getitimer(g, (int) x0, x1))
++SC_FORWARD(sc_times,            sys_times(g, x0))
+ 
+ /* Signals */
+ SC_FORWARD(sc_rt_sigaction,   signal_rt_sigaction(g, (int) x0, x1, x2, x3))
+@@ -909,6 +910,12 @@ static int64_t sc_exit_group(guest_t *g,
+     proc_request_exit_group((int) x0);
+     wakeup_pipe_signal();
+     thread_for_each(thread_force_exit_cb, NULL);
++    /* Workers parked on internal condvars (fork barrier, ptrace stop/wait)
++     * see neither the pipe nor the vCPU kick; broadcast so they re-check the
++     * exit-group flag and terminate before the authoritative join in main()
++     * (or guest_destroy, for the forked-child path) gives up on them.
++     */
++    thread_wake_exit_waiters();
+     return SC_EXIT_SENTINEL | ((int) x0 & 0xFF);
+ }
+ 
+diff --git a/src/syscall/time.c b/src/syscall/time.c
+index 44b016b..747577d 100644
+--- a/src/syscall/time.c
++++ b/src/syscall/time.c
+@@ -12,6 +12,7 @@
+ #include <errno.h>
+ #include <stdbool.h>
+ #include <time.h>
++#include <sys/resource.h>
+ #include <sys/time.h>
+ 
+ #include "utils.h"
+@@ -459,6 +460,81 @@ int64_t sys_gettimeofday(guest_t *g, uint64_t tv_gva, uint64_t tz_gva)
+     return 0;
+ }
+ 
++/* Linux struct tms: four clock_t fields (long on LP64) counting USER_HZ
++ * ticks.
++ */
++typedef struct {
++    int64_t tms_utime;
++    int64_t tms_stime;
++    int64_t tms_cutime;
++    int64_t tms_cstime;
++} linux_tms_t;
++
++/* Kernel USER_HZ, the unit of clock_t values returned by times(). Must match
++ * the AT_CLKTCK auxv entry in core/stack.c: libc divides these raw tick counts
++ * by sysconf(_SC_CLK_TCK), so a mismatch silently rescales every value.
++ */
++#define LINUX_USER_HZ 100
++
++/* Shared by both the timeval-based self accounting and the raw-microsecond
++ * proc-layer accumulator below, so the two paths cannot drift out of step if
++ * LINUX_USER_HZ ever changes.
++ */
++static int64_t usec_to_clock_ticks(uint64_t usec)
++{
++    return (int64_t) (usec / (1000000ULL / LINUX_USER_HZ));
++}
++
++static int64_t timeval_to_clock_ticks(const struct timeval *tv)
++{
++    return usec_to_clock_ticks((uint64_t) tv->tv_sec * 1000000ULL +
++                               (uint64_t) tv->tv_usec);
++}
++
++int64_t sys_times(guest_t *g, uint64_t buf_gva)
++{
++    /* Linux permits a NULL buffer: only the return value (elapsed ticks) is
++     * wanted. cutime/cstime come from the proc-layer accumulator fed at each
++     * guest-child reap, not from RUSAGE_CHILDREN: the emulator also waits on
++     * helper subprocesses (rosettad translate, sysroot tooling) whose CPU
++     * would otherwise masquerade as guest child time.
++     */
++    if (buf_gva) {
++        /* getrusage(RUSAGE_SELF) aggregates the whole emulator process --
++         * every host thread plus page-table, syscall-servicing, and Rosetta
++         * translation overhead -- not just the guest task's own execution, so
++         * utime/stime over-report relative to what a real guest kernel would
++         * charge. Unavoidable given this design (there is no per-guest-thread
++         * host accounting to draw from instead).
++         */
++        struct rusage self;
++        if (getrusage(RUSAGE_SELF, &self) < 0)
++            return linux_errno();
++
++        uint64_t cutime_us, cstime_us;
++        proc_children_cpu_us(&cutime_us, &cstime_us);
++
++        linux_tms_t tms = {
++            .tms_utime = timeval_to_clock_ticks(&self.ru_utime),
++            .tms_stime = timeval_to_clock_ticks(&self.ru_stime),
++            .tms_cutime = usec_to_clock_ticks(cutime_us),
++            .tms_cstime = usec_to_clock_ticks(cstime_us),
++        };
++        if (guest_write_small(g, buf_gva, &tms, sizeof(tms)) < 0)
++            return -LINUX_EFAULT;
++    }
++
++    /* Linux returns jiffies-since-boot converted to clock_t ticks; POSIX only
++     * requires an arbitrary-but-fixed reference point, so host CLOCK_MONOTONIC
++     * satisfies callers that difference successive returns.
++     */
++    struct timespec ts;
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
++        return linux_errno();
++    return (int64_t) ts.tv_sec * LINUX_USER_HZ +
++           ts.tv_nsec / (NSEC_PER_SEC / LINUX_USER_HZ);
++}
++
+ int64_t sys_setitimer(guest_t *g, int which, uint64_t new_gva, uint64_t old_gva)
+ {
+     /* Linux reads new_gva before dispatching on which, so an invalid pointer
+diff --git a/src/syscall/time.h b/src/syscall/time.h
+index 65f36e0..f781bcf 100644
+--- a/src/syscall/time.h
++++ b/src/syscall/time.h
+@@ -25,6 +25,7 @@ int64_t sys_clock_nanosleep(guest_t *g,
+                             uint64_t req_gva,
+                             uint64_t rem_gva);
+ int64_t sys_gettimeofday(guest_t *g, uint64_t tv_gva, uint64_t tz_gva);
++int64_t sys_times(guest_t *g, uint64_t buf_gva);
+ int64_t sys_setitimer(guest_t *g,
+                       int which,
+                       uint64_t new_gva,

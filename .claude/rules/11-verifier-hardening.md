@@ -210,3 +210,17 @@ Some runners execute a whole package or module in **one process**: Go is the cle
 - **Disclose it in Comments for Reviewer**, because a reader opening the file will ask why two tests skip
 
 The payoff shows up in the NOP as well as the oracle: the graded ids still execute and report individually at base, instead of the whole unit reading as a compile-shaped zero that `verify-in-the-image.md` warns proves nothing.
+
+### 10.10 Grading a target the verifier cannot run (practice)
+
+Added 2026-08-11 from elfuse 162, accepted carrying this design.
+
+When the repository targets a platform the verifier is not - macOS, Windows, a specific arch, a device - the reflex is to grade the source text, and `docs/guidelines.md:135` bans exactly that. The product not running is not the same as its translation units not compiling, so measure before conceding. Full ladder and traps in `learning/platform-locked-repos-are-still-testable.md`; the shape that worked:
+
+- **Stand-in headers carry types and constants, never function bodies.** Declare the unavailable platform's entry points and leave them undefined. A fake implementation is a shim that lies about behaviour
+- **`#include` the `.c` file** when the thing you need is `static`. That is how a `static` dispatch table becomes reachable, and it is what turns "does the source contain the right words" into "call slot N and see what happens". Do not also link that unit
+- **Reach the deliverable by a public number or a public path, never by a symbol the solution creates.** This is the same move as Section 10 on non-derivable names, and it has a second payoff: with no test naming a created symbol, the instruction stops needing to name one either
+- **Interpose the host calls the contract is about.** Defining `getrusage` in the probe executable wins over libc for the linked units, records which argument the code asked for, and can forward to the real syscall so the numbers stay honest
+- **Build the probe so it links at the base commit.** Then the NOP is an executed split rather than a compile-bound zero, with no audit to caveat
+- **Two-pass link.** Parse `undefined reference to 'X'`: compile the `src/` file that defines `X` if there is one, otherwise emit `long X(); long X() { return 0; }` into a generated file, and `__thread long X;` when the linker reports a TLS mismatch. Compile that generated file **bare**, with no forced prelude and no `-I`, or it meets a real prototype and fails. `-Wl,--unresolved-symbols=ignore-all` is not a substitute: it resolves the symbol to address 0 and the call segfaults
+- **The toolchain goes in the Dockerfile's verifier dependency layer**, grounded on `docs/tasking-guide.md:41` ("bake test dependencies into the image instead of fetching them when the tests run", because "the verifier runs fully airgapped"). Do **not** cite `docs/guidelines.md:332` as the authorization: it carries the useful "adding a missing dev package" phrase but it is a row of the **Not Fixable** table, not the allowed-fix one. The allowed-fix table does not list this case, so disclose it as an inference in Comments for Reviewer

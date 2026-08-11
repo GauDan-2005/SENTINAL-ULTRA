@@ -3,6 +3,7 @@ id: non-derivable-private-names
 status: locally-verified
 last_verified: 2026-08-06
 verified_by:
+  - 20260809_080653__sysprog21_elfuse__162
   - 20260805_220102__xaaha_hulak__118
 evidence: "17 of 17 graded ids in a bundle depended on six private method names that existed nowhere except the reference solution; repointing the tests at the rendered view removed all six and every hostile probe still fired"
 applies_to:
@@ -17,6 +18,43 @@ contradicts:
 ---
 
 # When the graded tests need a name only the reference solution knows
+
+## Second confirmation, in C, and this time it removed nine file paths (elfuse 162, 2026-08-11)
+
+The fix this note records, point the tests at what the caller sees rather than at the
+implementation's own vocabulary, reproduced on a completely different stack and had a larger
+side effect than expected.
+
+`20260809_080653__sysprog21_elfuse__162` graded a Linux syscall handler inside an emulator. The
+shipped tests demanded, by name, `sys_times`, `sc_times`, `SC_FORWARD`, `proc_children_cpu_add`,
+`proc_children_cpu_us`, `guest_write` and the parameter spelling `buf_gva`. Four of those seven
+do not exist at the base commit (`sys_times`, `sc_times`, `proc_children_cpu_add`,
+`proc_children_cpu_us`), so they had to be stated in `instruction.md`, and stating them is why
+that instruction named nine internal file paths and read as a construction plan. The other three
+do exist at base and are a different objection: `SC_FORWARD` is one of three wrapper macros the
+file uses, `guest_write` is an internal helper, and `buf_gva` is a parameter spelling, so
+demanding them grades internal vocabulary rather than a contract.
+
+The replacement suite reaches the feature through the **syscall number**:
+
+```c
+syscall_table[153].handler(g, buf_gva, 0, 0, 0, 0, 0, false);
+```
+
+153 is the aarch64 ABI number for `times(2)`, a public fact about Linux rather than anything the
+repository chose. Nothing else in the 24 graded tests names a symbol the solution introduces.
+
+**The size of the knock-on is the finding.** Once no test demanded a name, the instruction had
+nothing left to leak: it went from nine file paths, five internal symbols, two host API calls and
+a literal guard expression to **zero of all four**, and the local Quality rehearsal returned 0
+navigation hits and 0 of 174 test literals appearing in it. The causal direction is worth stating
+plainly because it is the opposite of how the fix usually gets attempted:
+
+**An instruction cannot be de-prescribed below the names its tests demand. That floor is a
+property of the tests, not of the task.** Cutting names out of the instruction while the tests
+still require them is what manufactures `Task Instruction Sufficiency: FAIL`
+(`prescriptiveness-check.md`). Rewriting the tests to stop requiring them lowers the floor, and
+the instruction edit then costs nothing and breaks nothing.
 
 ## What it looks like
 

@@ -1,10 +1,11 @@
 ---
 id: tests-patch-vs-agent-edits
 status: platform-confirmed
-last_verified: 2026-08-04
+last_verified: 2026-08-11
 verified_by:
   - 20260719_045042__oliver-oloughlin_kvdex__245
   - 20260728_153118__jqno_equalsverifier__1166
+  - 20260809_080653__sysprog21_elfuse__162
 evidence: "Difficulty-check trial logs across four rounds; the base64 restore was accepted on kvdex round 6"
 applies_to:
   languages: [any]
@@ -176,6 +177,68 @@ grep '^diff --git' tests/tests.patch | sed 's|diff --git a/||;s| b/.*||' | xargs
 
 Worth simulating too, not just adding blind. The one-run local check is cheap: apply the
 oracle, drop a file where the agent would plausibly drop one, then run the verifier.
+
+## The instruction itself can be the trigger (elfuse 162, 2026-08-11)
+
+Everything above treats the agent's edit as something it chose to do. On
+`20260809_080653__sysprog21_elfuse__162` the bundle **ordered** it.
+
+`instruction.md:19` as shipped:
+
+> Register the guest test `test-times` in `tests/manifest.txt` (it sits between `test-sysinfo`
+> and `test-io-opt`).
+
+`tests/tests.patch:1-12` made that exact one-line edit at verify time, as a context diff against
+a pre-existing 4672-byte file. `tests/test.sh` had no restore step of any kind. So an agent that
+did what it was told collided with the patch by construction.
+
+Reproduced on disposable copies with the edit left unstaged, staged, and staged and committed.
+All three routes `test.sh` has failed in all three cases:
+
+```
+git apply                 -> error: patch failed: tests/manifest.txt:48
+git apply --3way          -> error: tests/manifest.txt: does not match index
+patch -p1 --forward       -> Reversed (or previously applied) patch detected! Skipping patch.
+                             1 out of 1 hunk ignored, exit 1
+```
+
+`test.sh` then wrote `infrastructure_error: "tests.patch did not apply"`, reward 0, exit 2, which
+the difficulty harness scores as an **invalid trial**. Every compliant agent, every trial. The
+oracle never hit it, because `solution/golden.patch` did not implement instruction line 19 at
+all, so the bundle's Oracle Check was green the whole time.
+
+The same instruction also said, four lines later, "Do not modify the test files". A bundle can
+contradict itself across two lines of one file and nothing in the eval set reads both.
+
+**Two mechanical gates, both cheap, both new.** Run them in Step 2 and again in Phase A.
+
+```bash
+# 1. does the instruction name any path tests.patch touches?
+sed -n 's|^+++ b/||p' tests/tests.patch | while IFS= read -r p; do
+  for n in "$p" "$(basename "$p")"; do
+    if grep -Fq "$n" instruction.md; then echo "COLLISION RISK: instruction.md names $n"; fi
+  done
+done
+
+# 2. does it tell the agent to touch the test tree at all?
+grep -nEi 'register .* in|add .* to (the )?(test|manifest)|tests/[A-Za-z0-9_.-]+' instruction.md
+```
+
+A hit is not automatically a defect: an instruction may legitimately name a public artifact that
+also happens to live under `tests/`. It is a defect when the instruction asks the agent to
+**write** to a path `tests.patch` also writes to. Fix it in the instruction, by deleting the
+request, and keep the restore step anyway. Both were done here and the six-case agent matrix
+(manifest edited, graded file created, `test-times.c` created, edits committed, `.git` deleted
+entirely, both entrypoints under `sh`) came back 1.0 on all six.
+
+**Restore shape for this case.** The Section 10.3 measurement said 0 of 24 graded ids live
+outside the patched files, which normally means a create-only patch is enough. It was not, for
+the LEDGER L9 reason: `tests/manifest.txt` is a pre-existing file the patch *modifies* and cannot
+be turned into a create. The answer was a **targeted** payload rather than the full tree, 5.3 KB
+of base64 carrying two files, `tests/manifest.txt` and `scripts/gen-syscall-dispatch.py`. The
+second one is there because the graded tests run that generator, so an agent editing it could
+have gamed the routing tests. **Restore whatever the verifier executes, not only what the patch
+overwrites.**
 
 ## Do not build the restore on git at all
 

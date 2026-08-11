@@ -69,6 +69,36 @@ The PR list is not optional decoration. Section 4 will not let you report a cove
 
 ---
 
+### Gate zero: does the suite execute the thing at all
+
+Before scoring any axis, answer one question. **If the solution were replaced by something that
+merely contains the right words, would this suite notice?**
+
+```bash
+# the readers and the matchers, separately - they are rarely on the same line
+grep -nE 'read_text|getsource|getsourcelines|readFileSync|Files\.readString|open\([^)]*\.(c|h|py|ts|java|rs|kt|go)' tests/tests.patch
+grep -nE 're\.(search|match|findall)\(|Pattern\.compile|\bin (abi|src|body|text|source)\b' tests/tests.patch
+```
+
+Read the hits rather than counting them. A suite that reads a source file into a variable on one
+line and matches it three lines later defeats any single-line grep, which is why the two run
+separately: on the elfuse 162 bundle the combined single-line form returned **0** and these two
+return **20**.
+
+Any hit is a `test_coverage` and `test_faithfulness` failure on its own, not a deduction:
+`docs/guidelines.md:135` forbids grading "by patch structure, diff format, line numbers, file
+names, or source-code keyword matching" and `docs/tasking-guide.md:324` puts source-text scans on
+the judge's own Don't list. Score both test axes **1** and stop rehearsing until it is rebuilt.
+
+Two things to check rather than assume when a bundle is in this shape:
+
+- **The stated reason.** It is usually written into the test file's docstring, and it is usually
+  a true statement about the product used to justify a false one about its parts. Run the ladder
+  in `learning/platform-locked-repos-are-still-testable.md` before agreeing with it
+- **Whether a no-op passes.** Write the smallest thing that satisfies the greps, run the suite,
+  and then append garbage to a source file and run it again. On elfuse 162 both scored 15 of 15,
+  which is what turned "this suite is weak" into a measurement
+
 ## 3. The six auto-REMOVE test patterns — check these first
 
 Any one of these matching is a REMOVE on its own and outranks every score you were about to write. Read `tests/tests.patch` and `tests/test.sh` for each.

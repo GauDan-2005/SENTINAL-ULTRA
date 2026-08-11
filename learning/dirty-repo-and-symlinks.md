@@ -3,6 +3,7 @@ id: dirty-repo-and-symlinks
 status: locally-verified
 last_verified: 2026-08-04
 verified_by:
+  - 20260809_080653__sysprog21_elfuse__162
   - 20260723_030109__cryspen_libcrux__1165
 evidence: "git status --porcelain on the bundle as received: 35 modified tracked files, 28 mode-only and 7 flattened symlinks"
 applies_to:
@@ -19,6 +20,32 @@ contradicts: []
 
 Source: `20260723_030109__cryspen_libcrux__1165`, 2026-08-02. Found in the Step 2 git sweep,
 reproduced on a native ext4 extract of the platform's own zip, so it is not an NTFS artifact.
+
+## Second sighting, and it is not a libcrux quirk (elfuse 162, 2026-08-11)
+
+`20260809_080653__sysprog21_elfuse__162` arrived with `git status --porcelain` printing **28**
+lines in `environment/repo`, every one of them `mode change 100755 => 100644`, 24 under `tests/`
+and 4 under `.ci/`. Zero symlinks in that repo, so the `-y` half of this note did not apply and
+the mode-bit half did, on its own, on a different repository and a different language.
+
+Two things worth carrying:
+
+- **The zip the platform handed us already had them at 644.** `unzip -Z` on the downloaded
+  submission shows `?rw-r--r--` for `tests/driver.sh`, so the bit was lost upstream of this
+  workspace rather than by anything done here. The cleanest proof is the pristine extract, which
+  no command is ever allowed to run in: `git -C download/original/environment/repo status
+  --porcelain` still prints the same 28 lines today, out of the archive. It is a defect in the
+  bundle as received and it reports as a Fixable packaging finding
+- **Restoring it is git-metadata cleanup, not a source edit.** The hard boundary forbids editing
+  tracked source inside `environment/repo`; putting a file's mode back to what the base commit
+  records is restoring the tree *to* base, which is the opposite. One line, and it is safe
+  because it is driven by the index rather than by a guess:
+
+```bash
+# the path is everything after the tab, so do not read it as a whitespace field
+git ls-files -s | sed -n 's/^100755 [^\t]*\t//p' | while IFS= read -r f; do chmod 755 "$f"; done
+git status --porcelain     # must print nothing
+```
 
 ## What happened
 

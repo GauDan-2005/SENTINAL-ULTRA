@@ -1,8 +1,9 @@
 ---
 id: verify-in-the-image
 status: locally-verified
-last_verified: 2026-08-04
+last_verified: 2026-08-11
 verified_by:
+  - 20260809_080653__sysprog21_elfuse__162
   - 20260718_044820__alishahryar1_free-claude-code__929
   - 20260727_135618__AltBeacon_android-beacon-library__1177
   - 20260723_030109__cryspen_libcrux__1165
@@ -27,6 +28,34 @@ Two confident static conclusions in one session, both wrong, both overturned by 
 same check inside the task's own container. The cost each time was a wasted finding written
 into a draft report. The rule that comes out of it is one line: **do not report a fact about
 the repo until the check that produced it has run inside the image.**
+
+## A third option: build the probe so it compiles at the base commit (elfuse 162, 2026-08-11)
+
+This note tells you to split the graded ids by whether their module compiles at base and run the
+ones that do, and CLAUDE.md Step 5.5 offers a symbol audit for the toolchains where you cannot.
+Both are recovery moves after the fact. **There is a design that removes the problem instead.**
+
+On `20260809_080653__sysprog21_elfuse__162` the graded harness is a probe that reaches the
+feature through a numeric dispatch table rather than by symbol name, so it references nothing the
+solution creates and therefore compiles and links against the **unsolved** tree. The NOP then
+reads:
+
+```
+reward 0, raw_exit 1, infrastructure_error None, passed 8 of 24, missing 16
+```
+
+What is **measured** there is that eight ids passed at base, which can only happen if the probe
+built, linked and ran against the unsolved tree. That the sixteen failed on behaviour rather than
+on a build error is the **inference** that follows, and it is a strong one for exactly that
+reason, but it is still an inference and the task's own record carries it as an open caveat. No
+split to perform and no symbol audit to disclose; state the eight and let the reader draw the
+sixteen.
+
+**The design rule.** When you write a harness from scratch, ask whether it references any symbol
+the solution has to introduce. If it does, the base run is compile-bound and every zero you get
+from it proves nothing on its own. If it does not, you get the split for free and the NOP becomes
+real evidence. This is the same property that let the instruction stop naming internal symbols
+(`platform-locked-repos-are-still-testable.md`), so it is usually worth having twice over.
 
 ## 1. The host interpreter is not the task's interpreter
 

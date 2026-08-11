@@ -1,0 +1,397 @@
+diff --git a/tests/manifest.txt b/tests/manifest.txt
+index 091a5a4..e4d1688 100644
+--- a/tests/manifest.txt
++++ b/tests/manifest.txt
+@@ -48,6 +48,7 @@ test-socket
+ test-file-ops
+ test-flock
+ test-sysinfo
++test-times
+ test-io-opt
+ test-oom-proc
+ test-syscall-smoke
+diff --git a/tests/test-times.c b/tests/test-times.c
+new file mode 100644
+index 0000000..9db564d
+--- /dev/null
++++ b/tests/test-times.c
+@@ -0,0 +1,207 @@
++/*
++ * Test times(2) process CPU-time accounting
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Tests: return-value tick clock, self utime/stime accounting, waited-for
++ * child cutime/cstime accounting (counted once, not on stop/WNOWAIT
++ * snapshots), NULL buffer, EFAULT on a bad pointer.
++ */
++
++#include <fcntl.h>
++#include <string.h>
++#include <sys/syscall.h>
++#include <sys/times.h>
++#include <sys/wait.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "raw-syscall.h"
++#include "test-harness.h"
++
++/* Spin until this process has accumulated at least @ms more CPU time.
++ * CLOCK_PROCESS_CPUTIME_ID and times() draw from the same host accounting, so
++ * the burned amount is a lower bound for what times() must report.
++ */
++static void burn_cpu_ms(long ms)
++{
++    struct timespec start, now;
++    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++    volatile unsigned long sink = 0;
++    do {
++        for (int i = 0; i < 100000; i++)
++            sink += (unsigned long) i;
++        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++    } while ((now.tv_sec - start.tv_sec) * 1000L +
++                 (now.tv_nsec - start.tv_nsec) / 1000000L <
++             ms);
++}
++
++/* Like burn_cpu_ms, but spends the time in real open/write/close syscalls
++ * rather than pure computation, so the host accounts some of it as system
++ * time (ru_stime) rather than all user time.
++ */
++static void burn_syscalls_ms(long ms)
++{
++    struct timespec start, now;
++    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++    char buf[64] = {0};
++    do {
++        for (int i = 0; i < 50; i++) {
++            int fd = open("/dev/null", O_WRONLY);
++            if (fd >= 0) {
++                write(fd, buf, sizeof(buf));
++                close(fd);
++            }
++        }
++        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++    } while ((now.tv_sec - start.tv_sec) * 1000L +
++                 (now.tv_nsec - start.tv_nsec) / 1000000L <
++             ms);
++}
++
++int main(void)
++{
++    int passes = 0, fails = 0;
++
++    printf("test-times: times(2) accounting tests\n");
++
++    long tick = sysconf(_SC_CLK_TCK);
++    TEST("sysconf(_SC_CLK_TCK) == 100");
++    EXPECT_EQ(tick, 100, "unexpected clock tick rate");
++
++    TEST("times(&buf) succeeds");
++    struct tms t1;
++    clock_t r1 = times(&t1);
++    EXPECT_TRUE(r1 != (clock_t) -1, "times failed");
++
++    TEST("times(NULL) returns ticks");
++    {
++        long r = raw_syscall1(__NR_times, 0);
++        /* The return value is elapsed ticks, not an errno. */
++        EXPECT_TRUE(r >= 0, "NULL buffer rejected");
++    }
++
++    TEST("return value advances with wall time");
++    {
++        /* 60ms >= 6 ticks at 100Hz; require strict advance */
++        struct timespec ts = {0, 60 * 1000 * 1000};
++        nanosleep(&ts, NULL);
++        clock_t r2 = times(NULL);
++        EXPECT_TRUE(r2 != (clock_t) -1 && r2 > r1,
++                    "tick clock did not advance");
++    }
++
++    TEST("self CPU time accumulates");
++    {
++        burn_cpu_ms(100); /* >= 10 ticks of process CPU */
++        struct tms t2;
++        if (times(&t2) == (clock_t) -1)
++            FAIL("times failed");
++        else
++            EXPECT_TRUE(
++                t2.tms_utime + t2.tms_stime >= t1.tms_utime + t1.tms_stime + 5,
++                "utime+stime did not grow");
++    }
++
++    TEST("waited-for child CPU accumulates");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_cpu_ms(100); /* >= 10 ticks of child CPU */
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                int status;
++                if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) ||
++                    WEXITSTATUS(status) != 0) {
++                    FAIL("child did not exit cleanly");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else {
++                    EXPECT_TRUE(after.tms_cutime + after.tms_cstime >=
++                                    before.tms_cutime + before.tms_cstime + 5,
++                                "cutime+cstime did not grow");
++                }
++            }
++        }
++    }
++
++    TEST("child cutime and cstime accumulate individually");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_syscalls_ms(150); /* real syscalls: nonzero cstime too */
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                int status;
++                if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) ||
++                    WEXITSTATUS(status) != 0) {
++                    FAIL("child did not exit cleanly");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else if (after.tms_cutime <= before.tms_cutime) {
++                    FAIL("cutime did not grow individually");
++                } else {
++                    /* A regression that always reports cstime==0 must not
++                     * pass here: this child's loop is real host syscalls, not
++                     * pure computation, so cstime alone must also grow.
++                     */
++                    EXPECT_TRUE(after.tms_cstime > before.tms_cstime,
++                                "cstime did not grow individually");
++                }
++            }
++        }
++    }
++
++    TEST("waitid(WNOWAIT) does not credit cutime on the peek");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_cpu_ms(80);
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                siginfo_t info;
++                memset(&info, 0, sizeof(info));
++                long rc = syscall(SYS_waitid, P_PID, (long) pid, &info,
++                                  WEXITED | WNOWAIT, NULL);
++                if (rc != 0 || info.si_pid != pid) {
++                    FAIL("waitid(WNOWAIT) failed");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else {
++                    EXPECT_TRUE(after.tms_cutime == before.tms_cutime,
++                                "WNOWAIT peek incorrectly credited cutime");
++                }
++            }
++        }
++    }
++
++    TEST("times(bad_ptr) -> EFAULT");
++    EXPECT_RAW_ERRNO(raw_syscall1(__NR_times, (long) 0xDEAD000000000000ULL),
++                     -14, "expected -EFAULT (-14)");
++
++    SUMMARY("test-times");
++    return fails > 0 ? 1 : 0;
++}
+diff --git a/tests/test_times_syscall.py b/tests/test_times_syscall.py
+new file mode 100644
+index 0000000..5f0a558
+--- /dev/null
++++ b/tests/test_times_syscall.py
+@@ -0,0 +1,166 @@
++"""Static checks for the times(2) wiring in elfuse.
++
++elfuse is an aarch64-linux executor built on macOS Hypervisor.framework, so it
++can't be built or exercised on the Linux verifier host. These tests inspect the
++source instead: they confirm times(2) is routed end to end (abi -> dispatch
++table -> generated header -> syscall.c -> sys_times) and that sys_times and the
++proc-layer child-CPU accumulator implement the contract from the task.
++"""
++
++import re
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++SRC = ROOT / "src"
++
++
++def read(rel):
++    return (ROOT / rel).read_text(encoding="utf-8")
++
++
++def func_body(text, signature_prefix):
++    """Return the source of a top-level function whose definition starts with
++    signature_prefix (matched at the start of a line), up to the next
++    top-level definition or EOF."""
++    start = text.find(signature_prefix)
++    assert start != -1, f"could not find {signature_prefix!r}"
++    # Extend to the end of the function: scan braces from the first '{'.
++    brace = text.find("{", start)
++    assert brace != -1, f"no body for {signature_prefix!r}"
++    depth = 0
++    i = brace
++    while i < len(text):
++        c = text[i]
++        if c == "{":
++            depth += 1
++        elif c == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start : i + 1]
++        i += 1
++    return text[start:]
++
++
++def test_sys_times_abi_number_is_153():
++    abi = read("src/syscall/abi.h")
++    assert re.search(r"^#define\s+SYS_times\s+153\b", abi, re.MULTILINE), \
++        "SYS_times must be defined as aarch64 syscall 153 in src/syscall/abi.h"
++
++
++def test_dispatch_table_routes_times_to_handler():
++    tbl = read("src/syscall/dispatch.tbl")
++    assert re.search(r"^SYS_times\s+sc_times\s+0\s*$", tbl, re.MULTILINE), \
++        "dispatch.tbl needs 'SYS_times sc_times 0' (E=0, only x0 consumed)"
++
++
++def test_generated_dispatch_header_wires_times():
++    gen = ROOT / "scripts" / "gen-syscall-dispatch.py"
++    with tempfile.TemporaryDirectory() as d:
++        out = Path(d) / "dispatch.h"
++        res = subprocess.run(
++            [sys.executable, str(gen), "--output", str(out)],
++            capture_output=True, text=True,
++        )
++        assert res.returncode == 0, \
++            f"generator failed (abi/tbl/syscall.c disagree):\n{res.stderr}"
++        header = out.read_text(encoding="utf-8")
++    assert re.search(r"_\(\s*SYS_times\s*,\s*sc_times\s*,\s*0\s*\)", header), \
++        "generated dispatch.h must contain a live _(SYS_times, sc_times, 0) entry"
++
++
++def test_syscall_c_forwards_sc_times_to_sys_times():
++    sc = read("src/syscall/syscall.c")
++    m = re.search(r"SC_FORWARD\(\s*sc_times\s*,([^\n]*)\)", sc)
++    assert m, "syscall.c must define an sc_times SC_FORWARD wrapper"
++    assert re.search(r"sys_times\s*\(\s*g\s*,\s*x0\s*\)", m.group(1)), \
++        "sc_times must forward to sys_times(g, x0)"
++
++
++def test_sys_times_declared_in_time_header():
++    hdr = read("src/syscall/time.h")
++    assert re.search(r"int64_t\s+sys_times\s*\(\s*guest_t\s*\*\s*g\s*,\s*uint64_t",
++                     hdr), "sys_times must be declared in src/syscall/time.h"
++
++
++def test_return_value_uses_monotonic_clock():
++    body = func_body(read("src/syscall/time.c"), "int64_t sys_times(")
++    assert re.search(r"clock_gettime\s*\(\s*CLOCK_MONOTONIC\b", body), \
++        "sys_times return value must be derived from host CLOCK_MONOTONIC"
++
++
++def test_tick_rate_is_100hz():
++    time_c = read("src/syscall/time.c")
++    body = func_body(time_c, "int64_t sys_times(")
++    # The tick base is 100 Hz, either as a literal or a macro defined to 100.
++    hz_macros = set(re.findall(r"^#define\s+(\w+)\s+100\b", time_c, re.MULTILINE))
++    uses_macro = any(re.search(rf"\b{re.escape(m)}\b", body) for m in hz_macros)
++    uses_literal = re.search(r"\b100\b", body) is not None
++    assert uses_macro or uses_literal, \
++        "sys_times must scale ticks at USER_HZ = 100"
++    # Must agree with the AT_CLKTCK auxv value libc reads for _SC_CLK_TCK.
++    stack = read("src/core/stack.c")
++    assert re.search(r"AUX\s*\(\s*AT_CLKTCK\s*,\s*100\s*\)", stack), \
++        "AT_CLKTCK auxv must advertise 100 to match the tick rate"
++
++
++def test_self_times_from_getrusage_self():
++    body = func_body(read("src/syscall/time.c"), "int64_t sys_times(")
++    assert re.search(r"getrusage\s*\(\s*RUSAGE_SELF\b", body), \
++        "tms_utime/tms_stime must come from getrusage(RUSAGE_SELF)"
++
++
++def test_child_times_from_proc_accumulator():
++    body = func_body(read("src/syscall/time.c"), "int64_t sys_times(")
++    assert "proc_children_cpu_us" in body, \
++        "child times must come from the proc-layer accumulator"
++    assert not re.search(r"getrusage\s*\(\s*RUSAGE_CHILDREN\b", body), \
++        "child times must not be read from RUSAGE_CHILDREN (helper procs leak in)"
++
++
++def test_null_buffer_accepted():
++    body = func_body(read("src/syscall/time.c"), "int64_t sys_times(")
++    # The struct write is guarded on a non-NULL buffer pointer.
++    assert re.search(r"if\s*\(\s*buf_gva\b", body), \
++        "a NULL buffer must be accepted; guard the struct write on buf_gva"
++
++
++def test_bad_pointer_returns_efault():
++    body = func_body(read("src/syscall/time.c"), "int64_t sys_times(")
++    assert "guest_write" in body, "sys_times must write the tms struct to guest memory"
++    assert re.search(r"return\s+-\s*(LINUX_)?EFAULT", body), \
++        "a failed guest write must return -EFAULT"
++
++
++def test_child_cpu_accumulator_add_defined():
++    proc = read("src/syscall/proc.c")
++    assert re.search(r"\bvoid\s+proc_children_cpu_add\s*\(\s*const\s+struct\s+rusage\s*\*",
++                     proc), "proc_children_cpu_add(const struct rusage *) must be defined"
++
++
++def test_child_cpu_accumulator_read_defined():
++    proc = read("src/syscall/proc.c")
++    assert re.search(r"\bvoid\s+proc_children_cpu_us\s*\(\s*uint64_t\s*\*", proc), \
++        "proc_children_cpu_us(uint64_t *, uint64_t *) must be defined"
++
++
++def test_child_cpu_credited_only_on_terminal_report():
++    proc = read("src/syscall/proc.c")
++    body = func_body(proc, "int64_t sys_wait4(")
++    # Crediting happens only behind a terminal-report guard.
++    assert "proc_children_cpu_add" in body, \
++        "sys_wait4 must feed the child-CPU accumulator on reap"
++    assert re.search(r"WIFEXITED\s*\(\s*status\s*\)\s*\|\|\s*WIFSIGNALED\s*\(\s*status\s*\)",
++                     body), \
++        "crediting in sys_wait4 must be gated on WIFEXITED||WIFSIGNALED"
++
++
++def test_table_reaper_accounts_child_cpu():
++    proc = read("src/syscall/proc.c")
++    body = func_body(proc, "static int proc_reap_finished(")
++    assert re.search(r"\bwait4\s*\(", body), \
++        "proc_reap_finished must reap with wait4 to obtain rusage"
++    assert "proc_children_cpu_add" in body, \
++        "proc_reap_finished must credit reaped child CPU"

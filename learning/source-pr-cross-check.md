@@ -1,10 +1,11 @@
 ---
 id: source-pr-cross-check
 status: locally-verified
-last_verified: 2026-08-02
+last_verified: 2026-08-11
 verified_by:
   - 20260719_045042__oliver-oloughlin_kvdex__245
-evidence: "Three Quality Check coverage findings traced back to the upstream PR and to the base commit"
+  - 20260809_080653__sysprog21_elfuse__162
+evidence: "Three Quality Check coverage findings traced back to the upstream PR and to the base commit; and a golden.patch found to be the source PR with a second PR welded into it, caught only by hunk-level comparison"
 applies_to:
   languages: [any]
   runners: [any]
@@ -126,6 +127,114 @@ graded assertion that disagreed with the instruction, and round 5 resolved the d
 deleting the assertion. See `LEDGER.md` L20. A test that contradicts the instruction is evidence
 about the instruction at least as often as the reverse, and the tiebreaker is always which of the
 two matches the patch.
+
+## The other direction: golden.patch carrying a SECOND PR (elfuse 162, 2026-08-11)
+
+Everything above is about a finding that describes the PR when it looks like it describes your
+tests. This is the mirror case, and it is the oracle rather than the tests.
+
+`20260809_080653__sysprog21_elfuse__162` shipped a `solution/golden.patch` of 27 hunks over 12
+files. Sixteen of those hunks are PR 162's own eight non-test files. The remaining **eleven are
+PR 161**, "Wake internal condvar parks on exit_group teardown", a concurrency and teardown fix
+with nothing to do with the feature. It brought in four files PR 162 never touched
+(`src/core/guest.c`, `src/main.c`, `src/runtime/thread.c`, `src/runtime/thread.h`), a new public
+function `thread_wake_exit_waiters`, and four wait loops taught to re-check an exit-group flag.
+The instruction never mentioned any of it and no graded test referenced a single one of its
+symbols, so it was undescribed and unverifiable behaviour sitting in the oracle.
+
+**A file-list diff alone understates this and would have missed a third of it.** Three of the
+polluted hunks land inside files PR 162 *does* legitimately touch:
+`src/runtime/forkipc.c`, `src/syscall/syscall.c` and `src/syscall/proc.c`. Comparing file lists
+reports "4 extra files". Comparing hunks reports the truth, 11 extra hunks across 7 files.
+
+**The comparison that works.** The API gives you a real unified diff per file in the `patch`
+field, so compare changed-line bodies rather than filenames. This is the script that found it:
+
+```bash
+# page it, because this note's own headline lesson is that page 1 is not the PR
+p=1; : > pr_pages.json
+while curl -s "https://api.github.com/repos/<owner>/<repo>/pulls/<n>/files?per_page=100&page=$p" -o "pr_p$p.json"; do
+  n=$(python3 -c "import json,sys;print(len(json.load(open(sys.argv[1]))))" "pr_p$p.json")
+  [ "$n" -lt 100 ] && break
+  p=$((p+1))
+done
+python3 -c "import json,glob;json.dump([x for f in sorted(glob.glob('pr_p*.json')) for x in json.load(open(f))], open('pr.json','w'))"
+python3 - <<'PY'
+import json, re
+pr = {f["filename"]: f.get("patch") or "" for f in json.load(open("pr.json"))}
+golden = open("solution/golden.patch", encoding="utf-8", errors="replace").read()
+
+# golden -> {path: [changed lines]}
+blocks = re.split(r'^diff --git a/(\S+) b/\S+\n', golden, flags=re.M)[1:]
+mine = dict(zip(blocks[0::2], blocks[1::2]))
+
+def changed(text):
+    return [l for l in text.split("\n")
+            if (l.startswith("+") or l.startswith("-"))
+            and not l.startswith(("+++", "---"))]
+
+for path, body in mine.items():
+    if path not in pr:
+        print(f"NOT IN PR AT ALL   {path}")
+        continue
+    theirs = set(changed(pr[path]))
+    extra = [l for l in changed(body) if l not in theirs]
+    if extra:
+        print(f"{len(extra):4d} extra changed lines   {path}")
+        for l in extra[:3]:
+            print(f"       {l[:100]}")
+PY
+```
+
+On elfuse it printed four `NOT IN PR AT ALL` files and extra changed lines in three more. Then
+search the repo's other pull requests for a distinctive new symbol from the extra lines
+(`thread_wake_exit_waiters` here) to find which PR it came from, and read that PR's dates before
+reaching for the FAQ's related-PR allowance.
+
+**It is Fixable and the correction is subtractive.** `docs/guidelines.md` requires the patch to
+carry "only what's needed to resolve the task" with no drive-by edits, and CLAUDE.md Step 2
+item 9 calls a golden patch spanning more files than the PR a polluted oracle and a Fixable
+finding. Removing another PR's material is **not** reducing the source PR's scope, so the
+expansion-only boundary is not in play. The clean rebuild is to reconstruct `golden.patch` from
+the API's own per-file `patch` fields:
+
+```python
+import json
+
+out, skipped = [], []
+for f in json.load(open("pr.json")):
+    name = f["filename"]
+    if name.startswith("tests/"):            # test changes belong in tests.patch
+        continue
+    patch = f.get("patch")                   # absent for binaries and very large diffs
+    if not patch:
+        skipped.append(name)
+        continue
+    if not patch.endswith("\n"):
+        patch += "\n"
+    status = f.get("status")
+    if status == "added":
+        head = f"new file mode 100644\n--- /dev/null\n+++ b/{name}\n"
+    elif status == "removed":
+        head = f"deleted file mode 100644\n--- a/{name}\n+++ /dev/null\n"
+    else:                                    # modified
+        head = f"--- a/{name}\n+++ b/{name}\n"
+    out.append(f"diff --git a/{name} b/{name}\n{head}{patch}")
+
+open("solution/golden.patch", "w").write("".join(out))
+if skipped:
+    print("HAND-BUILD THESE, the API returned no patch:", skipped)
+```
+
+Renames are not covered: the API reports them with `status == "renamed"` and a
+`previous_filename`, and they need `rename from` / `rename to` headers. **Always finish with
+`git apply --check` against the base commit** rather than trusting the reconstruction.
+
+That produced a patch of exactly the PR's 8 non-test files which applied cleanly at the base
+commit and passed the oracle 3/3. **Check the polarity of the FAQ allowance before reaching for
+it as a defence**: adapting a *later related* PR for difficulty is sanctioned, and PR 161 was
+created a day earlier, merged 18 seconds earlier, and was copied wholesale rather than adapted,
+so none of the three bounds applied.
 
 ## Related
 

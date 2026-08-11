@@ -3,6 +3,7 @@ id: accepted-bundle-reference
 status: platform-confirmed
 last_verified: 2026-08-11
 verified_by:
+  - 20260809_080653__sysprog21_elfuse__162
   - 20260719_045042__oliver-oloughlin_kvdex__245
   - 20260805_080500__statrs-dev_statrs__315
 evidence: "The bundle as accepted on round 6, measured out of _archive/"
@@ -20,8 +21,18 @@ contradicts: []
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, accepted 2026-08-04 after six rounds.
 
-**There are now three accepted bundles**, plus one accepted Path C submission with no bundle at
+**There are now four accepted bundles**, plus one accepted Path C submission with no bundle at
 all (libcrux 1165, written up in `not-fixable-is-a-written-argument.md`).
+`20260809_080653__sysprog21_elfuse__162` was accepted 2026-08-11, C, graded through pytest,
+`implementation / feature`, difficulty hard. **Read its row in `calibration.tsv` with the caveat
+attached**: the submitter reported only the word accepted, so its round count and every check
+panel result are unknown and its numbers are all local measurements. It is the reference for one
+thing none of the others show, a graded suite that **cross-compiles part of a macOS-only program
+for aarch64 and runs it under qemu-user on the Linux verifier**, in place of the source-text
+assertions the bundle arrived with (`platform-locked-repos-are-still-testable.md`). It is also
+the only one here whose instruction names **zero** internal paths, internal symbols and host API
+calls, which was a consequence of the tests dropping those names rather than of editing the
+instruction harder.
 `20260807_080545__tair-opensource_redisshake__1005` was accepted 2026-08-11 on round 4, Go with
 `go test`, `implementation / feature`, difficulty hard, 5 uploads, 225 minutes plus 315 of
 revisions. It is the reference for three things the other two do not show: an oracle carrying
@@ -32,18 +43,18 @@ difficulty screen had blocked it **four consecutive times** (see
 2026-08-11 after five uploads across rounds 0 to 4. Its measurements are in
 [calibration.tsv](calibration.tsv) and its full record in
 `_archive/20260805_080500__statrs-dev_statrs__315/task.md`. Where the two agree, the number is
-worth something; where they differ, there is no normal. They agree on: an instruction whose
-longest prose paragraph sits under 800 characters (kvdex 717, statrs 769, redisshake 680), a
+worth something; where they differ, there is no normal. All four agree on: an instruction whose
+longest prose paragraph sits under 800 characters (kvdex 717, statrs 769, redisshake 680, elfuse 379), a
 populated `pass_to_pass` guard, script modes at 0755, a silent `git fsck`, a git-independent
 test-tree restore, an exit-code gate in the grader, and an oracle whose runtime has large headroom
-against the verifier timeout. All three also ship an instruction that names **no internal file
-path and no library to use**. Where all three agree the number is worth more than where two do. They differ on nearly everything else, including the
+against the verifier timeout. All four also ship an instruction that names **no internal file
+path and no library to use**, and elfuse is the extreme case of it. Where all four agree the number is worth more than where two do. They differ on nearly everything else, including the
 `tests.patch` shape, the graded totals and the number of rounds. statrs is also the first accepted
 bundle here whose `golden.patch` was **edited** rather than shipped as received, under
 `docs/guidelines.md:286` case 1 and then again to expand scope, so it is the reference for what an
 accepted oracle edit looks like. redisshake 1005 is the second and the wider one, at three
 corrections in one patch, all three still unfixed upstream, each declared in its own issue block.
-**Two of the three accepted bundles carry an edited oracle**, so a case-1 correction is now the
+**Two of the four accepted bundles carry an edited oracle**, so a case-1 correction is now the
 normal shape here rather than the exception, and `oracle-bug-vs-pr-scope.md` carries what makes
 one survivable.
 Deno/TypeScript, `evolution_and_maintenance / migration`, difficulty hard, verdict Fixable
@@ -186,7 +197,7 @@ Measuring the four bundles here answered it in one command:
 | openwhispr 1002 | 21 | 602 |
 | redisshake 1005 | 15 | 680 |
 | ziti-sdk-c 668 | 46 | 777 |
-| elfuse 162 | 21 | 379 |
+| elfuse 162 (**accepted**) | 21 | **379** chars |
 | AltBeacon 1177, as bounced | 13 | **2724** (second longest 2466) |
 | AltBeacon 1177, after the round 5 rewrite | 67 | 826 |
 

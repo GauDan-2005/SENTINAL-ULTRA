@@ -1,0 +1,155 @@
+Submitter Answers - Fixable
+Task: 20260809_080653__sysprog21_elfuse__162
+
+What is your analysis of the Sentinel task? (both occurrences)
+Fixable
+[Internal] Validity: Fixable
+
+Select where the task had issues (check all that apply):
+- [x] Instructions
+- [x] Tests
+- [x] Oracle Solution
+- [x] Environment/Dockerfile
+
+What issues did you find with the task?
+- [x] Every requirement in the instructions is not properly tested
+- [x] All test requirements are not properly specified in the instructions
+- [x] The instructions appear LLM generated
+- [x] The instructions are overly-prescriptive
+- [x] The task leaks solution information
+- [x] The oracle does not implement the solution following the instructions
+- [ ] Less than 10 fail-to-pass tests in the test suite
+
+Issue details:
+
+1) [Every requirement in the instructions is not properly tested] - All 15 fail-to-pass tests were regular expressions run over C and header source text. tests/test_times_syscall.py read src/syscall/abi.h, src/syscall/dispatch.tbl, src/syscall/syscall.c, src/syscall/time.h, src/syscall/time.c, src/syscall/proc.c and src/core/stack.c and searched them for tokens. Nothing was ever executed, so nothing about the behaviour of times(2) was checked. The instruction listed nine concrete behaviours (tick rate, a successful call, a null buffer returning ticks, the return value advancing across a 60ms sleep, self CPU growing after a burn, child CPU growing after a reap, child system time growing on its own, a peek leaving child user time alone, and a bad pointer returning EFAULT) and zero of them had an enforcing assertion. I measured how weak this was rather than describing it. A 37 line no-op passes all 15. Its sys_times body is `if (0) { ... } return 0;` so it never reads a clock, never writes the guest buffer and never touches the child counters, plus two empty accumulator functions and two comment lines to satisfy the two proc.c assertions. I then appended `this is not valid C at all ;;; ###` to src/syscall/time.c and `@@@ broken @@@` to src/syscall/proc.c and all 15 still passed, so the suite did not even require the submission to compile.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? The bundle's own justification for source grading is in the test docstring, that elfuse is an aarch64 executor built on macOS Hypervisor.framework and so cannot be built or exercised on the Linux verifier. The first half is true and the conclusion is not, and I measured it before rewriting anything. The syscall handlers are ordinary C. src/syscall/time.c and src/syscall/proc.c both compile on Linux behind a small stand-in for the framework header plus two Darwin headers. src/syscall/proc.c will not assemble for x86_64 because of one unguarded `mrs x0, cntfrq_el0` at proc.c:2031, but all three of time.c, proc.c and syscall.c cross-compile for aarch64 and run under qemu-user-static. So the graded suite is now behavioural. tests/sentinel-hostcheck/ carries the header stand-ins, a link stub file and one probe that includes the dispatcher source so the static dispatch table is reachable, and hostbuild.py cross-compiles those three units, links them and runs the probe under qemu. The probe reaches times(2) through the dispatch table by syscall number, so it never names a symbol the solution has to create. It forks real children that burn real CPU, reaps them, and reads the four tick counts back out of the bytes the handler wrote. All 16 fail-to-pass tests now assert on something the code did.
+
+2) [All test requirements are not properly specified in the instructions] - Two of the graded tests demanded literals the instruction never gave the agent. test_bad_pointer_returns_efault required the token `guest_write` to appear inside the sys_times body, which is an internal helper name the instruction does not mention, so an implementation using any other write path failed a test it could not have known about. test_syscall_c_forwards_sc_times_to_sys_times required the literal SC_FORWARD macro, which is one of three wrapper macros the file uses. Separately two tests could not fail for the reason they claimed. test_null_buffer_accepted only checked that the string `if (buf_gva` appears in the function, so a solution that rejects a null buffer outright passes it, which is the opposite of the stated requirement. The second half of test_tick_rate_is_100hz asserts that src/core/stack.c advertises 100, and that line is already present at the base commit, so it grades nothing the solution adds.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Every one of those assertions is gone with the source grading. The replacement suite requires no internal name at all. It reads the dispatch table entry for syscall 153, calls the handler behind it, and checks what came back, so the agent is free to name and place its own helpers. The null buffer case now calls the handler with a null pointer and asserts that no write was attempted and the return value is not an error, which fails an implementation that rejects null. The tick rate is now measured by sampling twice around a half second sleep and checking that the return value advanced at about 100 a second, which no already-true property can satisfy.
+
+3) [The instructions appear LLM generated] - The instruction read as a construction plan rather than a ticket. It carried 13 em dashes, and its acceptance criteria arrived as a single nine clause semicolon chained sentence at line 21 that is a transcription of the nine TEST() labels inside the guest test the patch ships. Three of its sentences are lightly reworded copies of comments that sit inside solution/golden.patch, including the sysconf rescaling sentence, the parenthetical naming rosettad translate and sysroot tooling, and the sentence about double or triple counting across stop, continue and final exit reports.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Rewritten from scratch as a ticket. It opens with the symptom a user hits, states the syscall number and the argument shape, then states seven numbered requirements in behavioural terms. No em dashes, no semicolon chains, and no sentence lifted from the patch. The longest paragraph is 474 characters against 808 before.
+
+4) [The instructions are overly-prescriptive] - The instruction named nine internal file paths and told the agent exactly where each deliverable went. It said to add SYS_times = 153 to src/syscall/abi.h, to add the `SYS_times sc_times 0` row to src/syscall/dispatch.tbl, to add the sc_times wrapper in src/syscall/syscall.c, to declare sys_times in src/syscall/time.h and implement it in src/syscall/time.c, and to add proc_children_cpu_add and proc_children_cpu_us to src/syscall/proc.c declared in src/syscall/proc.h. It also named the host calls to use, getrusage(RUSAGE_SELF) and CLOCK_MONOTONIC, and gave the literal guard expression `WIFEXITED(status) || WIFSIGNALED(status)`, so there was almost nothing left for an engineer to work out from the codebase.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? The rewritten instruction names zero source files, zero internal functions and zero host API calls. It states the contract instead. The return value has to come from a reference that only moves forward and cannot be set by a user, self time has to come from the host's own accounting for the running process, and child time has to come from processes the guest itself owns and reaps. Which host call satisfies each of those is now the engineer's problem, and the tests do not care which one is used because they observe the result rather than the call.
+
+5) [The task leaks solution information] - 16 phrases from the instruction appear near verbatim inside the assertions or the assertion messages of the 15 graded tests. The instruction handed over the exact strings the verifier was matching on, which is how a solution can be written to satisfy the checker rather than the requirement. The three sentences copied from the golden patch comments described in issue 3 are the same problem from the other direction, since the oracle's own reasoning was pasted into the prompt.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? I checked this mechanically after the rewrite rather than by eye. tests/tests.patch now adds 174 string literals of 12 characters or more and none of them appears in instruction.md. The instruction also no longer contains any sentence that appears in solution/golden.patch.
+
+6) [The oracle does not implement the solution following the instructions] - solution/golden.patch was not PR 162. It was PR 162 with the whole of PR 161 welded into it. I fetched both from the GitHub API and compared every hunk. The patch had 27 hunks over 12 files. 16 of them are PR 162's eight non-test files. The other 11 are PR 161, titled Wake internal condvar parks on exit_group teardown, and they bring in four files PR 162 never touched, src/core/guest.c, src/main.c, src/runtime/thread.c and src/runtime/thread.h, plus extra hunks inside three files PR 162 does touch. That material adds a new public function thread_wake_exit_waiters, four wait loops that re-check the exit-group flag, and a change to which slots thread_join_workers waits for. None of it has anything to do with times(2), the instruction never mentions it, and no test touched a single one of its symbols, so it was undescribed and unverifiable behaviour sitting in the oracle. It is also not a case of adapting a related later PR for added difficulty, since PR 161 was created a day earlier and merged 18 seconds earlier, and it was copied wholesale rather than adapted.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? The correction is subtractive and does not touch PR 162 at all. I rebuilt solution/golden.patch from PR 162's own file list through the API, so it now carries exactly the eight non-test files the PR changed, with the same additions and deletions per file. The two test files the PR carries stay in tests/tests.patch, which is where test changes belong. The patch applies cleanly at the base commit and the oracle passes 3 out of 3.
+
+Additional findings outside the listed categories:
+
+7) [Verifier would have failed every trial where the agent obeyed the instruction] - instruction.md line 19 told the agent to register the guest test test-times in tests/manifest.txt and even said which two entries it sits between. tests/tests.patch makes that exact same one line edit at verify time, and tests/test.sh had no restore step of any kind. Line 23 of the same instruction said not to modify the test files, so the instruction contradicted itself as well. I reproduced the failure on disposable copies with the agent edit left unstaged, staged, and staged and committed. In all three, git apply failed, git apply --3way failed, and patch -p1 --forward exited 1 with a reversed or previously applied message, and those are the only three routes test.sh has, so the verifier wrote an infrastructure error and reward 0. An agent that followed the instruction was guaranteed a dead trial. The oracle never hit it because golden.patch does not implement line 19.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Two changes. The manifest instruction is gone, since telling an agent to edit the test tree was never appropriate. And tests/test.sh now restores the test tree before applying the patch, using a 5.3 KB base64 payload embedded in the script itself rather than anything built on git, because the verify-time workspace is not reliably a git repository. It restores tests/manifest.txt and scripts/gen-syscall-dispatch.py to their base content and clears every path the patch creates. I verified this against six agent behaviours including a committing agent and one with the whole .git directory deleted, and all six still score 1.0.
+
+8) [Verifier awarded reward 1.0 while the test command exited nonzero] - The shipped tests/test.sh carried the stock grader, which computes success from the parsed test names alone. It recorded raw_exit_code and then never read it, so a compile failure, a crash or a partially executed suite could leave the expected lines in the log and still be graded a pass.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? The exit status is now part of the success expression in the grader, not an early bail out, so a failing run is still graded as an ordinary failure rather than being reclassified as a broken harness. I measured the runner's bare exit on a fully passing tree first and it is 0, so the gate cannot fail a correct solution. The generated runner also emits set -e, and the stderr log is appended to rather than overwritten so the patch-apply diagnostics survive.
+
+9) [No regression guard at all] - pass_to_pass was empty and allow_extra_failures was true, so nothing outside the 15 source-text tests could affect the reward. The repository has no pytest-collectable tests to draw on, since its own suite is guest binaries and shell drivers.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? The new host harness made guards possible where none existed. Eight of the 24 graded tests exercise behaviour that already works at the base commit, which is what the golden patch's own files are most at risk of breaking. They check that the dispatch table still routes the existing clock and wait calls, that wall-clock reads still report the right time, that monotonic reads still advance, that resolution is still reported, that a registered child is still reaped and reported correctly, and that waiting on a process that is not a child still reports no children. allow_extra_failures is now false, and since the run executes exactly the graded set that is safe.
+
+10) [Oracle inverted its own fix on a second run] - solution/solve.sh tried a plain apply, then a three-way apply, and then reverse-applied the patch as its last branch. On a tree that is already solved the first two fail and the third succeeds, which unsolves it while reporting success. The platform runs the oracle three times.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Rewritten to the forward-only shape. It first checks whether the reverse of the patch fits, which is how you tell it is already applied, and exits 0 if so. Otherwise it tries a plain apply, then a three-way apply, then fails loudly. Three solve and verify cycles in one container now report already applied twice and stay at reward 1.0 every time.
+
+11) [Shipped repository arrived dirty and with a broken git ref] - git status in environment/repo printed 28 modified files on the bundle as received. All 28 are mode changes from 100755 to 100644, 24 of them under tests/ and 4 under .ci/, so the executable bit was lost somewhere in packaging. Separately .git/refs/remotes/origin/HEAD was a broken pointer and git fsck errored on the bundle as it arrived, which no other git check catches.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Restored the executable bit on all 28 files so the tree matches the base commit exactly and git status prints nothing. Removed the broken remote ref. Scrubbed the reflog and dangling objects immediately before zipping, which mattered because regenerating tests.patch had left 12 dangling blobs of the graded test files readable through git cat-file, and .git is a path the agent can read. git fsck is now silent. The loose ref is written back after the pack so .git/refs is not an empty tree an extractor can drop.
+
+12) [Both shipped scripts were not executable, and neither survived a non-bash shell] - tests/test.sh and solution/solve.sh both shipped at mode 644, which fails at run time rather than build time. I also measured what happens when the verifier entrypoint is started with sh rather than bash, and it produced no reward file at all, which reads as a missing verifier output rather than a failure.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? Both are 0755 in the zip, verified in the extracted archive rather than only in the working copy. Both now re-exec themselves under bash when started by a shell without arrays, and the sh case now returns reward 1.0 instead of nothing.
+
+13) [task.toml metadata gaps] - repo_license was an empty string, the [environment] block had no os field, [metadata] had no difficulty_explanation, and the verifier timeout was 300 seconds while the inner execution timeout in tests/config.json was 1800, so the outer limit would always have fired first.
+- Is this issue fixable or not fixable? Fixable
+- If fixable, how? repo_license is Apache-2.0, which matches the LICENSE file and the SPDX line in every source file. Added os = "linux" and a difficulty_explanation. The verifier timeout is 1200 and the execution timeout is 900, so the inner limit now sits inside the outer one. The build timeout went from 900 to 1500 because the image now installs a cross toolchain. I did not touch the difficulty or pass rate fields.
+
+--- Phase 2 (completed after the evals pass) ---
+
+Files Changed:
+1. instruction.md
+   Changed: Rewritten. Removed all nine internal file paths, every internal function name, the host API names, the literal guard expression, the nine clause acceptance sentence, the 13 em dashes and the instruction to edit tests/manifest.txt. States seven behavioural requirements instead.
+   Why: The old text was a construction plan, it leaked the strings the tests matched on, it copied sentences out of the golden patch, and its manifest line guaranteed a dead trial for any agent that followed it.
+2. environment/problem_statement.md
+   Changed: Re-copied from instruction.md so the two are byte identical.
+   Why: Required to stay in sync after any instruction edit.
+3. tests/tests.patch
+   Changed: Replaced the 15 source-text pytest tests with tests/test_sentinel_times_host.py, 24 behavioural tests, and added tests/sentinel-hostcheck/ holding the Linux stand-ins for the framework and Darwin headers, a link stub file, a probe that drives the syscall layer, and the build driver. PR 162's own tests/test-times.c and its tests/manifest.txt line are unchanged.
+   Why: Source-text assertions pass a solution that writes the right words and fail correct code that words it differently. The replacement compiles the real handlers and observes what they do.
+4. tests/config.json
+   Changed: fail_to_pass 15 to 16 and repointed at the new file, pass_to_pass 0 to 8, allow_extra_failures true to false, execution timeout 1800 to 900.
+   Why: The graded set had to follow the rewritten suite, there was no regression guard at all, and the inner timeout sat above the outer one.
+5. tests/test.sh
+   Changed: Added a base64 restore of the base test tree and the dispatch generator before the patch is applied, added the exit status to the grader's success expression, made the generated runner emit set -e, appended to the stderr log instead of overwriting it, and added a bash re-exec guard.
+   Why: A compliant agent broke the patch apply, the grader could award 1.0 on a nonzero exit, and starting the script with sh produced no reward file at all.
+6. solution/golden.patch
+   Changed: Rebuilt from PR 162's own file list. Now exactly the eight non-test files the PR changes, with PR 161's 11 hunks and four extra files removed.
+   Why: The oracle carried a second, unrelated feature that the instruction never described and no test verified.
+7. solution/solve.sh
+   Changed: Replaced the reverse-apply fallback with the forward-only shape and added the bash re-exec guard. Mode 0755.
+   Why: The old script unsolved an already solved tree and reported success, and the platform runs the oracle three times.
+8. environment/Dockerfile
+   Changed: Added gcc-aarch64-linux-gnu, libc6-dev-arm64-cross and qemu-user-static to the verifier dependency layer, with a command -v check on both new tools.
+   Why: The behavioural tests cross-compile part of the emulator and run it, and the verifier has no network of its own, so the toolchain has to be baked into the image.
+9. task.toml
+   Changed: repo_license set to Apache-2.0, added os = "linux" and difficulty_explanation, verifier timeout 300 to 1200, build timeout 900 to 1500.
+   Why: Three required fields were missing or empty, the verifier timeout sat below the inner execution timeout, and the image now has a larger install.
+10. environment/repo (git metadata only, no tracked source touched)
+    Changed: Restored the executable bit on the 28 tracked files that arrived at 644, removed the broken refs/remotes/origin/HEAD, scrubbed the reflog and dangling objects, and wrote the loose branch ref back after packing.
+    Why: The tree arrived dirty against its own base commit, git fsck errored on the bundle as received, and dangling blobs of the graded test files were readable from a path the agent can reach.
+
+PR additions:
+NA
+
+Post-fix confirmation (each verified after fixes):
+[x] Every requirement in the instructions is properly tested
+[x] All test requirements are properly specified in the instructions
+[x] The instructions do not sound like an LLM generated them
+[x] The instructions are not overly-prescriptive
+[x] The task does not leak solution information
+[x] The oracle implements the solution following the instructions
+[x] The PR was not modified in any way beyond what is allowed by the guidelines
+[x] More than 10 fail-to-pass tests in the test suite (counted: 16, plus 8 regression guards, 24 graded)
+
+Send to reviewer: No. The zip has not been uploaded yet, so the platform checks have not run and five of the eight gate conditions have no result to read. The local battery is green against the exact zip being uploaded and the remaining conditions are met, so this is expected to flip to Yes once the checks come back clean.
+
+What makes this task difficult?
+The obvious implementation of the child CPU fields is wrong, and it is wrong in a way that looks right. A guest calling times() wants the CPU of the children it created and waited for, and the host offers exactly that number for free, so almost every first attempt reads it. It is the wrong number here because the emulator forks its own helper processes for translation and sysroot work, and the host folds their CPU into the same total, so guest programs would see time they never spent. The counters have to be fed only at reaps of processes the guest itself owns. On top of that a single child can be reported more than once, on a stop, on a continue and finally on exit, and a wait can be asked to look at a child without collecting it, so crediting on every report counts the same CPU two or three times. Getting the syscall routed at all is the easy part, since the dispatch header is generated and only builds when the number table, the dispatch manifest and the wrapper all agree.
+
+Senior engineer estimate: 40+ minutes
+
+Comments for Reviewer:
+Round 0. The bundle graded all 15 fail-to-pass tests with regular expressions over C source text, and its own test docstring explained why, that elfuse is a macOS Hypervisor.framework program so nothing can be built or run on the Linux verifier. The premise is right and the conclusion drawn from it is wrong, and almost everything I changed follows from that.
+I measured it before rewriting anything. src/syscall/time.c and src/syscall/proc.c compile on Linux behind a small stand-in for the framework header plus two Darwin headers. proc.c will not assemble for x86_64 because of one unguarded aarch64 instruction at proc.c:2031, but all three of time.c, proc.c and syscall.c cross-compile for aarch64 and run under qemu-user-static, so the real handlers can be driven. Linking every compilable unit fails on duplicate symbols, so the build stays a short fixed list with a lookup across src/ for anything left undefined. That means a handler placed in a new file still links, and the instruction does not have to say where anything goes.
+On how weak the old suite was, a 37 line no-op passes all 15, and so does a tree with invalid C appended, so it never required the submission to compile.
+The local battery ran against a fresh extract of the exact zip being uploaded. NOP came back at reward 0.0 with a nonzero raw exit and no infrastructure error, 8 of 24 passing, which is the 8 regression guards actually running at the base commit while all 16 fail-to-pass fail. That zero is worth reading carefully, because a suite that simply failed to build would also report zero. Here the probe does build at the base commit, so the guards genuinely ran. Oracle came back 3 out of 3 at reward 1.0 with 24 of 24 and no unexpected failures, run as three solve and verify cycles in one container. Hostile delete ran 3 times inside the real verifier and 12 times against the suite directly, and every one dropped to 0.0 naming its test. Six agent behaviours all still score 1.0, including an agent that edits the manifest, one that creates the graded files, one that commits its edits, one with the whole .git directory deleted, and both entrypoints started with sh. Verifier runtime is about 15 seconds against a 1200 second timeout.
+I deliberately left three things alone. model_difficulty says medium while difficulty says hard, and the guidance is to report that rather than quietly reconcile it, so both fields are untouched. The Dockerfile ends its patch install with a fallback that swallows failure, which is fail-open, but nothing downstream depends on it and cleaning it up is not on the allowed environment fix list. tests/test-times.c and the tests/manifest.txt line stay in tests.patch because they are PR 162 content and belong there, even though the verifier cannot build a guest binary to run them.
+One point is worth a second opinion. The build driver reads src/*.c files to work out which file defines a symbol the link is missing. That is a build decision rather than an assertion, and no graded test reads source text, but a quick grep for source reading under tests/ will find it and I would rather name it here than have it look hidden.
+
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+60 minutes
+
+How long did it take you to complete the initial task rewrite only?
+140 minutes
+
+How long did it take you to complete the additional questions on the form?
+15 minutes
+
+Total submission time: 215 minutes
+
+How long did it take you to complete all revisions?
+0 minutes

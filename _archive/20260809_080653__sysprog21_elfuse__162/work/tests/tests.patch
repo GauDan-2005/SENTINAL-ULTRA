@@ -1,0 +1,1639 @@
+diff --git a/tests/manifest.txt b/tests/manifest.txt
+index 8d4382a..c3710b3 100644
+--- a/tests/manifest.txt
++++ b/tests/manifest.txt
+@@ -48,6 +48,7 @@ test-socket
+ test-file-ops
+ test-flock
+ test-sysinfo
++test-times
+ test-io-opt
+ test-oom-proc
+ test-syscall-smoke
+diff --git a/tests/sentinel-hostcheck/hostbuild.py b/tests/sentinel-hostcheck/hostbuild.py
+new file mode 100644
+index 0000000..c8a06cf
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hostbuild.py
+@@ -0,0 +1,204 @@
++"""Build the Linux host-check probe out of the emulator's own sources.
++
++Copyright 2026 elfuse contributors
++SPDX-License-Identifier: Apache-2.0
++
++elfuse runs on macOS and its guest tests need a live VM, so a Linux CI host can
++run neither. The syscall handlers are ordinary C though, so this module
++cross-compiles the dispatch layer together with the time and process
++translation units for aarch64-linux, links them against the small stub set in
++this directory, and hands back a binary that qemu-user can run.
++
++Two things keep the build from being coupled to one particular implementation.
++Any symbol left undefined after the first link attempt is looked up across
++src/, and the file that defines it is pulled into the build, so a handler put
++in a new file still links. Whatever is left after that belongs to parts of the
++emulator no probe reaches (the VM, the debugger, the filesystem layer) and is
++filled in with an inert placeholder.
++"""
++
++from __future__ import annotations
++
++import os
++import re
++import shutil
++import subprocess
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++ROOT = os.path.dirname(os.path.dirname(HERE))
++
++CC = "aarch64-linux-gnu-gcc"
++RUNNER = "qemu-aarch64-static"
++
++UNDEF_RE = re.compile(r"undefined reference to [`'\"]([A-Za-z_][A-Za-z0-9_]*)")
++TLS_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*): (?:TLS reference in .*? "
++                    r"mismatches non-TLS definition|non-TLS reference in .*? "
++                    r"mismatches TLS definition)")
++
++
++class BuildError(RuntimeError):
++    """Raised when the probe cannot be built. Carries the compiler output."""
++
++
++def _run(cmd, **kw):
++    return subprocess.run(cmd, capture_output=True, text=True, **kw)
++
++
++def tools_present():
++    return shutil.which(CC) is not None and shutil.which(RUNNER) is not None
++
++
++def _flags(build_dir):
++    hv = os.path.join("tests", "sentinel-hostcheck", "hvshim")
++    hc = os.path.join("tests", "sentinel-hostcheck")
++    return [
++        "-O1",
++        "-g0",
++        "-std=gnu11",
++        "-include", os.path.join(hv, "prelude.h"),
++        "-I", hv,
++        "-I", hc,
++        "-I", "src",
++        "-I", build_dir,
++        "-Wno-implicit-function-declaration",
++        "-Wno-builtin-declaration-mismatch",
++        "-Wno-int-conversion",
++    ]
++
++
++def _compile(src, obj, build_dir, bare=False):
++    """Compile one file. `bare` drops the elfuse include path and the forced
++    prelude, which is what the generated placeholder file needs: it declares
++    nothing but bare symbol names and must not meet any real prototype."""
++    flags = ["-O1", "-g0", "-std=gnu11"] if bare else _flags(build_dir)
++    res = _run([CC] + flags + ["-c", src, "-o", obj], cwd=ROOT)
++    return res.returncode == 0, res.stderr
++
++
++def _defining_source(symbol):
++    """Find a src/ file that defines `symbol` at the start of a line."""
++    pattern = re.compile(
++        r"^[A-Za-z_][A-Za-z0-9_ \*\t]*\b%s\s*\(" % re.escape(symbol), re.MULTILINE
++    )
++    for dirpath, _dirs, files in os.walk(os.path.join(ROOT, "src")):
++        for name in sorted(files):
++            if not name.endswith(".c"):
++                continue
++            path = os.path.join(dirpath, name)
++            try:
++                with open(path, encoding="utf-8", errors="replace") as fh:
++                    if pattern.search(fh.read()):
++                        return os.path.relpath(path, ROOT)
++            except OSError:
++                continue
++    return None
++
++
++def generate_dispatch_header(build_dir):
++    """Run the repo's own generator. It only succeeds when the syscall number
++    table, the dispatch manifest and the wrapper definitions agree."""
++    out = os.path.join(build_dir, "dispatch.h")
++    res = _run(
++        ["python3", os.path.join("scripts", "gen-syscall-dispatch.py"),
++         "--output", out],
++        cwd=ROOT,
++    )
++    return res.returncode, out, (res.stdout + res.stderr)
++
++
++def build_probe(build_dir):
++    """Compile and link the probe. Returns its path."""
++    os.makedirs(build_dir, exist_ok=True)
++    rc, _header, log = generate_dispatch_header(build_dir)
++    if rc != 0:
++        raise BuildError(
++            "the syscall dispatch generator failed, so the number table, the "
++            "dispatch manifest and the wrappers do not agree:\n" + log)
++
++    objs = []
++    sources = ["src/syscall/time.c", "src/syscall/proc.c",
++               "tests/sentinel-hostcheck/stubs.c",
++               "tests/sentinel-hostcheck/probe_core.c"]
++    for src in sources:
++        obj = os.path.join(build_dir, src.replace("/", "_") + ".o")
++        ok, err = _compile(src, obj, build_dir)
++        if not ok:
++            raise BuildError("could not compile %s:\n%s" % (src, err))
++        objs.append(obj)
++
++    probe = os.path.join(build_dir, "probe_core")
++    tried_sources = set(sources)
++    inert = set()
++    inert_tls = set()
++
++    def write_placeholders():
++        path = os.path.join(build_dir, "inert.c")
++        with open(path, "w", encoding="utf-8") as fh:
++            fh.write("/* Placeholders for emulator internals no probe reaches. */\n")
++            for symbol in sorted(inert_tls):
++                fh.write("__thread long %s;\n" % symbol)
++            for symbol in sorted(inert - inert_tls):
++                fh.write("long %s();\nlong %s() { return 0; }\n"
++                         % (symbol, symbol))
++        return path
++
++    for _attempt in range(10):
++        cmd = [CC, "-static"] + objs + ["-o", probe, "-lpthread"]
++        res = _run(cmd, cwd=ROOT)
++        if res.returncode == 0:
++            return probe
++        tls = set(TLS_RE.findall(res.stderr))
++        if tls - inert_tls:
++            inert_tls.update(tls)
++            inert.update(tls)
++            obj = os.path.join(build_dir, "inert.o")
++            ok, err = _compile(os.path.relpath(write_placeholders(), ROOT),
++                               obj, build_dir, bare=True)
++            if not ok:
++                raise BuildError("could not compile placeholders:\n" + err)
++            objs = [o for o in objs if not o.endswith("inert.o")] + [obj]
++            continue
++
++        missing = sorted(set(UNDEF_RE.findall(res.stderr)))
++        if not missing:
++            raise BuildError("link failed:\n" + res.stderr)
++
++        progressed = False
++        for symbol in missing:
++            src = _defining_source(symbol)
++            if src and src not in tried_sources:
++                tried_sources.add(src)
++                obj = os.path.join(build_dir, src.replace("/", "_") + ".o")
++                ok, _err = _compile(src, obj, build_dir)
++                if ok:
++                    objs.append(obj)
++                    progressed = True
++        if progressed:
++            continue
++
++        new = [s for s in missing if s not in inert]
++        if not new:
++            raise BuildError("link failed:\n" + res.stderr)
++        inert.update(new)
++        path = write_placeholders()
++        obj = os.path.join(build_dir, "inert.o")
++        ok, err = _compile(os.path.relpath(path, ROOT), obj, build_dir,
++                           bare=True)
++        if not ok:
++            raise BuildError("could not compile placeholders:\n" + err)
++        objs = [o for o in objs if not o.endswith("inert.o")] + [obj]
++
++    raise BuildError("link did not settle after several attempts")
++
++
++def run_scenario(probe, scenario, timeout=180):
++    res = _run([RUNNER, probe, scenario], timeout=timeout)
++    values = {}
++    for line in res.stdout.splitlines():
++        if "=" in line:
++            key, _, val = line.partition("=")
++            try:
++                values[key.strip()] = int(val.strip())
++            except ValueError:
++                values[key.strip()] = val.strip()
++    return res.returncode, values, res.stdout + res.stderr
+diff --git a/tests/sentinel-hostcheck/hostcheck-stubs.h b/tests/sentinel-hostcheck/hostcheck-stubs.h
+new file mode 100644
+index 0000000..bc723f2
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hostcheck-stubs.h
+@@ -0,0 +1,33 @@
++/*
++ * Interface to the host-check link stubs.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#pragma once
++
++#include <stddef.h>
++#include <stdint.h>
++#include <sys/resource.h>
++
++#include "core/guest.h"
++
++#define HC_GUEST_BUF 64
++
++/* Bytes the code under test last wrote towards guest memory, and how many
++ * write attempts it made. */
++extern unsigned char hc_guest_bytes[HC_GUEST_BUF];
++extern size_t hc_guest_len;
++extern int hc_guest_writes;
++
++/* Set to make every guest write fail, driving the bad-pointer path. */
++extern int hc_guest_write_fails;
++
++/* Which accounting source the code under test asked the host for. */
++extern int hc_rusage_calls;
++extern int hc_rusage_self_calls;
++extern int hc_rusage_children_calls;
++
++void hc_reset_observations(void);
++void hc_burn_cpu_ms(long ms);
+diff --git a/tests/sentinel-hostcheck/hostcheck.h b/tests/sentinel-hostcheck/hostcheck.h
+new file mode 100644
+index 0000000..ee2da6f
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hostcheck.h
+@@ -0,0 +1,31 @@
++/*
++ * Shared scaffolding for the Linux host checks.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Each probe is a small aarch64-linux program that links one or more elfuse
++ * translation units, drives them, and prints what it observed as `key=value`
++ * lines. The probes make no judgement about what is correct: they report, and
++ * the pytest suite decides. That keeps the expected behaviour in one readable
++ * place and keeps the probe from quietly agreeing with whatever it measured.
++ */
++
++#pragma once
++
++#include <inttypes.h>
++#include <stdio.h>
++#include <string.h>
++
++static inline void report_i(const char *key, long long value)
++{
++    printf("%s=%lld\n", key, value);
++}
++
++static inline void report_s(const char *key, const char *value)
++{
++    printf("%s=%s\n", key, value);
++}
++
++/* Scenario dispatch: probes are invoked as `probe <scenario>`. */
++#define SCENARIO(name) (argc > 1 && strcmp(argv[1], (name)) == 0)
+diff --git a/tests/sentinel-hostcheck/hvshim/Hypervisor/Hypervisor.h b/tests/sentinel-hostcheck/hvshim/Hypervisor/Hypervisor.h
+new file mode 100644
+index 0000000..785a194
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hvshim/Hypervisor/Hypervisor.h
+@@ -0,0 +1,89 @@
++/*
++ * Hypervisor.framework stand-in for the Linux host-check build.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * elfuse is a macOS/Apple Silicon program, so its headers pull in
++ * <Hypervisor/Hypervisor.h> transitively almost everywhere. The host checks in
++ * this directory compile a handful of elfuse translation units for
++ * aarch64-linux and exercise them directly, which needs those types to exist
++ * but never needs the framework itself: every hv_* entry point is left
++ * undefined here and stubbed at link time, and no host check calls one.
++ *
++ * Nothing here is used by the macOS build.
++ */
++
++#pragma once
++
++#include <stddef.h>
++#include <stdint.h>
++
++struct hv_vcpu_exit_s;
++
++typedef uint64_t hv_vcpu_t;
++typedef int hv_return_t;
++typedef uint32_t hv_reg_t;
++typedef uint32_t hv_sys_reg_t;
++typedef uint32_t hv_simd_fp_reg_t;
++typedef uint64_t hv_ipa_t;
++typedef struct hv_vcpu_exit_s hv_vcpu_exit_t;
++
++#define HV_SUCCESS 0
++
++typedef struct {
++    unsigned char v[16];
++} hv_simd_fp_uchar16_t;
++
++enum {
++    HV_REG_X0 = 0, HV_REG_X1, HV_REG_X2, HV_REG_X3, HV_REG_X4, HV_REG_X5,
++    HV_REG_X6, HV_REG_X7, HV_REG_X8, HV_REG_X9, HV_REG_X10, HV_REG_X11,
++    HV_REG_X12, HV_REG_X13, HV_REG_X14, HV_REG_X15, HV_REG_X16, HV_REG_X17,
++    HV_REG_X18, HV_REG_X19, HV_REG_X20, HV_REG_X21, HV_REG_X22, HV_REG_X23,
++    HV_REG_X24, HV_REG_X25, HV_REG_X26, HV_REG_X27, HV_REG_X28,
++    HV_REG_FP, HV_REG_LR, HV_REG_PC, HV_REG_FPCR, HV_REG_FPSR, HV_REG_CPSR
++};
++
++enum {
++    HV_SYS_REG_ELR_EL1 = 0x4021, HV_SYS_REG_SPSR_EL1, HV_SYS_REG_SCTLR_EL1,
++    HV_SYS_REG_TPIDR_EL0, HV_SYS_REG_TPIDRRO_EL0, HV_SYS_REG_TPIDR_EL1,
++    HV_SYS_REG_MIDR_EL1, HV_SYS_REG_MPIDR_EL1, HV_SYS_REG_CNTV_CTL_EL0,
++    HV_SYS_REG_CNTV_CVAL_EL0, HV_SYS_REG_ESR_EL1, HV_SYS_REG_FAR_EL1,
++    HV_SYS_REG_VBAR_EL1, HV_SYS_REG_TTBR0_EL1, HV_SYS_REG_TTBR1_EL1,
++    HV_SYS_REG_TCR_EL1, HV_SYS_REG_MAIR_EL1, HV_SYS_REG_SP_EL0,
++    HV_SYS_REG_SP_EL1, HV_SYS_REG_CPACR_EL1
++};
++
++enum { HV_SIMD_FP_REG_Q0 = 0 };
++
++enum {
++    HV_EXIT_REASON_CANCELED = 0,
++    HV_EXIT_REASON_EXCEPTION,
++    HV_EXIT_REASON_VTIMER_ACTIVATED,
++    HV_EXIT_REASON_UNKNOWN
++};
++
++typedef struct {
++    uint64_t syndrome;
++    uint64_t virtual_address;
++    hv_ipa_t physical_address;
++} hv_vcpu_exit_exception_t;
++
++struct hv_vcpu_exit_s {
++    uint32_t reason;
++    hv_vcpu_exit_exception_t exception;
++};
++
++hv_return_t hv_vcpu_get_reg(hv_vcpu_t vcpu, hv_reg_t reg, uint64_t *value);
++hv_return_t hv_vcpu_set_reg(hv_vcpu_t vcpu, hv_reg_t reg, uint64_t value);
++hv_return_t hv_vcpu_get_sys_reg(hv_vcpu_t vcpu, hv_sys_reg_t reg,
++                                uint64_t *value);
++hv_return_t hv_vcpu_set_sys_reg(hv_vcpu_t vcpu, hv_sys_reg_t reg,
++                                uint64_t value);
++hv_return_t hv_vcpu_get_simd_fp_reg(hv_vcpu_t vcpu, hv_simd_fp_reg_t reg,
++                                    hv_simd_fp_uchar16_t *value);
++hv_return_t hv_vcpu_set_simd_fp_reg(hv_vcpu_t vcpu, hv_simd_fp_reg_t reg,
++                                    hv_simd_fp_uchar16_t value);
++hv_return_t hv_vcpu_run(hv_vcpu_t vcpu);
++hv_return_t hv_vcpus_exit(hv_vcpu_t *vcpus, uint32_t count);
++hv_return_t hv_vcpu_set_vtimer_mask(hv_vcpu_t vcpu, int masked);
+diff --git a/tests/sentinel-hostcheck/hvshim/libproc.h b/tests/sentinel-hostcheck/hvshim/libproc.h
+new file mode 100644
+index 0000000..b482c52
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hvshim/libproc.h
+@@ -0,0 +1,18 @@
++/*
++ * <libproc.h> stand-in for the Linux host-check build.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#pragma once
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#define PROC_PIDPATHINFO_MAXSIZE 4096
++#define PROC_ALL_PIDS 1
++
++int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
++int proc_listpids(uint32_t type, uint32_t typeinfo, void *buffer, int size);
++int proc_listchildpids(pid_t ppid, void *buffer, int buffersize);
+diff --git a/tests/sentinel-hostcheck/hvshim/prelude.h b/tests/sentinel-hostcheck/hvshim/prelude.h
+new file mode 100644
+index 0000000..21b2614
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hvshim/prelude.h
+@@ -0,0 +1,43 @@
++/*
++ * Forced first include for the Linux host-check build.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * glibc defines si_code, si_status and friends as macros that expand into the
++ * _sifields union. elfuse sources use those spellings as ordinary identifiers,
++ * which is fine against the macOS SDK and breaks against glibc, so the macros
++ * are dropped here before any elfuse header is seen. The remaining defines are
++ * Darwin-only constants that the compiled translation units reference on paths
++ * no host check executes.
++ */
++
++#pragma once
++
++#include <fcntl.h>
++#include <signal.h>
++#include <unistd.h>
++
++#undef si_addr
++#undef si_band
++#undef si_code
++#undef si_int
++#undef si_pid
++#undef si_ptr
++#undef si_status
++#undef si_uid
++#undef si_value
++
++#ifndef F_GETPATH
++#define F_GETPATH 50
++#endif
++
++#ifndef _CS_DARWIN_USER_TEMP_DIR
++#define _CS_DARWIN_USER_TEMP_DIR 65537
++#endif
++
++#ifndef QOS_CLASS_USER_INTERACTIVE
++#define QOS_CLASS_USER_INTERACTIVE 0x21
++typedef unsigned int qos_class_t;
++int pthread_set_qos_class_self_np(qos_class_t qos, int relative_priority);
++#endif
+diff --git a/tests/sentinel-hostcheck/hvshim/sys/sysctl.h b/tests/sentinel-hostcheck/hvshim/sys/sysctl.h
+new file mode 100644
+index 0000000..ec65a14
+--- /dev/null
++++ b/tests/sentinel-hostcheck/hvshim/sys/sysctl.h
+@@ -0,0 +1,19 @@
++/*
++ * <sys/sysctl.h> stand-in for the Linux host-check build.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#pragma once
++
++#include <stddef.h>
++#include <sys/types.h>
++
++#define CTL_KERN 1
++#define KERN_PROC 14
++#define KERN_PROC_PID 1
++#define KERN_PROC_ALL 0
++
++int sysctl(int *name, unsigned int namelen, void *oldp, size_t *oldlenp,
++           void *newp, size_t newlen);
+diff --git a/tests/sentinel-hostcheck/probe_core.c b/tests/sentinel-hostcheck/probe_core.c
+new file mode 100644
+index 0000000..5ac66d2
+--- /dev/null
++++ b/tests/sentinel-hostcheck/probe_core.c
+@@ -0,0 +1,453 @@
++/*
++ * Host check probe: drives the syscall layer directly on Linux.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * elfuse targets macOS on Apple Silicon and its guest tests need a live
++ * Hypervisor.framework VM, so neither can run on a Linux CI host. The syscall
++ * handlers themselves are ordinary C, though: this probe compiles the dispatch
++ * layer together with the time and process translation units, calls the
++ * handlers the way the dispatcher would, and reports what they did.
++ *
++ * The dispatch table is reached by including the dispatcher source, which is
++ * the only way to see a table declared static. Nothing here inspects source
++ * text; every number printed came from running the code.
++ *
++ * Usage: probe_core <scenario>. Output is `key=value` lines. The exit status
++ * says whether the scenario ran, not whether the behaviour was right; the
++ * pytest suite decides that.
++ */
++
++#include "hostcheck.h"
++#include "hostcheck-stubs.h"
++
++#include <signal.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/resource.h>
++#include <sys/syscall.h>
++#include <sys/wait.h>
++#include <time.h>
++#include <unistd.h>
++
++/* Brings in the dispatch table together with every wrapper it names. */
++#include "syscall/syscall.c"
++
++/* aarch64-linux syscall numbers used to reach a handler through the table. */
++#define NR_TIMES 153
++
++/* A non-zero guest address. The stub decides whether writes to it land. */
++#define BUF_GVA 0x40000000ULL
++
++/* Linux wait flags as the guest passes them. */
++#define G_WUNTRACED 2
++#define G_WEXITED 4
++#define G_WNOWAIT 0x01000000
++#define G_P_PID 1
++
++static guest_t *g;
++
++static int64_t call_handler(int nr,
++                            uint64_t x0,
++                            uint64_t x1,
++                            uint64_t x2,
++                            uint64_t x3)
++{
++    return syscall_table[nr].handler(g, x0, x1, x2, x3, 0, 0, false);
++}
++
++static int handler_present(int nr)
++{
++    return syscall_table[nr].handler != NULL;
++}
++
++/* Fields of the buffer the handler wrote, read back as 64-bit tick counts in
++ * the order the contract fixes them. */
++static int64_t field(int index)
++{
++    int64_t v = 0;
++    memcpy(&v, hc_guest_bytes + (size_t) index * sizeof(int64_t), sizeof(v));
++    return v;
++}
++
++static long long now_ns(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (long long) ts.tv_sec * 1000000000LL + ts.tv_nsec;
++}
++
++/* Take a times() sample and leave the four fields in hc_guest_bytes. Returns
++ * the handler's return value, or -1 if times is not routed at all. */
++static int64_t sample(void)
++{
++    hc_reset_observations();
++    return call_handler(NR_TIMES, BUF_GVA, 0, 0, 0);
++}
++
++/* Fork a child that burns @ms of CPU and exits cleanly. */
++static pid_t spawn_burner(long ms)
++{
++    pid_t pid = fork();
++    if (pid == 0) {
++        hc_burn_cpu_ms(ms);
++        _exit(0);
++    }
++    return pid;
++}
++
++/* Register @host_pid with the process table under a fresh guest pid. */
++static int64_t next_guest_pid = 9000;
++static int64_t track(pid_t host_pid)
++{
++    int64_t gpid = next_guest_pid++;
++    proc_register_child(host_pid, gpid, gpid);
++    return gpid;
++}
++
++int main(int argc, char **argv)
++{
++    g = calloc(1, sizeof(*g));
++    if (!g)
++        return 2;
++
++    /* ------------------------------------------------ routing and arguments */
++
++    if (SCENARIO("routing")) {
++        report_i("handler_present", handler_present(NR_TIMES));
++        report_i("needs_extra_regs", syscall_table[NR_TIMES].needs_extra_regs);
++        return 0;
++    }
++
++    if (!handler_present(NR_TIMES) && strncmp(argv[1], "guard_", 6) != 0) {
++        /* Nothing to drive. Say so rather than dereferencing a null entry. */
++        report_i("handler_present", 0);
++        return 0;
++    }
++
++    if (SCENARIO("fills_buffer")) {
++        hc_burn_cpu_ms(150);
++        int64_t ret = sample();
++        struct rusage self;
++        int who_calls_before = hc_rusage_children_calls;
++        syscall(SYS_getrusage, RUSAGE_SELF, &self);
++        report_i("ret", ret);
++        report_i("writes", hc_guest_writes);
++        report_i("write_len", (long long) hc_guest_len);
++        report_i("utime_ticks", field(0));
++        report_i("stime_ticks", field(1));
++        report_i("cutime_ticks", field(2));
++        report_i("cstime_ticks", field(3));
++        /* What a 100 Hz conversion of the host's own numbers would give. */
++        report_i("host_utime_ticks",
++                 (long long) ((uint64_t) self.ru_utime.tv_sec * 100 +
++                              (uint64_t) self.ru_utime.tv_usec / 10000));
++        report_i("host_stime_ticks",
++                 (long long) ((uint64_t) self.ru_stime.tv_sec * 100 +
++                              (uint64_t) self.ru_stime.tv_usec / 10000));
++        report_i("rusage_children_calls", who_calls_before);
++        return 0;
++    }
++
++    if (SCENARIO("null_buffer")) {
++        hc_reset_observations();
++        int64_t ret = call_handler(NR_TIMES, 0, 0, 0, 0);
++        report_i("ret", ret);
++        report_i("writes", hc_guest_writes);
++        return 0;
++    }
++
++    if (SCENARIO("write_failure")) {
++        hc_reset_observations();
++        hc_guest_write_fails = 1;
++        int64_t ret = call_handler(NR_TIMES, BUF_GVA, 0, 0, 0);
++        hc_guest_write_fails = 0;
++        report_i("ret", ret);
++        report_i("writes", hc_guest_writes);
++        return 0;
++    }
++
++    if (SCENARIO("tick_advance")) {
++        long long t0 = now_ns();
++        int64_t r0 = call_handler(NR_TIMES, 0, 0, 0, 0);
++        struct timespec nap = {0, 500 * 1000 * 1000};
++        nanosleep(&nap, NULL);
++        int64_t r1 = call_handler(NR_TIMES, 0, 0, 0, 0);
++        long long t1 = now_ns();
++        report_i("r0", r0);
++        report_i("r1", r1);
++        report_i("delta_ticks", r1 - r0);
++        report_i("elapsed_ns", t1 - t0);
++        return 0;
++    }
++
++    if (SCENARIO("reference_point")) {
++        report_i("ret", call_handler(NR_TIMES, 0, 0, 0, 0));
++        report_i("unix_seconds", (long long) time(NULL));
++        return 0;
++    }
++
++    if (SCENARIO("self_cpu_grows")) {
++        if (sample() < 0)
++            return 2;
++        int64_t before = field(0) + field(1);
++        hc_burn_cpu_ms(400);
++        if (sample() < 0)
++            return 2;
++        int64_t after = field(0) + field(1);
++        report_i("before_ticks", before);
++        report_i("after_ticks", after);
++        report_i("delta_ticks", after - before);
++        return 0;
++    }
++
++    /* ------------------------------------------------------ child accounting */
++
++    if (SCENARIO("reaped_child_counts")) {
++        if (sample() < 0)
++            return 2;
++        int64_t cu0 = field(2), cs0 = field(3);
++        pid_t pid = spawn_burner(300);
++        if (pid < 0)
++            return 2;
++        int64_t gpid = track(pid);
++        int64_t waited = sys_wait4(g, (int) gpid, 0, 0, 0);
++        if (sample() < 0)
++            return 2;
++        report_i("waited", waited);
++        report_i("expected_gpid", gpid);
++        report_i("cutime_before", cu0);
++        report_i("cstime_before", cs0);
++        report_i("cutime_after", field(2));
++        report_i("cstime_after", field(3));
++        return 0;
++    }
++
++    if (SCENARIO("syscall_heavy_child_counts_system_time")) {
++        /* A child spending its time in host syscalls has to move the system
++         * half of the child total, not only the user half. */
++        if (sample() < 0)
++            return 2;
++        int64_t cs0 = field(3);
++        pid_t pid = fork();
++        if (pid == 0) {
++            struct timespec start, now;
++            clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++            char buf[64] = {0};
++            do {
++                for (int i = 0; i < 200; i++) {
++                    int fd = open("/dev/null", O_WRONLY);
++                    if (fd >= 0) {
++                        ssize_t n = write(fd, buf, sizeof(buf));
++                        (void) n;
++                        close(fd);
++                    }
++                }
++                clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++            } while ((now.tv_sec - start.tv_sec) * 1000L +
++                         (now.tv_nsec - start.tv_nsec) / 1000000L <
++                     400);
++            _exit(0);
++        }
++        if (pid < 0)
++            return 2;
++        int64_t gpid = track(pid);
++        sys_wait4(g, (int) gpid, 0, 0, 0);
++        if (sample() < 0)
++            return 2;
++        report_i("cstime_before", cs0);
++        report_i("cstime_after", field(3));
++        return 0;
++    }
++
++    if (SCENARIO("helper_child_does_not_count")) {
++        /* A subprocess the emulator spawns for its own purposes is never in
++         * the process table and its CPU must stay out of the guest total. */
++        if (sample() < 0)
++            return 2;
++        int64_t cu0 = field(2), cs0 = field(3);
++        pid_t pid = spawn_burner(400);
++        if (pid < 0)
++            return 2;
++        int status = 0;
++        waitpid(pid, &status, 0);
++        if (sample() < 0)
++            return 2;
++        report_i("cutime_before", cu0);
++        report_i("cstime_before", cs0);
++        report_i("cutime_after", field(2));
++        report_i("cstime_after", field(3));
++        return 0;
++    }
++
++    if (SCENARIO("stop_report_does_not_count")) {
++        /* A stop report is a snapshot of a child that is still running. */
++        if (sample() < 0)
++            return 2;
++        int64_t cu0 = field(2), cs0 = field(3);
++        pid_t pid = fork();
++        if (pid == 0) {
++            hc_burn_cpu_ms(300);
++            raise(SIGSTOP);
++            hc_burn_cpu_ms(50);
++            _exit(0);
++        }
++        if (pid < 0)
++            return 2;
++        int64_t gpid = track(pid);
++        /* Wait for the stop to be reportable. */
++        int status = 0;
++        waitpid(pid, &status, WUNTRACED | WNOWAIT);
++        int64_t r = sys_wait4(g, (int) gpid, 0, G_WUNTRACED, 0);
++        if (sample() < 0)
++            return 2;
++        report_i("wait_ret", r);
++        report_i("cutime_before", cu0);
++        report_i("cstime_before", cs0);
++        report_i("cutime_after", field(2));
++        report_i("cstime_after", field(3));
++        kill(pid, SIGCONT);
++        waitpid(pid, &status, 0);
++        return 0;
++    }
++
++    if (SCENARIO("peek_then_consume")) {
++        /* A peek must leave the total alone; the consuming wait that follows
++         * must move it, and by then only once. */
++        if (sample() < 0)
++            return 2;
++        int64_t cu0 = field(2), cs0 = field(3);
++        pid_t pid = spawn_burner(300);
++        if (pid < 0)
++            return 2;
++        int64_t gpid = track(pid);
++        int64_t peek = sys_waitid(g, G_P_PID, gpid, 0, G_WEXITED | G_WNOWAIT);
++        if (sample() < 0)
++            return 2;
++        int64_t cu_peek = field(2), cs_peek = field(3);
++        int64_t consumed = sys_wait4(g, (int) gpid, 0, 0, 0);
++        if (sample() < 0)
++            return 2;
++        report_i("peek_ret", peek);
++        report_i("consumed_ret", consumed);
++        report_i("cutime_before", cu0);
++        report_i("cstime_before", cs0);
++        report_i("cutime_after_peek", cu_peek);
++        report_i("cstime_after_peek", cs_peek);
++        report_i("cutime_after_consume", field(2));
++        report_i("cstime_after_consume", field(3));
++        return 0;
++    }
++
++    if (SCENARIO("counted_once")) {
++        /* Two children, each burning the same amount: the second reap must add
++         * roughly what the first did, not double it. */
++        if (sample() < 0)
++            return 2;
++        int64_t c0 = field(2) + field(3);
++        pid_t a = spawn_burner(300);
++        int64_t ga = track(a);
++        sys_wait4(g, (int) ga, 0, 0, 0);
++        if (sample() < 0)
++            return 2;
++        int64_t c1 = field(2) + field(3);
++        pid_t b = spawn_burner(300);
++        int64_t gb = track(b);
++        sys_wait4(g, (int) gb, 0, 0, 0);
++        if (sample() < 0)
++            return 2;
++        int64_t c2 = field(2) + field(3);
++        report_i("first_delta", c1 - c0);
++        report_i("second_delta", c2 - c1);
++        return 0;
++    }
++
++    if (SCENARIO("self_burn_leaves_child_totals_alone")) {
++        /* CPU the emulator burns on its own account belongs to the self
++         * fields and nowhere else. */
++        if (sample() < 0)
++            return 2;
++        int64_t cu0 = field(2), cs0 = field(3), self0 = field(0) + field(1);
++        hc_burn_cpu_ms(400);
++        if (sample() < 0)
++            return 2;
++        report_i("self_delta", (field(0) + field(1)) - self0);
++        report_i("cutime_before", cu0);
++        report_i("cstime_before", cs0);
++        report_i("cutime_after", field(2));
++        report_i("cstime_after", field(3));
++        return 0;
++    }
++
++    /* ------------------------------------------------- pre-existing behaviour */
++
++    if (SCENARIO("guard_dispatch_table")) {
++        int live = 0;
++        for (int i = 0; i < SC_TABLE_SIZE; i++)
++            if (syscall_table[i].handler)
++                live++;
++        report_i("live_entries", live);
++        report_i("clock_gettime", handler_present(SYS_clock_gettime));
++        report_i("clock_getres", handler_present(SYS_clock_getres));
++        report_i("gettimeofday", handler_present(SYS_gettimeofday));
++        report_i("wait4", handler_present(SYS_wait4));
++        report_i("waitid", handler_present(SYS_waitid));
++        return 0;
++    }
++
++    if (SCENARIO("guard_gettimeofday")) {
++        hc_reset_observations();
++        int64_t ret = call_handler(SYS_gettimeofday, BUF_GVA, 0, 0, 0);
++        int64_t secs = field(0);
++        report_i("ret", ret);
++        report_i("writes", hc_guest_writes);
++        report_i("seconds", secs);
++        report_i("unix_seconds", (long long) time(NULL));
++        return 0;
++    }
++
++    if (SCENARIO("guard_clock_gettime_advances")) {
++        hc_reset_observations();
++        /* CLOCK_MONOTONIC = 1 on Linux. */
++        call_handler(SYS_clock_gettime, 1, BUF_GVA, 0, 0);
++        int64_t s0 = field(0), n0 = field(1);
++        struct timespec nap = {0, 200 * 1000 * 1000};
++        nanosleep(&nap, NULL);
++        hc_reset_observations();
++        call_handler(SYS_clock_gettime, 1, BUF_GVA, 0, 0);
++        int64_t s1 = field(0), n1 = field(1);
++        report_i("delta_ns", (s1 - s0) * 1000000000LL + (n1 - n0));
++        return 0;
++    }
++
++    if (SCENARIO("guard_clock_getres")) {
++        hc_reset_observations();
++        int64_t ret = call_handler(SYS_clock_getres, 1, BUF_GVA, 0, 0);
++        report_i("ret", ret);
++        report_i("writes", hc_guest_writes);
++        report_i("res_sec", field(0));
++        report_i("res_nsec", field(1));
++        return 0;
++    }
++
++    if (SCENARIO("guard_wait4_reaps")) {
++        pid_t pid = spawn_burner(20);
++        if (pid < 0)
++            return 2;
++        int64_t gpid = track(pid);
++        hc_reset_observations();
++        int64_t waited = sys_wait4(g, (int) gpid, BUF_GVA, 0, 0);
++        report_i("waited", waited);
++        report_i("expected_gpid", gpid);
++        report_i("status_written", hc_guest_writes);
++        return 0;
++    }
++
++    if (SCENARIO("guard_wait4_no_children")) {
++        report_i("ret", sys_wait4(g, 31337, 0, 0, 0));
++        return 0;
++    }
++
++    return 3;
++}
+diff --git a/tests/sentinel-hostcheck/stubs.c b/tests/sentinel-hostcheck/stubs.c
+new file mode 100644
+index 0000000..b4fcda9
+--- /dev/null
++++ b/tests/sentinel-hostcheck/stubs.c
+@@ -0,0 +1,124 @@
++/*
++ * Link stubs and host-call interposers for the Linux host checks.
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * The probes link a few elfuse translation units and nothing else, so every
++ * cross-module call those units make has to resolve to something. Anything a
++ * probe actually exercises is implemented here with real, observable
++ * behaviour; the rest are inert placeholders that exist only to satisfy the
++ * linker and are never reached.
++ *
++ * getrusage is interposed rather than stubbed. It forwards to the real host
++ * call so measured CPU time stays real, and records which `who` argument the
++ * code under test asked for, which is how the suite tells self accounting from
++ * children accounting without reading any source.
++ */
++
++#include "hostcheck-stubs.h"
++
++#include <stdarg.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/resource.h>
++#include <sys/syscall.h>
++#include <time.h>
++#include <unistd.h>
++
++/* ---------------------------------------------------------------- guest memory
++ *
++ * A probe hands the code under test a guest virtual address and gets back the
++ * bytes it tried to write. `hc_guest_write_fails` makes every write fail, which
++ * is how the bad-pointer path is driven.
++ */
++
++unsigned char hc_guest_bytes[HC_GUEST_BUF];
++size_t hc_guest_len;
++int hc_guest_writes;
++int hc_guest_write_fails;
++
++int guest_write_small(guest_t *g, uint64_t gva, const void *src, size_t len)
++{
++    (void) g;
++    (void) gva;
++    hc_guest_writes++;
++    if (hc_guest_write_fails)
++        return -1;
++    if (len > HC_GUEST_BUF)
++        len = HC_GUEST_BUF;
++    memcpy(hc_guest_bytes, src, len);
++    hc_guest_len = len;
++    return 0;
++}
++
++int guest_write(guest_t *g, uint64_t gva, const void *src, size_t len)
++{
++    return guest_write_small(g, gva, src, len);
++}
++
++int guest_read_small(const guest_t *g, uint64_t gva, void *dst, size_t len)
++{
++    (void) g;
++    (void) gva;
++    memset(dst, 0, len);
++    return 0;
++}
++
++int guest_read(const guest_t *g, uint64_t gva, void *dst, size_t len)
++{
++    return guest_read_small(g, gva, dst, len);
++}
++
++/* ------------------------------------------------------------------- getrusage
++ *
++ * Forwards to the kernel and records the `who` values seen since the last
++ * reset, so a probe can report exactly which accounting source the code under
++ * test consulted.
++ */
++
++int hc_rusage_calls;
++int hc_rusage_self_calls;
++int hc_rusage_children_calls;
++
++int getrusage(int who, struct rusage *usage)
++{
++    hc_rusage_calls++;
++    if (who == RUSAGE_SELF)
++        hc_rusage_self_calls++;
++    else if (who == RUSAGE_CHILDREN)
++        hc_rusage_children_calls++;
++    return (int) syscall(SYS_getrusage, who, usage);
++}
++
++void hc_reset_observations(void)
++{
++    hc_guest_len = 0;
++    hc_guest_writes = 0;
++    hc_rusage_calls = 0;
++    hc_rusage_self_calls = 0;
++    hc_rusage_children_calls = 0;
++    memset(hc_guest_bytes, 0, sizeof(hc_guest_bytes));
++}
++
++/* ------------------------------------------------------------------- CPU burn */
++
++void hc_burn_cpu_ms(long ms)
++{
++    struct timespec start, now;
++    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++    volatile unsigned long sink = 0;
++    do {
++        for (int i = 0; i < 200000; i++)
++            sink += (unsigned long) i;
++        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++    } while ((now.tv_sec - start.tv_sec) * 1000L +
++                 (now.tv_nsec - start.tv_nsec) / 1000000L <
++             ms);
++}
++
++/* Nothing else is defined here. Anything the compiled translation units call
++ * that this file does not provide is either found in another elfuse source and
++ * pulled into the build, or filled in with an inert placeholder, both by
++ * hostbuild.py. That keeps this file from quietly shadowing real behaviour.
++ */
+diff --git a/tests/test-times.c b/tests/test-times.c
+new file mode 100644
+index 0000000..9db564d
+--- /dev/null
++++ b/tests/test-times.c
+@@ -0,0 +1,207 @@
++/*
++ * Test times(2) process CPU-time accounting
++ *
++ * Copyright 2026 elfuse contributors
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Tests: return-value tick clock, self utime/stime accounting, waited-for
++ * child cutime/cstime accounting (counted once, not on stop/WNOWAIT
++ * snapshots), NULL buffer, EFAULT on a bad pointer.
++ */
++
++#include <fcntl.h>
++#include <string.h>
++#include <sys/syscall.h>
++#include <sys/times.h>
++#include <sys/wait.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "raw-syscall.h"
++#include "test-harness.h"
++
++/* Spin until this process has accumulated at least @ms more CPU time.
++ * CLOCK_PROCESS_CPUTIME_ID and times() draw from the same host accounting, so
++ * the burned amount is a lower bound for what times() must report.
++ */
++static void burn_cpu_ms(long ms)
++{
++    struct timespec start, now;
++    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++    volatile unsigned long sink = 0;
++    do {
++        for (int i = 0; i < 100000; i++)
++            sink += (unsigned long) i;
++        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++    } while ((now.tv_sec - start.tv_sec) * 1000L +
++                 (now.tv_nsec - start.tv_nsec) / 1000000L <
++             ms);
++}
++
++/* Like burn_cpu_ms, but spends the time in real open/write/close syscalls
++ * rather than pure computation, so the host accounts some of it as system
++ * time (ru_stime) rather than all user time.
++ */
++static void burn_syscalls_ms(long ms)
++{
++    struct timespec start, now;
++    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
++    char buf[64] = {0};
++    do {
++        for (int i = 0; i < 50; i++) {
++            int fd = open("/dev/null", O_WRONLY);
++            if (fd >= 0) {
++                write(fd, buf, sizeof(buf));
++                close(fd);
++            }
++        }
++        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
++    } while ((now.tv_sec - start.tv_sec) * 1000L +
++                 (now.tv_nsec - start.tv_nsec) / 1000000L <
++             ms);
++}
++
++int main(void)
++{
++    int passes = 0, fails = 0;
++
++    printf("test-times: times(2) accounting tests\n");
++
++    long tick = sysconf(_SC_CLK_TCK);
++    TEST("sysconf(_SC_CLK_TCK) == 100");
++    EXPECT_EQ(tick, 100, "unexpected clock tick rate");
++
++    TEST("times(&buf) succeeds");
++    struct tms t1;
++    clock_t r1 = times(&t1);
++    EXPECT_TRUE(r1 != (clock_t) -1, "times failed");
++
++    TEST("times(NULL) returns ticks");
++    {
++        long r = raw_syscall1(__NR_times, 0);
++        /* The return value is elapsed ticks, not an errno. */
++        EXPECT_TRUE(r >= 0, "NULL buffer rejected");
++    }
++
++    TEST("return value advances with wall time");
++    {
++        /* 60ms >= 6 ticks at 100Hz; require strict advance */
++        struct timespec ts = {0, 60 * 1000 * 1000};
++        nanosleep(&ts, NULL);
++        clock_t r2 = times(NULL);
++        EXPECT_TRUE(r2 != (clock_t) -1 && r2 > r1,
++                    "tick clock did not advance");
++    }
++
++    TEST("self CPU time accumulates");
++    {
++        burn_cpu_ms(100); /* >= 10 ticks of process CPU */
++        struct tms t2;
++        if (times(&t2) == (clock_t) -1)
++            FAIL("times failed");
++        else
++            EXPECT_TRUE(
++                t2.tms_utime + t2.tms_stime >= t1.tms_utime + t1.tms_stime + 5,
++                "utime+stime did not grow");
++    }
++
++    TEST("waited-for child CPU accumulates");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_cpu_ms(100); /* >= 10 ticks of child CPU */
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                int status;
++                if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) ||
++                    WEXITSTATUS(status) != 0) {
++                    FAIL("child did not exit cleanly");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else {
++                    EXPECT_TRUE(after.tms_cutime + after.tms_cstime >=
++                                    before.tms_cutime + before.tms_cstime + 5,
++                                "cutime+cstime did not grow");
++                }
++            }
++        }
++    }
++
++    TEST("child cutime and cstime accumulate individually");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_syscalls_ms(150); /* real syscalls: nonzero cstime too */
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                int status;
++                if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) ||
++                    WEXITSTATUS(status) != 0) {
++                    FAIL("child did not exit cleanly");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else if (after.tms_cutime <= before.tms_cutime) {
++                    FAIL("cutime did not grow individually");
++                } else {
++                    /* A regression that always reports cstime==0 must not
++                     * pass here: this child's loop is real host syscalls, not
++                     * pure computation, so cstime alone must also grow.
++                     */
++                    EXPECT_TRUE(after.tms_cstime > before.tms_cstime,
++                                "cstime did not grow individually");
++                }
++            }
++        }
++    }
++
++    TEST("waitid(WNOWAIT) does not credit cutime on the peek");
++    {
++        struct tms before, after;
++        if (times(&before) == (clock_t) -1) {
++            FAIL("times(before) failed");
++        } else {
++            pid_t pid = fork();
++            if (pid == 0) {
++                burn_cpu_ms(80);
++                _exit(0);
++            }
++            if (pid < 0) {
++                FAIL("fork failed");
++            } else {
++                siginfo_t info;
++                memset(&info, 0, sizeof(info));
++                long rc = syscall(SYS_waitid, P_PID, (long) pid, &info,
++                                  WEXITED | WNOWAIT, NULL);
++                if (rc != 0 || info.si_pid != pid) {
++                    FAIL("waitid(WNOWAIT) failed");
++                } else if (times(&after) == (clock_t) -1) {
++                    FAIL("times(after) failed");
++                } else {
++                    EXPECT_TRUE(after.tms_cutime == before.tms_cutime,
++                                "WNOWAIT peek incorrectly credited cutime");
++                }
++            }
++        }
++    }
++
++    TEST("times(bad_ptr) -> EFAULT");
++    EXPECT_RAW_ERRNO(raw_syscall1(__NR_times, (long) 0xDEAD000000000000ULL),
++                     -14, "expected -EFAULT (-14)");
++
++    SUMMARY("test-times");
++    return fails > 0 ? 1 : 0;
++}
+diff --git a/tests/test_sentinel_times_host.py b/tests/test_sentinel_times_host.py
+new file mode 100644
+index 0000000..9a431c3
+--- /dev/null
++++ b/tests/test_sentinel_times_host.py
+@@ -0,0 +1,340 @@
++"""Behavioural checks for the times(2) syscall, run on a Linux CI host.
++
++Copyright 2026 elfuse contributors
++SPDX-License-Identifier: Apache-2.0
++
++elfuse executes guests inside a Hypervisor.framework VM on Apple Silicon, so
++neither the emulator nor its guest test binaries can run here. The syscall
++handlers are plain C, though. tests/sentinel-hostcheck cross-compiles the
++dispatch layer with the time and process translation units, links them against
++a small stub set that stands in for guest memory and the VM, and runs the
++result under qemu-user. Every assertion below is about something that code did
++when it was called.
++"""
++
++import os
++import sys
++
++sys.dont_write_bytecode = True
++
++import pytest  # noqa: E402
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "sentinel-hostcheck"))
++
++import hostbuild  # noqa: E402
++
++BUILD_DIR = os.path.join(
++    os.environ.get("TMPDIR", "/tmp"), "elfuse-hostcheck-build"
++)
++
++#: aarch64-linux assigns times(2) this syscall number.
++TIMES_NUMBER = 153
++
++#: Linux reports a bad user-space pointer as EFAULT.
++EFAULT = 14
++
++#: Field order of the four tick counts times(2) fills in.
++UTIME, STIME, CUTIME, CSTIME = 0, 1, 2, 3
++
++
++# --------------------------------------------------------------------- fixtures
++
++
++@pytest.fixture(scope="session")
++def build():
++    """Compile the probe once for the whole session."""
++    if not hostbuild.tools_present():
++        pytest.fail(
++            "the aarch64 cross toolchain and qemu-user are required to run "
++            "these checks and are missing from the image"
++        )
++    return hostbuild.build_probe(BUILD_DIR)
++
++
++@pytest.fixture(scope="session")
++def scenario(build):
++    """Run a probe scenario at most once and hand back what it reported."""
++    cache = {}
++
++    def run(name):
++        if name not in cache:
++            code, values, output = hostbuild.run_scenario(build, name)
++            cache[name] = (code, values, output)
++        code, values, output = cache[name]
++        assert code == 0, (
++            "the probe could not run scenario %r (exit %d):\n%s"
++            % (name, code, output)
++        )
++        assert values.get("handler_present", 1) == 1, (
++            "syscall %d is not routed to any handler, so there is nothing to "
++            "exercise" % TIMES_NUMBER
++        )
++        return values
++
++    return run
++
++
++# ------------------------------------------------------------------ the routing
++
++
++def test_the_times_number_is_routed_to_a_handler(scenario):
++    values = scenario("routing")
++    assert values["handler_present"] == 1, (
++        "the dispatch table has no handler for syscall %d, so a guest calling "
++        "times(2) still falls through to the unimplemented path" % TIMES_NUMBER
++    )
++
++
++def test_the_times_entry_consumes_only_the_first_argument(scenario):
++    values = scenario("routing")
++    assert values["handler_present"] == 1, (
++        "syscall %d is not routed at all" % TIMES_NUMBER
++    )
++    assert values["needs_extra_regs"] == 0, (
++        "times(2) takes a single buffer pointer, so its dispatch entry must "
++        "not ask the dispatcher to fetch the extended argument registers"
++    )
++
++
++# ------------------------------------------------------------- the return value
++
++
++def test_return_value_advances_at_one_hundred_ticks_a_second(scenario):
++    values = scenario("tick_advance")
++    elapsed_ns = values["elapsed_ns"]
++    ticks = values["delta_ticks"]
++    assert ticks > 0, "the tick count did not advance across half a second"
++    rate = ticks / (elapsed_ns / 1e9)
++    assert 80 <= rate <= 125, (
++        "the return value advanced at about %.0f ticks a second; guests divide "
++        "it by the clock tick rate the emulator advertises, which is 100"
++        % rate
++    )
++
++
++def test_return_value_counts_from_a_monotonic_reference(scenario):
++    values = scenario("reference_point")
++    seconds = values["ret"] / 100.0
++    assert seconds > 0, "the tick count is not positive"
++    assert seconds < values["unix_seconds"] / 10.0, (
++        "the return value looks like wall-clock time since 1970 rather than a "
++        "reference point that only moves forward; a clock the user can set "
++        "would make successive calls differ by the wrong amount"
++    )
++
++
++# --------------------------------------------------------------- the tms buffer
++
++
++def test_call_writes_four_tick_counts(scenario):
++    values = scenario("fills_buffer")
++    assert values["ret"] >= 0, "the call failed"
++    assert values["writes"] == 1, "the call did not fill the caller's buffer"
++    assert values["write_len"] == 32, (
++        "the buffer holds four 64-bit tick counts, so 32 bytes are written, "
++        "not %d" % values["write_len"]
++    )
++
++
++def test_self_cpu_time_matches_the_host_accounting(scenario):
++    values = scenario("fills_buffer")
++    for label, got, want in (
++        ("user", values["utime_ticks"], values["host_utime_ticks"]),
++        ("system", values["stime_ticks"], values["host_stime_ticks"]),
++    ):
++        assert abs(got - want) <= 3, (
++            "the %s field reported %d ticks where this process had actually "
++            "used %d; the value is either coming from somewhere else or is "
++            "not in ticks" % (label, got, want)
++        )
++
++
++def test_self_cpu_time_grows_with_work_done(scenario):
++    values = scenario("self_cpu_grows")
++    assert values["delta_ticks"] >= 20, (
++        "after burning four tenths of a second of processor time the self "
++        "fields moved by only %d ticks" % values["delta_ticks"]
++    )
++
++
++def test_null_buffer_returns_ticks_without_writing(scenario):
++    values = scenario("null_buffer")
++    assert values["writes"] == 0, (
++        "a caller that passes no buffer still had one written to"
++    )
++    assert values["ret"] >= 0, (
++        "passing no buffer is allowed and must still return the tick count, "
++        "but the call returned %d" % values["ret"]
++    )
++
++
++def test_unwritable_buffer_reports_efault(scenario):
++    values = scenario("write_failure")
++    assert values["writes"] >= 1, "the call never tried to write the buffer"
++    assert values["ret"] == -EFAULT, (
++        "a buffer the guest cannot be written to must come back as EFAULT "
++        "(%d), not %d" % (-EFAULT, values["ret"])
++    )
++
++
++# ------------------------------------------------------------- child accounting
++
++
++def test_reaped_child_cpu_appears_in_the_child_totals(scenario):
++    values = scenario("reaped_child_counts")
++    assert values["waited"] == values["expected_gpid"], (
++        "the wait did not report the child that exited"
++    )
++    grew = (values["cutime_after"] + values["cstime_after"]) - (
++        values["cutime_before"] + values["cstime_before"]
++    )
++    assert grew >= 20, (
++        "a child that burned three tenths of a second of processor time and "
++        "was waited for moved the child totals by only %d ticks" % grew
++    )
++
++
++def test_child_system_time_is_counted_separately(scenario):
++    values = scenario("syscall_heavy_child_counts_system_time")
++    grew = values["cstime_after"] - values["cstime_before"]
++    assert grew >= 5, (
++        "a child that spent its time in system calls moved the child system "
++        "total by only %d ticks, so system time is being folded into user "
++        "time or dropped" % grew
++    )
++
++
++def test_helper_subprocess_cpu_stays_out_of_the_child_totals(scenario):
++    values = scenario("helper_child_does_not_count")
++    grew = (values["cutime_after"] + values["cstime_after"]) - (
++        values["cutime_before"] + values["cstime_before"]
++    )
++    assert grew == 0, (
++        "a subprocess the emulator ran for its own purposes added %d ticks to "
++        "the child totals; only processes the guest itself created and waited "
++        "for belong there" % grew
++    )
++
++
++def test_child_totals_ignore_the_emulator_own_cpu(scenario):
++    values = scenario("self_burn_leaves_child_totals_alone")
++    assert values["self_delta"] >= 20, "the self fields did not move at all"
++    grew = (values["cutime_after"] + values["cstime_after"]) - (
++        values["cutime_before"] + values["cstime_before"]
++    )
++    assert grew == 0, (
++        "burning processor time with no child involved still added %d ticks "
++        "to the child totals" % grew
++    )
++
++
++def test_a_stop_report_does_not_credit_child_cpu(scenario):
++    values = scenario("stop_report_does_not_count")
++    grew = (values["cutime_after"] + values["cstime_after"]) - (
++        values["cutime_before"] + values["cstime_before"]
++    )
++    assert grew == 0, (
++        "being told a child has stopped added %d ticks to the child totals; "
++        "the child is still running and will be reported again, so its time "
++        "would be counted more than once" % grew
++    )
++
++
++def test_a_peek_does_not_credit_child_cpu(scenario):
++    values = scenario("peek_then_consume")
++    assert values["peek_ret"] == 0, (
++        "the peek itself failed, so nothing was exercised"
++    )
++    peeked = (values["cutime_after_peek"] + values["cstime_after_peek"]) - (
++        values["cutime_before"] + values["cstime_before"]
++    )
++    assert peeked == 0, (
++        "a wait that only looks at a child, without collecting it, added %d "
++        "ticks; a later wait that does collect it would count the same time "
++        "twice" % peeked
++    )
++
++
++def test_each_child_is_counted_once(scenario):
++    values = scenario("counted_once")
++    first, second = values["first_delta"], values["second_delta"]
++    assert first >= 20, "the first child contributed only %d ticks" % first
++    assert second >= 20, "the second child contributed only %d ticks" % second
++    assert second <= first * 2.5, (
++        "two children that burned the same amount contributed %d and %d "
++        "ticks, so the running total is being added again on each wait"
++        % (first, second)
++    )
++
++
++# -------------------------------------------------- guards on what was already
++# working. These pass before the change and must keep passing after it.
++
++
++def test_the_probe_still_builds_from_the_repository_sources(build):
++    assert os.path.exists(build), "the emulator sources no longer build"
++
++
++def test_the_dispatch_generator_still_agrees_across_its_inputs(build):
++    code, _out, log = hostbuild.generate_dispatch_header(BUILD_DIR)
++    assert code == 0, (
++        "the dispatch header generator refuses to run, so the syscall number "
++        "table, the dispatch manifest and the wrapper definitions disagree:\n"
++        + log
++    )
++
++
++def test_the_dispatch_table_still_routes_the_existing_clock_calls(scenario):
++    values = scenario("guard_dispatch_table")
++    assert values["live_entries"] > 200, (
++        "the dispatch table lost entries, so syscalls that used to work no "
++        "longer route"
++    )
++    for name in ("clock_gettime", "clock_getres", "gettimeofday", "wait4",
++                 "waitid"):
++        assert values[name] == 1, "%s is no longer routed" % name
++
++
++def test_gettimeofday_still_reports_wall_clock_time(scenario):
++    values = scenario("guard_gettimeofday")
++    assert values["ret"] == 0, "the call failed"
++    assert values["writes"] == 1, "nothing was written to the caller's buffer"
++    assert abs(values["seconds"] - values["unix_seconds"]) <= 5, (
++        "wall-clock seconds came back as %d against a real %d"
++        % (values["seconds"], values["unix_seconds"])
++    )
++
++
++def test_monotonic_clock_reads_still_advance(scenario):
++    values = scenario("guard_clock_gettime_advances")
++    assert 150_000_000 <= values["delta_ns"] <= 400_000_000, (
++        "two reads two tenths of a second apart differed by %d nanoseconds"
++        % values["delta_ns"]
++    )
++
++
++def test_clock_resolution_is_still_reported(scenario):
++    values = scenario("guard_clock_getres")
++    assert values["ret"] == 0, "the call failed"
++    assert values["writes"] == 1, "nothing was written to the caller's buffer"
++    assert values["res_sec"] == 0 and values["res_nsec"] > 0, (
++        "resolution came back as %ds %dns" % (values["res_sec"],
++                                              values["res_nsec"])
++    )
++
++
++def test_wait4_still_reaps_a_registered_child(scenario):
++    values = scenario("guard_wait4_reaps")
++    assert values["waited"] == values["expected_gpid"], (
++        "waiting for a child reported %d instead of %d"
++        % (values["waited"], values["expected_gpid"])
++    )
++    assert values["status_written"] == 1, "the exit status was not written"
++
++
++def test_wait4_still_reports_no_children_for_an_unknown_pid(scenario):
++    values = scenario("guard_wait4_no_children")
++    assert values["ret"] == -10, (
++        "waiting on a process that is not a child returned %d instead of the "
++        "no-children error" % values["ret"]
++    )

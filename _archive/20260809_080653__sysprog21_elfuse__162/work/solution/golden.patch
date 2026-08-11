@@ -1,0 +1,313 @@
+diff --git a/src/runtime/forkipc.c b/src/runtime/forkipc.c
+--- a/src/runtime/forkipc.c
++++ b/src/runtime/forkipc.c
+@@ -1812,14 +1812,19 @@ int64_t sys_clone(hv_vcpu_t vcpu,
+         close(vfork_notify_fds[0]);
+ 
+         if (nr <= 0) {
+-            int status;
+-            waitpid(child_host_pid, &status, 0);
++            int status = 0;
++            struct rusage ru;
++            if (wait4(child_host_pid, &status, 0, &ru) == child_host_pid)
++                proc_children_cpu_add(&ru);
+             proc_mark_child_exited(child_host_pid, status);
+         } else {
+             int status;
+-            pid_t waited = waitpid(child_host_pid, &status, WNOHANG);
+-            if (waited == child_host_pid)
++            struct rusage ru;
++            pid_t waited = wait4(child_host_pid, &status, WNOHANG, &ru);
++            if (waited == child_host_pid) {
++                proc_children_cpu_add(&ru);
+                 proc_mark_child_exited(child_host_pid, status);
++            }
+         }
+     }
+ 
+diff --git a/src/syscall/abi.h b/src/syscall/abi.h
+--- a/src/syscall/abi.h
++++ b/src/syscall/abi.h
+@@ -121,6 +121,7 @@
+ #define SYS_getresgid 150
+ #define SYS_setfsuid 151
+ #define SYS_setfsgid 152
++#define SYS_times 153
+ #define SYS_setpgid 154
+ #define SYS_getpgid 155
+ #define SYS_getsid 156
+diff --git a/src/syscall/dispatch.tbl b/src/syscall/dispatch.tbl
+--- a/src/syscall/dispatch.tbl
++++ b/src/syscall/dispatch.tbl
+@@ -126,6 +126,7 @@ SYS_clock_gettime sc_clock_gettime 0
+ SYS_clock_getres sc_clock_getres 0
+ SYS_clock_nanosleep sc_clock_nanosleep 1
+ SYS_gettimeofday sc_gettimeofday 0
++SYS_times sc_times 0
+ SYS_timerfd_create sc_timerfd_create 1
+ SYS_timerfd_settime sc_timerfd_settime 1
+ SYS_timerfd_gettime sc_timerfd_gettime 1
+diff --git a/src/syscall/proc.c b/src/syscall/proc.c
+--- a/src/syscall/proc.c
++++ b/src/syscall/proc.c
+@@ -81,6 +81,35 @@ static pthread_mutex_t pid_lock = PTHREAD_MUTEX_INITIALIZER; /* Lock order: 6 */
+ static pthread_cond_t pid_cond =
+     PTHREAD_COND_INITIALIZER; /* Signaled on child exit */
+ 
++/* CPU time of reaped guest children, accumulated at every host reap site and
++ * reported by times(2) as tms_cutime/tms_cstime. The emulator also waits on
++ * helper subprocesses (rosettad translate, sysroot tooling) whose CPU shows up
++ * in the host's RUSAGE_CHILDREN, so times() cannot read that aggregate; only
++ * reaps of proc_table children may land here. Relaxed atomics suffice: the
++ * counters are monotonic sums and times() tolerates reading utime/stime one
++ * reap apart.
++ */
++static _Atomic uint64_t children_utime_us;
++static _Atomic uint64_t children_stime_us;
++
++void proc_children_cpu_add(const struct rusage *ru)
++{
++    atomic_fetch_add_explicit(&children_utime_us,
++                              (uint64_t) ru->ru_utime.tv_sec * 1000000 +
++                                  (uint64_t) ru->ru_utime.tv_usec,
++                              memory_order_relaxed);
++    atomic_fetch_add_explicit(&children_stime_us,
++                              (uint64_t) ru->ru_stime.tv_sec * 1000000 +
++                                  (uint64_t) ru->ru_stime.tv_usec,
++                              memory_order_relaxed);
++}
++
++void proc_children_cpu_us(uint64_t *utime_us, uint64_t *stime_us)
++{
++    *utime_us = atomic_load_explicit(&children_utime_us, memory_order_relaxed);
++    *stime_us = atomic_load_explicit(&children_stime_us, memory_order_relaxed);
++}
++
+ /* Global flag for exit_group: signals all threads to terminate. Atomic to avoid
+  * undefined behavior under C11 memory model when multiple threads read/write
+  * concurrently.
+@@ -283,9 +312,11 @@ static int proc_reap_finished(void)
+             continue;
+         }
+         int status;
+-        pid_t ret = waitpid(proc_table[i].host_pid, &status, WNOHANG);
++        struct rusage ru;
++        pid_t ret = wait4(proc_table[i].host_pid, &status, WNOHANG, &ru);
+         if (ret > 0) {
+             /* Child exited; free the slot */
++            proc_children_cpu_add(&ru);
+             proc_table[i].active = false;
+             reaped++;
+         }
+@@ -1073,9 +1104,17 @@ int64_t sys_wait4(guest_t *g,
+ 
+                 int status;
+                 struct rusage ru;
+-                pid_t ret = wait4(host_pid, &status, mac_options | WNOHANG,
+-                                  rusage_gva ? &ru : NULL);
++                pid_t ret =
++                    wait4(host_pid, &status, mac_options | WNOHANG, &ru);
+                 if (ret > 0) {
++                    /* Credit CPU only on a terminal report. mac_options may
++                     * carry WUNTRACED/WCONTINUED, and a stop/continue report
++                     * is a snapshot of a still-running child: crediting it
++                     * here would double- or triple-count the same child
++                     * across its stop, continue, and final exit reports.
++                     */
++                    if (WIFEXITED(status) || WIFSIGNALED(status))
++                        proc_children_cpu_add(&ru);
+                     if (status_gva) {
+                         int32_t linux_status = status;
+                         if (guest_write_small(g, status_gva, &linux_status,
+@@ -1146,8 +1185,7 @@ int64_t sys_wait4(guest_t *g,
+             struct rusage ru;
+             pid_t ret;
+             if (mac_options & WNOHANG) {
+-                ret = wait4(host_pid, &status, mac_options,
+-                            rusage_gva ? &ru : NULL);
++                ret = wait4(host_pid, &status, mac_options, &ru);
+             } else {
+                 /* A bare blocking wait4 has no re-check point: a worker
+                  * parked here past exit_group is invisible to
+@@ -1159,8 +1197,7 @@ int64_t sys_wait4(guest_t *g,
+                  * pid_cond on every host child exit.
+                  */
+                 for (;;) {
+-                    ret = wait4(host_pid, &status, mac_options | WNOHANG,
+-                                rusage_gva ? &ru : NULL);
++                    ret = wait4(host_pid, &status, mac_options | WNOHANG, &ru);
+                     if (ret != 0)
+                         break;
+                     if (proc_exit_group_requested())
+@@ -1173,6 +1210,9 @@ int64_t sys_wait4(guest_t *g,
+                 }
+             }
+             if (ret > 0) {
++                /* Same terminal-report gate as the P_ALL branch above. */
++                if (WIFEXITED(status) || WIFSIGNALED(status))
++                    proc_children_cpu_add(&ru);
+                 if (status_gva) {
+                     int32_t linux_status = status;
+                     if (guest_write_small(g, status_gva, &linux_status,
+@@ -1296,7 +1336,18 @@ int64_t sys_waitid(guest_t *g,
+             } else {
+                 pid_t host_pid = proc_table[i].host_pid;
+                 pthread_mutex_unlock(&pid_lock);
+-                ret = waitpid(host_pid, &status, WNOHANG);
++                struct rusage ru;
++                ret = wait4(host_pid, &status, WNOHANG, &ru);
++                /* Credit only a terminal report, and only when this call
++                 * actually consumes the reap: WNOWAIT must leave the child
++                 * waitable with its CPU uncounted until the later consuming
++                 * wait, but this inner wait4() has no WNOWAIT of its own, so
++                 * it consumes the host zombie regardless of the guest's
++                 * WNOWAIT request.
++                 */
++                if (ret > 0 && !(options & LINUX_WNOWAIT) &&
++                    (WIFEXITED(status) || WIFSIGNALED(status)))
++                    proc_children_cpu_add(&ru);
+                 if (ret == 0) {
+                     /* This child hasn't exited yet; continue checking others
+                      * (P_ALL must scan all children).
+diff --git a/src/syscall/proc.h b/src/syscall/proc.h
+--- a/src/syscall/proc.h
++++ b/src/syscall/proc.h
+@@ -18,6 +18,7 @@
+ #include <Hypervisor/Hypervisor.h>
+ #include <stdbool.h>
+ #include <stdint.h>
++#include <sys/resource.h>
+ #include <sys/types.h>
+ 
+ #include "core/guest.h"
+@@ -313,6 +314,15 @@ int proc_register_child(pid_t host_pid, int64_t guest_pid, int64_t pgid);
+ /* Mark a child as exited by host PID (for CLONE_VFORK wait). */
+ void proc_mark_child_exited(pid_t host_pid, int status);
+ 
++/* Accumulate a reaped guest child's rusage into the cutime/cstime counters
++ * that times(2) reports. Call at every host reap of a proc_table child; never
++ * for emulator helper subprocesses.
++ */
++void proc_children_cpu_add(const struct rusage *ru);
++
++/* Read the accumulated guest-children CPU time, in microseconds. */
++void proc_children_cpu_us(uint64_t *utime_us, uint64_t *stime_us);
++
+ /* Collect host PIDs of active (non-exited) fork children. Writes up to max_pids
+  * entries into out[].
+  *
+diff --git a/src/syscall/syscall.c b/src/syscall/syscall.c
+--- a/src/syscall/syscall.c
++++ b/src/syscall/syscall.c
+@@ -345,6 +345,7 @@ SC_FORWARD(sc_clock_nanosleep,  sys_clock_nanosleep(g, (int) x0, (int) x1, x2, x
+ SC_FORWARD(sc_gettimeofday,     sys_gettimeofday(g, x0, x1))
+ SC_FORWARD(sc_setitimer,        sys_setitimer(g, (int) x0, x1, x2))
+ SC_FORWARD(sc_getitimer,        sys_getitimer(g, (int) x0, x1))
++SC_FORWARD(sc_times,            sys_times(g, x0))
+ 
+ /* Signals */
+ SC_FORWARD(sc_rt_sigaction,   signal_rt_sigaction(g, (int) x0, x1, x2, x3))
+diff --git a/src/syscall/time.c b/src/syscall/time.c
+--- a/src/syscall/time.c
++++ b/src/syscall/time.c
+@@ -12,6 +12,7 @@
+ #include <errno.h>
+ #include <stdbool.h>
+ #include <time.h>
++#include <sys/resource.h>
+ #include <sys/time.h>
+ 
+ #include "utils.h"
+@@ -459,6 +460,81 @@ int64_t sys_gettimeofday(guest_t *g, uint64_t tv_gva, uint64_t tz_gva)
+     return 0;
+ }
+ 
++/* Linux struct tms: four clock_t fields (long on LP64) counting USER_HZ
++ * ticks.
++ */
++typedef struct {
++    int64_t tms_utime;
++    int64_t tms_stime;
++    int64_t tms_cutime;
++    int64_t tms_cstime;
++} linux_tms_t;
++
++/* Kernel USER_HZ, the unit of clock_t values returned by times(). Must match
++ * the AT_CLKTCK auxv entry in core/stack.c: libc divides these raw tick counts
++ * by sysconf(_SC_CLK_TCK), so a mismatch silently rescales every value.
++ */
++#define LINUX_USER_HZ 100
++
++/* Shared by both the timeval-based self accounting and the raw-microsecond
++ * proc-layer accumulator below, so the two paths cannot drift out of step if
++ * LINUX_USER_HZ ever changes.
++ */
++static int64_t usec_to_clock_ticks(uint64_t usec)
++{
++    return (int64_t) (usec / (1000000ULL / LINUX_USER_HZ));
++}
++
++static int64_t timeval_to_clock_ticks(const struct timeval *tv)
++{
++    return usec_to_clock_ticks((uint64_t) tv->tv_sec * 1000000ULL +
++                               (uint64_t) tv->tv_usec);
++}
++
++int64_t sys_times(guest_t *g, uint64_t buf_gva)
++{
++    /* Linux permits a NULL buffer: only the return value (elapsed ticks) is
++     * wanted. cutime/cstime come from the proc-layer accumulator fed at each
++     * guest-child reap, not from RUSAGE_CHILDREN: the emulator also waits on
++     * helper subprocesses (rosettad translate, sysroot tooling) whose CPU
++     * would otherwise masquerade as guest child time.
++     */
++    if (buf_gva) {
++        /* getrusage(RUSAGE_SELF) aggregates the whole emulator process --
++         * every host thread plus page-table, syscall-servicing, and Rosetta
++         * translation overhead -- not just the guest task's own execution, so
++         * utime/stime over-report relative to what a real guest kernel would
++         * charge. Unavoidable given this design (there is no per-guest-thread
++         * host accounting to draw from instead).
++         */
++        struct rusage self;
++        if (getrusage(RUSAGE_SELF, &self) < 0)
++            return linux_errno();
++
++        uint64_t cutime_us, cstime_us;
++        proc_children_cpu_us(&cutime_us, &cstime_us);
++
++        linux_tms_t tms = {
++            .tms_utime = timeval_to_clock_ticks(&self.ru_utime),
++            .tms_stime = timeval_to_clock_ticks(&self.ru_stime),
++            .tms_cutime = usec_to_clock_ticks(cutime_us),
++            .tms_cstime = usec_to_clock_ticks(cstime_us),
++        };
++        if (guest_write_small(g, buf_gva, &tms, sizeof(tms)) < 0)
++            return -LINUX_EFAULT;
++    }
++
++    /* Linux returns jiffies-since-boot converted to clock_t ticks; POSIX only
++     * requires an arbitrary-but-fixed reference point, so host CLOCK_MONOTONIC
++     * satisfies callers that difference successive returns.
++     */
++    struct timespec ts;
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
++        return linux_errno();
++    return (int64_t) ts.tv_sec * LINUX_USER_HZ +
++           ts.tv_nsec / (NSEC_PER_SEC / LINUX_USER_HZ);
++}
++
+ int64_t sys_setitimer(guest_t *g, int which, uint64_t new_gva, uint64_t old_gva)
+ {
+     /* Linux reads new_gva before dispatching on which, so an invalid pointer
+diff --git a/src/syscall/time.h b/src/syscall/time.h
+--- a/src/syscall/time.h
++++ b/src/syscall/time.h
+@@ -25,6 +25,7 @@ int64_t sys_clock_nanosleep(guest_t *g,
+                             uint64_t req_gva,
+                             uint64_t rem_gva);
+ int64_t sys_gettimeofday(guest_t *g, uint64_t tv_gva, uint64_t tz_gva);
++int64_t sys_times(guest_t *g, uint64_t buf_gva);
+ int64_t sys_setitimer(guest_t *g,
+                       int which,
+                       uint64_t new_gva,

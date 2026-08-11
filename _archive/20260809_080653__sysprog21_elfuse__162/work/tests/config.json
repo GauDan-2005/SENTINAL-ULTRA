@@ -1,0 +1,56 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "python3 -m pytest -v -p no:cacheprovider ${TEST_FILES}"
+    ],
+    "selected_test_files_to_run": [
+      "tests/test_sentinel_times_host.py"
+    ],
+    "env": {},
+    "timeout_sec": 900
+  },
+  "grading": {
+    "fail_to_pass": [
+      "tests/test_sentinel_times_host.py::test_the_times_number_is_routed_to_a_handler",
+      "tests/test_sentinel_times_host.py::test_the_times_entry_consumes_only_the_first_argument",
+      "tests/test_sentinel_times_host.py::test_return_value_advances_at_one_hundred_ticks_a_second",
+      "tests/test_sentinel_times_host.py::test_return_value_counts_from_a_monotonic_reference",
+      "tests/test_sentinel_times_host.py::test_call_writes_four_tick_counts",
+      "tests/test_sentinel_times_host.py::test_self_cpu_time_matches_the_host_accounting",
+      "tests/test_sentinel_times_host.py::test_self_cpu_time_grows_with_work_done",
+      "tests/test_sentinel_times_host.py::test_null_buffer_returns_ticks_without_writing",
+      "tests/test_sentinel_times_host.py::test_unwritable_buffer_reports_efault",
+      "tests/test_sentinel_times_host.py::test_reaped_child_cpu_appears_in_the_child_totals",
+      "tests/test_sentinel_times_host.py::test_child_system_time_is_counted_separately",
+      "tests/test_sentinel_times_host.py::test_helper_subprocess_cpu_stays_out_of_the_child_totals",
+      "tests/test_sentinel_times_host.py::test_child_totals_ignore_the_emulator_own_cpu",
+      "tests/test_sentinel_times_host.py::test_a_stop_report_does_not_credit_child_cpu",
+      "tests/test_sentinel_times_host.py::test_a_peek_does_not_credit_child_cpu",
+      "tests/test_sentinel_times_host.py::test_each_child_is_counted_once"
+    ],
+    "pass_to_pass": [
+      "tests/test_sentinel_times_host.py::test_the_probe_still_builds_from_the_repository_sources",
+      "tests/test_sentinel_times_host.py::test_the_dispatch_generator_still_agrees_across_its_inputs",
+      "tests/test_sentinel_times_host.py::test_the_dispatch_table_still_routes_the_existing_clock_calls",
+      "tests/test_sentinel_times_host.py::test_gettimeofday_still_reports_wall_clock_time",
+      "tests/test_sentinel_times_host.py::test_monotonic_clock_reads_still_advance",
+      "tests/test_sentinel_times_host.py::test_clock_resolution_is_still_reported",
+      "tests/test_sentinel_times_host.py::test_wait4_still_reaps_a_registered_child",
+      "tests/test_sentinel_times_host.py::test_wait4_still_reports_no_children_for_an_unknown_pid"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "pytest",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

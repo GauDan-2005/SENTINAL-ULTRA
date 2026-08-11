@@ -1,0 +1,46 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "python3 -m pytest -v -p no:cacheprovider ${TEST_FILES}"
+    ],
+    "selected_test_files_to_run": [
+      "tests/test_times_syscall.py"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "tests/test_times_syscall.py::test_sys_times_abi_number_is_153",
+      "tests/test_times_syscall.py::test_dispatch_table_routes_times_to_handler",
+      "tests/test_times_syscall.py::test_generated_dispatch_header_wires_times",
+      "tests/test_times_syscall.py::test_syscall_c_forwards_sc_times_to_sys_times",
+      "tests/test_times_syscall.py::test_sys_times_declared_in_time_header",
+      "tests/test_times_syscall.py::test_return_value_uses_monotonic_clock",
+      "tests/test_times_syscall.py::test_tick_rate_is_100hz",
+      "tests/test_times_syscall.py::test_self_times_from_getrusage_self",
+      "tests/test_times_syscall.py::test_child_times_from_proc_accumulator",
+      "tests/test_times_syscall.py::test_null_buffer_accepted",
+      "tests/test_times_syscall.py::test_bad_pointer_returns_efault",
+      "tests/test_times_syscall.py::test_child_cpu_accumulator_add_defined",
+      "tests/test_times_syscall.py::test_child_cpu_accumulator_read_defined",
+      "tests/test_times_syscall.py::test_child_cpu_credited_only_on_terminal_report",
+      "tests/test_times_syscall.py::test_table_reaper_accounts_child_cpu"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "pytest",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

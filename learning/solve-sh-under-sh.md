@@ -1,28 +1,59 @@
 ---
 id: solve-sh-under-sh
-status: reported
-last_verified: 2026-08-04
+status: locally-verified
+last_verified: 2026-08-11
 verified_by:
-  - "none in this workspace — imported from a sibling workspace's records"
-evidence: "A sibling Sentinel workspace records solve.sh executed under sh/dash as a cause of Oracle 0/3. Not reproduced here"
+  - "solve.sh half: none here - imported from a sibling workspace's records"
+  - 20260809_080653__sysprog21_elfuse__162
+evidence: "solve.sh half still second-hand. The test.sh half is now reproduced here: sh /tests/test.sh wrote NO reward file at all, and a one-line re-exec guard took the same case to reward 1.0"
 applies_to:
   languages: [any]
   runners: [sh, dash, bash]
   phases: [oracle, local-runs, packaging]
 blocks_submission: true
-fails_gate: [oracle]
+fails_gate: [oracle, verifier-output]
 supersedes: []
 contradicts: []
 ---
 
 # solve.sh run under `sh` instead of bash
 
-**Provenance, read this first.** This note is imported from a sibling Sentinel workspace's
-records, not from a run on this machine. Nothing in this workspace has reproduced it, and the
-grep that would have found it (`BASH_VERSION`, `exec bash`) returns zero hits across
-`CLAUDE.md`, `learning/`, `.cursor/rules/` and `.claude/skills/`. It is written up because the
-failure it describes is invisible to every check this workspace currently runs, and because the
-mitigation costs one line. Status stays `reported` until an oracle here fails this way.
+## `test.sh` is the worse half, and that half is measured (elfuse 162, 2026-08-11)
+
+The provenance note below still stands for `solve.sh`. **The verifier entrypoint was measured
+here and it fails harder than the oracle does.**
+
+On `20260809_080653__sysprog21_elfuse__162`, running `sh /tests/test.sh` inside the task image
+produced **no `reward.txt` at all**. Not reward 0. Nothing. The stock `test.sh` builds a bash
+array (`RUNNER=(timeout "$T" bash /tmp/run_tests.sh)`), dash aborts at that line with
+`Syntax error: "(" unexpected`, and it dies **before** reaching the `trap ... EXIT` that exists
+specifically to guarantee a reward file. A platform that reads a missing verifier output as
+`DownloadVerifierDirError` or `verifier-output-not-found` will not tell you a shell mismatch
+caused it.
+
+The guard is one line, goes immediately after the shebang comment in **both** entrypoints, and
+costs nothing:
+
+```bash
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+```
+
+Two things worth knowing about testing it. `dash -n /tests/test.sh` still reports the array
+syntax error, because `-n` parses the whole file while a real run never reaches that line, so a
+failed `dash -n` is not evidence the guard is broken. And the case only shows up if you actually
+invoke it as `sh /tests/test.sh`: a shebang is ignored when the file is handed to an
+interpreter, so every `bash /tests/test.sh` in your battery hides it. After the guard, the same
+`sh` invocation returned reward 1.0 with 24 of 24.
+
+
+**Provenance, read this first, and it now has two halves.** The `solve.sh` half below is still
+imported from a sibling Sentinel workspace's records: no oracle on this machine has failed that
+way, so treat it as second-hand. The **`test.sh` half is measured here**, first on
+`20260806` go-task work (`go-task-verifier-gotchas.md`, the same one-line guard) and then
+directly on elfuse 162, where `sh /tests/test.sh` wrote no reward file at all. The note's status
+moved to `locally-verified` on the strength of that half only. It stays worth reading because
+the failure is invisible to every check that invokes the scripts with `bash`, and because the
+mitigation costs one line.
 
 ## The symptom
 

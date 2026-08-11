@@ -1,0 +1,48 @@
+schema_version = "1.3"
+
+[metadata]
+pass_at_k_opus_4_8 = "0/3"
+pass_at_k_gpt_5_5 = "0/3"
+author_name = "anonymous"
+author_email = "anonymous@snorkel.ai"
+# --- swe_ultra_requirements §4 field names ---
+category = "implementation"
+subcategory = "feature"
+coding_language = "c"
+repo_name = "elfuse"
+repo_license = "Apache-2.0"
+difficulty_explanation = "The syscall has to be routed end to end through a generated dispatch table, and the CPU accounting it reports cannot be taken from the host aggregate the obvious implementation would reach for. The emulator forks its own helper subprocesses, so the host's children accounting mixes their CPU in with the guest's, and the counters have to be fed only at reaps of processes the guest itself owns. On top of that a child may be reported more than once, on a stop, on a continue and finally on exit, and only the terminal report may be credited, so a straightforward implementation silently counts the same CPU two or three times."
+source_pr_url = "https://github.com/sysprog21/elfuse/pull/162"
+base_commit_sha = "23ec9b0ac58719d92cda5a076877d2118d77b705"
+model_difficulty = "medium"
+tags = ["syscall", "times", "cpu-accounting", "aarch64", "emulator", "getrusage"]
+# --- legacy aliases (kept for backward-compatible internal consumers) ---
+difficulty = "hard"
+task_type = "implementation"
+task_subtype = "feature"
+source = "https://github.com/sysprog21/elfuse/pull/162"
+language = "c"
+expert_time_estimate_min = 90.0
+junior_time_estimate_min = 300.0
+pr_created_at = "2026-07-07T09:05:34Z"
+pr_merged_at = "2026-07-09T07:28:20Z"
+
+[verifier]
+timeout_sec = 1200.0
+network_mode = "no-network"
+
+[agent]
+timeout_sec = 1800.0
+network_mode = "allowlist"
+allowed_hosts = [
+    "api.portkey.ai",
+]
+
+[environment]
+os = "linux"
+build_timeout_sec = 1500.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+network_mode = "public"

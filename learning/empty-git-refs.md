@@ -18,6 +18,38 @@ contradicts: []
 
 # `git gc` leaves `.git/refs` empty, and an empty directory is not portable
 
+## Writing the loose ref back: compute first, redirect second (elfuse 162, 2026-08-11)
+
+The remedy in this note is one line and it has an ordering trap that destroys the ref it is
+meant to restore:
+
+```bash
+git rev-parse HEAD > .git/refs/heads/main      # WRONG
+```
+
+The shell opens and truncates the redirect target **before** running the command. On a repo whose
+only ref is the one you just emptied, `git rev-parse HEAD` then has nothing to resolve, prints
+the literal string `HEAD`, and that is what lands in the file. `git fsck` afterwards:
+
+```
+error: refs/heads/main: invalid sha1 pointer 0000000000000000000000000000000000000000
+error: invalid HEAD
+notice: No default references
+dangling commit 23ec9b0ac58719d92cda5a076877d2118d77b705
+```
+
+Two steps, always, and delete the corrupted ref first if you have already tripped it, because
+`rev-parse` cannot resolve anything while it is there:
+
+```bash
+rm -f .git/refs/heads/main                       # only if already corrupted
+SHA=$(git rev-parse HEAD) && printf '%s\n' "$SHA" > .git/refs/heads/main
+```
+
+`bin/rezip.sh` already does it correctly (`PASS GIT-LOOSE-REF`). This bites when the scrub is run
+by hand, which is exactly when nobody is watching for it. Verify with `git fsck
+--unreachable --no-progress` printing nothing **and** `git for-each-ref` listing the branch.
+
 ## What happens
 
 The pre-zip scrub every bundle runs ends with `git gc --prune=now`. That packs every ref into

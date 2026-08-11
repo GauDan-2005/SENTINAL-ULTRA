@@ -87,6 +87,29 @@ If Not Fixable, list every reason clearly and specifically so it can go into the
 
 ---
 
+### The "it cannot be tested here" claim
+
+A bundle sometimes explains, in a docstring or a comment, why it grades source text or leaves a
+stated requirement unasserted: the verifier cannot build the product, cannot run the emulator,
+has no live service, no device, no network. **Treat that as an untested claim.** It has now been
+false twice in different ways.
+
+- Split it. The *product* not running is not the same as its *translation units* not compiling.
+  elfuse 162 is a macOS Hypervisor.framework binary graded on `ubuntu:24.04`; its syscall units
+  compiled behind a stand-in for the framework header (30 lines to prove the point, 89 as
+  shipped) and ran under `qemu-user-static`, and the accepted bundle grades them behaviourally
+- `no-network` restricts egress, not sockets. A listener on `127.0.0.1` inside the test process
+  is available and grades a whole client path
+- Measure with `gcc -c`, never `-fsyntax-only`. One unguarded target instruction passes the
+  second and fails the first, and that is what decides host-native versus cross plus an emulator
+
+Consequences for the verdict. **Not Fixable is exactly the two categories at
+`docs/guidelines.md:66`** and "the verifier host cannot execute the software under test" is on
+neither; `docs/` is silent on cross-platform and hardware-dependent repositories, so reaching
+that verdict on this ground is an inference. Accepting source-text assertions instead is the
+softer version of the same mistake and is banned outright by `docs/guidelines.md:135`. Full
+ladder in `learning/platform-locked-repos-are-still-testable.md`.
+
 ## 3. Principle 1 — Solvability
 
 A task is valid only if a competent engineer can solve it from the instruction alone, within the task's time and resource limits, and without guessing arbitrary implementation choices.
