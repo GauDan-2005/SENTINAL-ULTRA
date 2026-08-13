@@ -162,7 +162,29 @@ Write tests to clear the Quality Check bar (Section 4): no silent skips, no fail
     ```
 
     Pass condition: no hit where the instruction asks the agent to **write** to a path the patch also writes to. Naming a public artifact that happens to live under `tests/` is fine; ordering an edit to one is not. An instruction that does order it makes every compliant agent an invalid trial, the three apply routes in `test.sh` all fail into `infrastructure_error`, and the oracle never reproduces it because the golden patch does not follow instructions. Delete the request from the instruction and keep the restore step anyway (`learning/tests-patch-vs-agent-edits.md`)
-15. Full local dry run - that is Step 5.5 Phase B
+15. **No graded test reaches the deliverable by its file path.** List the files `golden.patch` **creates** - the paths carrying a `new file mode` line, not every path it touches, because a path that already exists in the base tree is derivable under `docs/guidelines.md:155` - then check whether any graded test names one of them in an `#include`, `import`, `require` or `use`. **Match by path suffix**, because an import resolves against a source root (`include/`, `src/`, `lib/`) and not against the repo root:
+
+    ```bash
+    awk '/^diff --git/{f=$4; sub(/^b\//,"",f)} /^new file mode/{print f}' solution/golden.patch |
+    while IFS= read -r p; do
+      s="$p"
+      while [ -n "$s" ]; do
+        if grep -Fq "$s" tests/tests.patch; then
+          printf 'PATH PINNED: golden creates %s, tests.patch names it as "%s"\n' "$p" "$s"
+          grep -Fq "$s" instruction.md \
+            && echo '  instruction.md states it literally' \
+            || echo '  instruction.md does NOT state it literally - go read the instruction'
+          break
+        fi
+        case "$s" in */*) s="${s#*/}";; *) s="";; esac
+      done
+    done
+    ```
+
+    **This grep is a first pass, never the verdict.** A path can be derivable without appearing as a literal: kvdex 245, the accepted reference bundle, fires six times here, and its instruction states the layout compositionally at `instruction.md:23` ("Serialization moves into a new `src/ext/encoding` module tree. Each of the three encoders lives in its own directory with a `mod.ts` barrel"), which makes `src/ext/encoding/v8/mod.ts` derivable under `docs/guidelines.md:157` without ever naming it. The suffix walk also matches a bare basename, so `utils.ts` will hit on almost anything. Read the instruction for every path it prints.
+
+    Pass condition: for every created path a graded test names, `instruction.md` makes the location derivable, either literally or as a stated layout rule. `docs/guidelines.md:149-159` lists a new module or file name among the names that must be derivable, and a path the agent has to invent is not one. The cost is not a lost assertion, it is the whole translation unit: a correct cista 172 solution placed one directory away scored **4 of 21**. Fix it by routing the graded test through a public entry point the instruction already names. **The oracle cannot catch this for you**, because `golden.patch` puts the file exactly where the test expects, so a green Oracle Check is not evidence. The deciding test is behavioural - move every created file somewhere else the instruction also permits and re-run the verifier, and the reward must not move (`learning/graded-tests-that-import-the-deliverable.md`, Section 10.13)
+16. Full local dry run - that is Step 5.5 Phase B
 
 **Re-zip rule (run only after the fixes and the Phase A pre-upload checklist pass - the zip is what the Step 5.5 Phase B battery then runs against):**
 
@@ -202,7 +224,7 @@ Cursor runs these ITSELF - do not hand them to the user, and do not write any an
 
 **The battery runs in two phases, and the order is the point.**
 
-- **Phase A - cheap gates on `work/`.** All 15 items of the pre-upload checklist above: patch applies, shipped tree clean, image builds and is pinned, git hygiene clean and `fsck` silent, stray sweep empty, task.toml sane, script modes `0755`, grader fails closed, and the three mechanical greps (no source-shape grading, instruction and tests naming the same things, no unguarded bashisms). Then build the zip with the Step 5 re-zip rule
+- **Phase A - cheap gates on `work/`.** All 16 items of the pre-upload checklist above: patch applies, shipped tree clean, image builds and is pinned, git hygiene clean and `fsck` silent, stray sweep empty, task.toml sane, script modes `0755`, grader fails closed, and the four mechanical greps (no source-shape grading, instruction and tests naming the same things, no unguarded bashisms, no graded test pinning a path `golden.patch` creates). Then build the zip with the Step 5 re-zip rule
 - **Phase B - the three required runs, against the EXTRACTED ZIP.** Extract the zip to the scratchpad, build the image from that extract, and run NOP, oracle and hostile-delete there
 
 **Why the zip and not `work/`.** The artifact that ships has to be the artifact that was measured. A battery run on `work/` measures a tree that no longer exists once `zip` has followed a symlink, dropped a directory entry or lost a mode bit - the libcrux task burned a whole re-verification session on exactly that gap. **Any edit after Phase B voids Phase B**: a fresh zip and a fresh battery, no exceptions and no "it was only the instruction".
@@ -235,7 +257,9 @@ Both paths are acceptable. Silence about which one you used is not, because a re
 
 **Run 2 - Oracle check (must PASS, three times):** on the `run-oracle` copy, run `solution/solve.sh`, then `tests/test.sh`. Expected: reward `1.0`, zero exit, every fail-to-pass test passing, the pass_to_pass regression guard still green, all inside the `[verifier] timeout_sec`.
 
-**Run `solve.sh` three times in one container, because the platform does.** The Oracle Check runs the golden solution three times and the pass bar is **3/3** (Section 4). Runs two and three execute against the already-patched tree, which is where a non-idempotent script inverts its own fix. Record all three rewards for Comments for Reviewer. A pass on run one followed by a failure on run two is exactly the `1/3` signature - do not ship it and call it green.
+**Run the whole cycle three times in one container, because the platform does.** The Oracle Check runs the golden solution three times and the pass bar is **3/3** (Section 4). The cycle is `solve.sh` **then `test.sh`**, three times, and all three rewards come from the combined cycle. Runs two and three execute against the already-patched tree, which is where a non-idempotent script inverts its own fix. Record all three rewards for Comments for Reviewer. A pass on run one followed by a failure on run two is exactly the `1/3` signature - do not ship it and call it green.
+
+**`solve.sh` three times is a different, weaker check and must never be reported as an oracle result.** It exercises the oracle *script*, which is the `solve-sh-idempotency.md` defect. The second mechanism with the identical `1/3` signature sits one file over, in `test.sh`, which applies `tests.patch` on every invocation: with no restore step, the second apply lands on a tree that already carries the patch and returns `infrastructure_error: tests.patch did not apply`. Measured on mithril.js 2021, where `solve.sh` is the correct reverse-**check** shape and replays 3 of 3 while the real protocol returns **1 of 3**, and independently on cista 172 (`learning/stock-bundle-defect-baseline.md`, defect 6, "it is what makes run 2 of the oracle report `tests.patch did not apply`"). So a missing restore is an Oracle Check defect and not only the agent-collision defect Section 10.3 treats it as. When a platform Oracle Check comes back below 3/3, check both mechanisms (`learning/oracle-protocol-is-solve-then-verify.md`).
 
 **Run 3 - Hostile-delete gate (reward must DROP to 0.0):** on the `run-hostile` copy, apply the oracle, then stub or delete one requirement the instruction actually states, and re-run the verifier. The Quality Check coverage axis is scored on this exact property - "a broken or stub solution must fail at least one test" (`docs/tasking-guide.md`). Pick the requirement you are least sure is tested, not the easiest one.
 

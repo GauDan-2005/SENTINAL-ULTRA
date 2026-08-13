@@ -1,10 +1,11 @@
 ---
 id: verifier-fail-open
 status: locally-verified
-last_verified: 2026-08-02
+last_verified: 2026-08-11
 verified_by:
   - 20260716_114438__ETLCPP_etl__1466 (peer review, second-hand)
   - 20260719_045042__oliver-oloughlin_kvdex__245 (measured on this bundle)
+  - 20260723_030152__mithriljs_mithril.js__2021 (working exploit via the stderr fallback)
 evidence: "chat_transcripts/cursor_etlcpp.md for the reviewer's finding; kvdex NOP showing raw_exit_code 0 with zero tests run"
 applies_to:
   languages: [any]
@@ -228,6 +229,39 @@ success = not missing_required and not unexpected and args.raw_exit_code == 0
 Verified on the NOP run after the change: `reward 0`, `raw_exit_code 1`,
 `infrastructure_error: None`, `0 of 1223` — reward 0 for the right reason, still a valid trial.
 The oracle is unaffected at `raw_exit_code 0`, `1223 of 1223`.
+
+## An exploit exists whenever the parser has a stderr fallback (mithril.js 2021, 2026-08-11)
+
+**Retracted here: "the invariant is broken but no exploit is constructible on this bundle."** That
+sentence shipped in a finished peer review of mithril.js 2021, reasoned from the fact that the
+bundle's own runner ends with `process.exit(failed === 0 ? 0 : 1)`, so its exit status tracks the
+JSON it prints. The reasoning is true about the **runner** and irrelevant, because the grader does
+not have to grade the runner's report.
+
+`tests/test.sh:306` reads `_find_json(stdout) or _find_json(stderr)`. Two lines added to
+`render/render.js`, with the solution never applied and the bug fully present:
+
+```
+line 1: console.log({breaking: "the stdout parse"})     -> first-brace-to-last-brace slice no longer parses
+line 2: process.stderr.write(<forged all-pass report naming the 15 graded ids>)
+```
+
+```
+test.sh exit=0     reward.txt = 1
+success True   raw_exit_code 1   passed 15 of 15   missing 0   unexpected 0
+git diff --stat render/render.js -> 1 file changed, 2 insertions(+)
+```
+
+Reward 1.0 with the recorded raw exit code sitting at 1 in the same report file. Adding
+`and args.raw_exit_code == 0` to the success expression turns that run into reward 0.
+
+**The rule.** Before writing "no exploit is available here", read the parser for a fallback source.
+Any parser that tries a second stream, or a second format, hands an agent a second report channel,
+and the runner's own exit discipline cannot close it. On this shape the exit-code gate is the only
+one of the usual fixes that does close it: a test-infrastructure restore does not, because the
+injected lines are in product source, and moving the report off stdout does not, because the forged
+report is what gets read either way.
+
 
 ## How to catch it locally
 

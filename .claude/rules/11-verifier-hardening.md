@@ -19,6 +19,8 @@ Each item says how far the docs back it. **Docs rule** = stated in `docs/`. **Do
 
 - **`execution.commands` is a list, so the runner's exit status is the LAST command's.** On a task that runs the suite and then a parser, a failing suite followed by a healthy parser gives status 0 and any gate you add never fires. Emit `set -e` at the top of the generated runner so the first failure propagates.
 - **`set -e` does not cover a command that is itself a pipeline, and `test.sh`'s own `pipefail` does not reach the runner.** `bash /tmp/run_tests.sh` is a separate shell and does not inherit shell options, so a single command like `deno test … | python3 -c '<parser>'` runs with defaults and reports the parser's status however carefully `test.sh` was written. Measured on kvdex: `raw_exit_code 0` on a NOP where **zero tests ran**. Fix at the invocation, `RUNNER=(bash -o pipefail /tmp/run_tests.sh)`, and keep the `set -e` above as well - a multi-command task needs one, a piped task needs the other, and many need both.
+- **A pipe written into `execution.commands` itself needs BOTH fixes above, not either one.** The two bullets above are about the runner's invocation; this is about the config. `g++ ... 2>&1 | tail -n 80` hands the runner `tail`'s status, so `set -e` alone never sees the compile failure, and a trailing `for ... done` loop ending in `echo` makes the runner's last-command status 0, so `bash -o pipefail` alone is masked as well. **`pipefail` does reach a pipeline written inside the generated runner** - it is an option of the shell executing the script, so it governs every pipeline that shell runs. Measured on cista 172 in its own image, against a tree where nothing compiles: as shipped **exit 0**, `bash -o pipefail` alone **exit 0**, `set -e` alone **exit 127**, `set -e` prepended plus `bash -o pipefail` **exit 1**. So read `execution.commands` for pipes and trailing `echo` to learn that you need the pair rather than either half, and prefer fixing the config too, by capturing the status before the pipe or dropping the `tail`, which also stops `tail` keeping the wrong end of a C++ template error cascade
+- **A parser with a fallback source makes this exploitable, so never report it as theoretical.** The stock `parse_jest` reads `_find_json(stdout) **or** _find_json(stderr)`, so the report the grader grades need not be the report the runner printed. Measured on mithril.js 2021 with the solution never applied and **two** lines added to product source, one logging an object so the stdout parse fails and one writing a forged all-pass report to stderr: `reward 1.0`, `success True`, 15 of 15, with `raw_exit_code 1` recorded in the same file. That review had written "the invariant is broken but no exploit is constructible here", reasoning from the runner's own `process.exit(failed === 0 ? 0 : 1)`, which is true about the runner and irrelevant. Read the parser for a second source before deciding the gate is hygiene, and note that on this shape the gate is the **only** standard fix that closes the route: a test-infrastructure restore cannot, because the injected lines are in product source, and moving the report off stdout cannot, because the forged report is what gets read either way (LEDGER L70)
 - **Measure the runner's bare exit on a green tree before wiring the gate.** Some runners exit nonzero on a fully passing suite (leak or sanitizer complaints, skipped-test codes). Gating without checking fails your own oracle. kvdex answered `bare exit=0` with `ok | 152 passed | 0 failed | 2 ignored`, so the gate was safe. If yours answers nonzero on green, leave the gate out and say why in Comments for Reviewer. Tests the runner reports as *ignored* emit neither PASS nor FAIL, so an upstream skip is not a hazard when flipping `allow_extra_failures` to `false`.
 - **Gate inside the grader, never with an early `infrastructure_error` exit.** The difficulty harness reads `infrastructure_error` as *invalid trial*, not *agent failed*. Bailing out on a nonzero exit would reclassify every non-compiling agent as an invalid trial and poison the difficulty verdict the same way a broken `tests.patch` does. Add the condition to the success expression instead (`and args.raw_exit_code == 0`) so the per-test report survives and the run still counts as an ordinary grading failure. Confirm on the NOP: reward `0`, raw exit nonzero, `infrastructure_error: None`.
 
@@ -110,6 +112,10 @@ PY
 
 Re-measured 2026-08-04 against every bundle on this machine: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177 and `21 of 38` on libcrux 1165. On a synthetic fixture whose id matches neither a patched file nor any symbol it prints `UNRESOLVED` instead of a number. The earlier version of this snippet split every id on `::` and read the left half as a path, which made all 20 of AltBeacon's `pkg.ClassTest::method` ids and all 17 of libcrux's `module::test` ids look like files it had never patched. On libcrux it printed `35 of 35` against the 35-id config of the day, and hand resolution put the real figure at 21 outside. The config has since grown to 38 ids and the corrected snippet reads `21 of 38`, so the outside count is the number that matched. **An UNRESOLVED line means the count is not yet an answer.** Resolve those ids by hand and re-run before you pick a shape, because the whole point of the number is which of the two designs below you build.
 
+**Whichever shape you pick, derive the delete list from the patch and not from a directory list.** `tests.patch` can create a file **outside every directory the graded specs live in**, and an agent file at that path breaks all three apply routes even with those directories pristine. Measured on mithril.js 2021, where the patch creates `ospec-json-runner.js` at the repo root: with `render/tests`, `ospec` and `test-utils` all restored, `git apply` says `already exists in working directory`, `--3way` says `does not exist in index`, and `patch -p1 --forward` skips the hunk. Read the creates out of the patch itself, `sed -n 's|^+++ b/||p' /tests/tests.patch`, and delete every one before applying (LEDGER L71). This is L9 in a new costume.
+
+**A missing restore is also an Oracle Check defect, which is not where this section files it.** `test.sh` applies `tests.patch` on every invocation, so the second cycle lands on a tree that already carries it. Measured 1 of 3 on mithril.js 2021 and independently on cista 172. If you take nothing else from this section, take that a bundle with no restore fails the platform's 3/3 oracle bar on its own, whatever `solve.sh` does (`learning/oracle-protocol-is-solve-then-verify.md`).
+
 **Zero → create-only patch.** Regenerate `tests.patch` so every graded file is a create (`new file mode`, `--- /dev/null`) rather than a diff. A create has no context lines, so nothing can conflict. Delete those paths in `test.sh` first, reading the list out of the patch itself with `sed -n 's|^+++ b/||p' /tests/tests.patch`. No payload needed.
 
 **This is NOT the equalsverifier shape, despite what earlier revisions of this file and of `learning/` said.** equalsverifier 1166 measures **1124 of 1223** outside the patched files: its `fail_to_pass` is fully covered (0 of 19 outside, 10 graded classes protected) but its `pass_to_pass` is 1204 regression guards spread over 129 test classes. Only its f2p set is concentrated, which is what the earlier claim was really describing. A create-only patch there fixes the harness failure and still leaves 1124 guards running the agent's own copies.
@@ -191,7 +197,8 @@ Stub out one requirement the instruction states, in a throwaway copy, and re-run
 
 ### 10.8 Test-suite shape (docs criterion)
 
-- **Distinct contracts, not padding.** The f2p count is a coverage floor, not a target to fill. The same assertion reminted across N sizes, or tautologies like asserting a constant against itself, add count and no coverage.
+- **Distinct contracts, not padding.** The f2p count is a coverage floor, not a target to fill. The same assertion reminted across N sizes, or tautologies like asserting a constant against itself, add count and no coverage. cista 172 ships one of these by name: `static type hash - hash is stable across calls` compares a `constexpr` expression with itself and then calls the same function twice with the same template argument, so it cannot fail for any implementation that satisfies the other sixteen. When a count has to come **down** to reach the 10 to 20 range, a tautology is the id to retire first, and the coverage that replaces it goes in as sub-cases under existing top-level ids rather than as new ones.
+- **Count how many graded ids share one translation unit or one process, because that is how many the suite can really distinguish.** On cista 172, 17 of the 21 ids compile into a single binary. Breaking one requirement took all 17 down together on a single compile error while the other 4 carried on, so the failure list reads as 17 problems and is one. This is not a defect on its own and it changes how every difficulty report on the task should be read, so say it in Comments for Reviewer. It also sets a floor on the hostile-delete gate: a break that stops the compile proves nothing about coverage, so aim probes at breaks that still build.
 - **Test the wiring, not only the helper.** If the PR's point is that some path now uses a new helper, at least one f2p must go through that path. A perfect helper nobody calls can green the whole suite. This is the same failure the `No CLI/entry-point invocation` auto-REMOVE pattern describes.
 - **No serialization accidents.** Do not pin object numbers, byte offsets, creation-order ids or other artifacts of how something happens to be written out. Assert the structure and the observable values.
 - **"Any equivalent wording" is a contract.** If the instruction says a message may be phrased freely, the matcher has to accept the paraphrases - including every example the instruction itself gives. A regex demanding two literal tokens within 40 characters is not flexible wording.
@@ -224,3 +231,140 @@ When the repository targets a platform the verifier is not - macOS, Windows, a s
 - **Build the probe so it links at the base commit.** Then the NOP is an executed split rather than a compile-bound zero, with no audit to caveat
 - **Two-pass link.** Parse `undefined reference to 'X'`: compile the `src/` file that defines `X` if there is one, otherwise emit `long X(); long X() { return 0; }` into a generated file, and `__thread long X;` when the linker reports a TLS mismatch. Compile that generated file **bare**, with no forced prelude and no `-I`, or it meets a real prototype and fails. `-Wl,--unresolved-symbols=ignore-all` is not a substitute: it resolves the symbol to address 0 and the call segfaults
 - **The toolchain goes in the Dockerfile's verifier dependency layer**, grounded on `docs/tasking-guide.md:41` ("bake test dependencies into the image instead of fetching them when the tests run", because "the verifier runs fully airgapped"). Do **not** cite `docs/guidelines.md:332` as the authorization: it carries the useful "adding a missing dev package" phrase but it is a row of the **Not Fixable** table, not the allowed-fix one. The allowed-fix table does not list this case, so disclose it as an inference in Comments for Reviewer
+
+### 10.11 Restore the test INFRASTRUCTURE, not just the graded specs (practice)
+
+Added 2026-08-11 from the mithril.js 2021 peer review.
+
+`tests.patch` protects the graded test bodies. Nothing protects the **assertion library those bodies
+call**, and on most repositories it sits in the agent's own writable checkout. Measured, with the
+solution never applied:
+
+```
+render/render.js at the BASE commit, untouched.
+One clause added to ospec/ospec.js record():   message = null;
+  -> reward 1.0, 15 of 15, exit 0
+```
+
+**The Section 10.3 measurement does not answer this.** That snippet counts graded ids living outside
+the files `tests.patch` touches, and on mithril it returned `0 of 15`, whose documented reading is
+"create-only patch would suffice". That is correct for **collisions** and blind to this, because the
+gaming route runs through `ospec/` and `test-utils/`, which `tests.patch` never touches at all. Two
+questions, one snippet:
+
+| Question | Answered by | Fix |
+|---|---|---|
+| Can an agent's edit break the patch apply? | the 10.3 count | create-only patch, or a payload |
+| Can an agent's edit **fake a pass**? | the probe below | restore the infrastructure |
+
+So when 10.3 returns zero, do not stop. Enumerate every path the graded specs import that
+`tests.patch` does not create, and put those in the restore payload alongside the spec directory.
+
+**On a compiled language the "leave the solution unapplied" form is not available**, because the graded
+translation units name symbols the base commit does not have, so the compile fails before any assertion
+runs and the probe measures a build error. Apply golden first, break **one** stated requirement in a way
+that still compiles, then neuter the library, and read that against the same break without the neuter.
+Measured on cista 172, where `tools/doctest/doctest.h` is a tracked file the graded compile line pulls in
+directly: stamp value off by one gives reward 0 at 20 of 21, and the same break plus `CHECK` and
+`REQUIRE` redefined to `((void)0)` gives **reward 1 at 21 of 21**.
+
+**A compile-time assertion layer raises the bar and does not grant immunity.** On cista 15 of the 21 ids
+carry a `static_assert` mirroring their `CHECK` and 6 are runtime-only. Neither neuter alone is enough
+and both together are, measured with the array `Size` dropped from the hash:
+
+| edit | reward | passed |
+|---|---|---|
+| `CHECK` and `REQUIRE` neutered in `tools/doctest/doctest.h` | 0 | 4 of 21 |
+| `#undef static_assert` plus `#define static_assert(...)` appended to the header golden creates | 0 | 20 of 21 |
+| both | **1** | **21 of 21** |
+
+The second edit lands in a file the **solution** creates, so the agent owns it outright and no restore
+can protect it without deleting the agent's own work. So the honest reading is that mirroring a `CHECK`
+with a `static_assert` costs an attacker a second edit and nothing more. Do not write "immune" into an
+answer, and note that Rust's `static_assert!` is an ordinary macro with even less standing.
+
+**Enumerate by running, not by reading the import lines.** The mithril review named three files and had measured one. Run each. All three reach reward 1.0 at 15 of 15 with the target file at base: `ospec/ospec.js` with `record()` forced to pass, `test-utils/domMock.js` and `test-utils/components.js` with a wrapper rebinding the assertion prototype. A probe that fails is not evidence a route is closed either, and the tell is instructive: patching domMock at **module load** throws `Assertions should not occur outside test definitions` and scores 0 of 15, while the same patch inside `o.beforeEach` scores 15 of 15.
+
+**The restore narrows this class and cannot close it, so do not answer the residue with a longer list.** The graded specs load six agent-writable files into one process and three are product source the solution is allowed to touch, which no verifier may restore. Measured on mithril: 13 lines added to `render/render.js` **alone**, rebinding the ospec assertion methods to self-comparisons at the first `render()` call, gives reward 1.0 at 15 of 15 with `ospec/` and `test-utils/` byte identical to base. The blunt version that no-ops every assertion method scores 0 of 15, because it also kills the runner's own marker assertions, which is why the naive attack fails and the surgical one does not. What covers that residue is the 10.1 exit-code gate, not more restoring.
+
+**The probe, two minutes, run it on every task.** Leave the solution unapplied so any reward above
+zero is unearned, and **assert the mutation landed** or the result is not evidence
+(`bin/hostile-probe.sh` exits 3 for exactly this). It discriminates rather than always firing:
+mithril returned reward 1.0, expressa 132 reached 15 of 21 at reward 0 and earned a sentence saying
+so. Full detail in `learning/agent-writable-test-infrastructure.md`.
+
+### 10.12 The report must not share stdout with the code under test (practice)
+
+Added 2026-08-11 from two peer reviews.
+
+The stock grader locates its JSON by slicing stdout from the first `{` to the last `}`. When the
+runner prints its report to the same stdout the agent's code writes to, any object the agent logs
+lands before the report and the slice stops parsing. Measured with the **correct** solution applied:
+
+| leftover debug line | reward | passed |
+|---|---|---|
+| none | 1 | 15/15 |
+| `console.log("hi")` | 1 | 15/15 |
+| `console.log({a:1})` | **0** | **0/15** |
+
+A plain string survives; an object does not, and logging the structure under repair is how anybody
+debugs one. This is a **false negative against correct work**, the opposite direction from the
+fail-open grader in 10.1, so it needs its own check and its own fix: write the report to a file the
+grader reads, to fd 3, or between unique markers the parser anchors on.
+
+**A second instance of the same class, with a different signature.** An ospec `o.only` left behind in a graded spec file gives reward 0 at 0 of 15 with `raw_exit_code` **0**: the runner reports one test, the other 104 never run, every graded id lands in `missing_required`, and the runner saw no failures so the exit code is clean. The 10.1 gate does not cover this direction. Adding `"type": "module"` to `/app/package.json` is a third, at reward 0 and 0 of 15, and nothing in the module graph requires that file. Two things that look dangerous and are not, worth recording so they are not re-derived: deleting `/app/node_modules` and deleting `/app/.git` both leave reward 1.0 at 15 of 15.
+
+**Do not fix this by switching `grading.parser.framework` to `custom`.** It is a one-field change that removes the brace slice and looks like the cheap answer. `parse_custom` is a line-anchored regex over the same shared stdout, so an agent can satisfy it by printing a matching line, which trades a false negative against correct work for a false positive that hands the 10.11 gaming class a second entrance. Keep to the report file, fd 3, or unique markers.
+
+The same review found `python3` reaching the image only as a transitive dependency of `asciinema`,
+behind an `|| true`. Rebuilt without that line, the image is green, `test.sh` dies at line 48 with
+exit 127 and no `report.json`. Section 10.7 says not to strip `; exit 0` as pure hygiene; this is the
+case where the swallowed install is load-bearing and the fix is the listed row. Both are now defects
+7 and 8 in `learning/stock-bundle-defect-baseline.md`.
+
+
+### 10.13 A graded test must not reach the deliverable by its file path (docs criterion)
+
+Added 2026-08-11 from the cista 172 peer review.
+
+`docs/guidelines.md:149-159`, the arbitrary naming problem, lists a **"new module/file name"** among
+the names a test may only require when they are already in the base codebase, follow a standard
+convention, or are stated in the instruction. The place that rule gets broken is not an assertion, so
+neither the bipartite instruction-to-tests mapping nor pre-upload item 10 can see it. It is the
+`#include`, `import` or `use` at the top of the graded test file, naming a path `golden.patch`
+**creates**.
+
+Measured: a complete, correct cista solution whose new header sat at `include/cista/static_type_hash.h`
+instead of `include/cista/type_hash/static_type_hash.h` scored **reward 0, 4 of 21**, because the
+compile died and every id in that translation unit reported missing. Deleting the one direct include
+returned **21 of 21 for both placements**, since the public umbrella header the instruction already
+requires the agent to wire up pulls the new header in anyway.
+
+- **Reach the deliverable through a public entry point the instruction names**, never through its
+  location. Same move as the non-derivable-symbol rule, one level up
+- **The probe is three steps.** Apply `golden.patch`, move every file it creates somewhere else the
+  instruction also permits and repoint whatever the solution itself imports it from, re-run. The
+  reward must not move
+- **The oracle can never reproduce it**, because golden puts the file exactly where the test expects.
+  A green Oracle Check says nothing here, and the difficulty run reports it as a low pass rate rather
+  than as a harness problem
+- **Do not fix it by writing the path into `instruction.md`.** That satisfies derivability and buys a
+  prescriptiveness finding, which is the trade `learning/prescriptiveness-check.md` warns about from
+  the other side. Note that `docs/guidelines.md:159` gives the **opposite** remedy for the symbol
+  case, "The instruction never specified that name -> add it in your rewrite". Repointing the test
+  instead is this workspace's position, established on LEDGER **L24**, and it is why this section is
+  a criterion rather than a rule: `docs/` states the property, the probe and this remedy are ours
+- **A path can be derivable without being a literal.** kvdex 245 has six graded imports of paths its
+  golden creates and states none of them by name, but `instruction.md:23` gives the layout as a rule
+  ("each of the three encoders lives in its own directory with a `mod.ts` barrel"), which composes to
+  the path under `docs/guidelines.md:157`. So a literal grep is a first pass, and the move-the-file
+  probe is the verdict
+
+**Deleting an `#include` from `tests.patch` by hand means decrementing its hunk header in the same
+edit.** On cista, `@@ -0,0 +1,195 @@` becomes `@@ -0,0 +1,194 @@`. Skip it and `git apply` returns
+`corrupt patch`, `patch(1)` returns `malformed patch`, and both apply routes in `test.sh` fail into
+`infrastructure_error: tests.patch did not apply`, which costs a whole round of invalid trials.
+Re-run `git apply --check` after any hand edit, or regenerate the patch instead.
+
+Full write-up and the pytest, cargo, deno and JUnit equivalents in
+`learning/graded-tests-that-import-the-deliverable.md`.

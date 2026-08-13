@@ -79,3 +79,42 @@ shipped seven guards running the agent's own copies.
 **Go keeps tests beside the source, so the restore payload is not one directory.** There is no
 `src/test` root to derive from. Build the payload from `git ls-files | grep '_test\.go$'` and
 derive the wipe list from the archive itself, per LEDGER L18.
+
+## 3. Send gate 7 goes red after any git command in `work/`, and the content is fine
+
+Added 2026-08-11 from firefly 1123, round 4.
+
+Step 7 condition 7 is written as a mechanical test: `find tasks/<name>/work -newer
+tasks/<name>/upload/<name>.zip` must print nothing, and anything it prints means an edit landed
+after the battery, voiding both the zip and the battery. That reading is right for an edit and
+wrong for the most common way the check fires.
+
+`git status --porcelain`, `git fsck` and `git diff` all **write** `.git/index` even when they
+change nothing, so running any of them inside `work/environment/repo` as a verification step
+moves the mtime of `.git` and turns gate 7 red immediately. The gate then reports a voided
+battery caused by the act of checking the battery.
+
+Measured on the round-4 bundle. Gate 7 was green, one `git -C work/environment/repo status
+--porcelain` was run to confirm the shipped tree was clean, and gate 7 went red with exactly one
+path listed:
+
+```
+$ find work -newer upload/<name>.zip
+environment/repo/.git
+```
+
+**Disambiguate on content, never on mtime.** The gate exists to guarantee that the artifact
+which ships is the artifact that was measured, and that is a statement about bytes:
+
+```bash
+unzip -q "upload/<name>.zip" -d "$SCRATCH/gate7"
+diff -rq "$SCRATCH/gate7" work        # empty means the gate is satisfied in substance
+```
+
+Empty output means re-zipping and re-running the battery would produce the same bundle, so the
+red is an artifact of the check. Any file listed other than `.git`, or any `diff` output at all,
+is the real thing the gate is for and the battery is genuinely void.
+
+Cheapest habit: run the git-based Phase A checks **before** building the zip, which is the order
+Step 5 already prescribes, and confirm the tree afterwards with the `diff -rq` above rather than
+with another git command.

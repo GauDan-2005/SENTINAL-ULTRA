@@ -5,6 +5,7 @@ last_verified: 2026-08-11
 verified_by:
   - "solve.sh half: none here - imported from a sibling workspace's records"
   - 20260809_080653__sysprog21_elfuse__162
+  - 20260723_030152__mithriljs_mithril.js__2021 (test.sh, dies on `set -o pipefail` at line 9)
 evidence: "solve.sh half still second-hand. The test.sh half is now reproduced here: sh /tests/test.sh wrote NO reward file at all, and a one-line re-exec guard took the same case to reward 1.0"
 applies_to:
   languages: [any]
@@ -54,6 +55,38 @@ directly on elfuse 162, where `sh /tests/test.sh` wrote no reward file at all. T
 moved to `locally-verified` on the strength of that half only. It stays worth reading because
 the failure is invisible to every check that invokes the scripts with `bash`, and because the
 mitigation costs one line.
+
+## Second measurement, a different image and a different failure line (mithril.js 2021, 2026-08-11)
+
+elfuse dies on `RUNNER=(...)`, a bash array. mithril dies **earlier and on a different construct**,
+so the guard matters for a reason that is not specific to arrays. `node:20-slim` is Debian bookworm
+and `/bin/sh` is dash. On a fully green oracle tree:
+
+```
+sh /tests/test.sh        exit=2
+stderr: /tests/test.sh: 9: set: Illegal option -o pipefail
+/logs/verifier           No such file or directory
+reward.txt               NO REWARD FILE
+```
+
+`test.sh:9` is `set -uo pipefail` and it sits **before** the `trap write_zero_reward_if_missing EXIT`
+on line 25. Same outcome as elfuse, missing verifier output rather than reward 0, reached sixteen
+lines sooner. The one-line guard fixes it completely:
+
+```
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+sh /tests/test.sh WITH GUARD   exit=0   reward=1   15 of 15
+```
+
+`solution/solve.sh` on that bundle is clean under dash, so the exposure was `test.sh` alone.
+
+**The compounding fact, which is why this belongs on the reviewer run list.** mithril ships both
+scripts at mode **0644**, so the harness cannot exec them by shebang and has to hand them to an
+interpreter, and `sh` is one of the two candidates. The script-mode finding and the dash finding had
+been filed as separate notes in the same review, neither citing the other. They are one finding.
+`docs/guidelines.md:323` names `bash/sh mismatch` under the verifier-output-not-found row, and
+`:325` covers bad shebang and non-executable scripts in the same table.
+
 
 ## The symptom
 

@@ -28,6 +28,7 @@ SENTINAL-ULTRA/                      # Workspace root (WSL: Ubuntu-22.04, ext4)
       10-solution-patch.md           # Section 9
       11-verifier-hardening.md       # Section 10
       12-common-mistakes.md          # Section 11
+      13-reviewer-path.md            # Section 12 - the peer-review path, added 2026-08-11
     skills/                          # One SKILL.md per .mdc above - keep every pair in sync
       sentinel-difficulty-scope/SKILL.md   # Same rules - Claude Code copy, keep in sync
       sentinel-task-check/SKILL.md
@@ -114,6 +115,18 @@ SENTINAL-ULTRA/                      # Workspace root (WSL: Ubuntu-22.04, ext4)
         <Original Directory Name>.zip    # The bundle you re-upload
       answers/
         submission_answer.txt        # Form answers (Step 9)
+  review_tasks/                      # ONE FOLDER PER REVIEW - the peer-review path, Section 12.
+                                     # Gitignored the same way tasks/ is. Added 2026-08-11, when
+                                     # review stopped being out of scope
+    <Original Directory Name>/
+      task.md                        # The evidence record behind the answer
+      download/
+        <submission_id>_submission.zip
+        original/                    # Pristine extract, NEVER edited, no commands run in it
+      work/                          # Where git and patch commands run. A reviewer does NOT edit
+      answers/
+        review_answer.txt            # The Section 6 Path D template
+                                     # There is no upload/ - a reviewer ships no bundle
 ```
 
 Re-upload zip unpacks directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, `tests/` - no `runs/`, no `task/` wrapper.

@@ -595,6 +595,27 @@ commit. Do not use the root commit either, since a real checkout has full histor
 COMMITTED, not just dirty.** An unstaged-only simulation proves nothing. Agents stage and
 commit as a matter of course, and on this task all 16 trials did.
 
+**Correction 2026-08-11 (expressa 132): the asymmetry runs both ways, so test all three states.**
+The rule above was written from kvdex, where dirty passed and staged broke. expressa 132 measures
+the exact reverse, with the correct solution applied and the base reset between rows:
+
+| Agent edit to a file `tests.patch` also touches | reward | outcome |
+|---|---|---|
+| unstaged | 0.0 | **INVALID TRIAL**, `tests.patch did not apply` |
+| staged | 1.0 | 21/21 pass |
+| staged and committed | 1.0 | 21/21 pass |
+
+The mechanism is that `/app` is a real git repository at verify time there (`COPY repo/ .` with no
+`.dockerignore`), so `git apply --3way` has an index to merge against. Staged, the index carries the
+agent's content and the three-way merge resolves. Unstaged, the index still holds the base blob while
+the worktree has moved, and both the plain apply and `--3way` fail.
+
+Neither direction is the rule. **An agent edit has three states and any one of them can be the
+failing one, so a simulation testing fewer than three is not evidence.** Weight unstaged most
+heavily anyway, because this task's own artifact showed no agent staging or committing (line 269
+below) - which is what makes expressa's failing state the likely one in practice. Full case in
+`learning/instruction-promises-the-suite-keeps-passing.md`.
+
 ### Confirmed on a second task, and one gap in the snippet above
 
 Source: `20260728_153118__jqno_equalsverifier__1166`, 2026-08-02. Java, Maven, multi-module,
