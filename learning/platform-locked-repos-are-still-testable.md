@@ -213,11 +213,13 @@ Second half of the rule, for the verdict. **Not Fixable is a closed list of two*
 (`docs/guidelines.md:66`), PR scope needing reduction and the environment issues at
 `guidelines.md:330-334`. "The verifier host cannot execute the software under test" is on
 neither list, and `docs/` is silent on cross-platform, macOS-only and hardware-dependent repos. Measured across
-the seven policy tabs: `Darwin`, `Apple`, `aarch64`, `hypervisor` and `cross-platform` do not
+the eight policy tabs: `Darwin`, `Apple`, `aarch64`, `hypervisor` and `cross-platform` do not
 appear at all, and `macOS` appears six times, every one of them zip-command boilerplate about
 `__MACOSX/` and `.DS_Store` (`docs/guidelines.md:381`, `docs/tasking-guide.md:83`, `:93`, `:99`,
-`:102`, `:104`). So reaching Not Fixable that way is an **inference**, and on this task the
-inference was also false.
+`:102`, `:104`). Re-measured 2026-08-14 against the 2026-08-13 export, which added the Reviewer
+Rubric tab: all six citations still resolve to the same lines, the counts are unchanged, and the
+new tab carries none of the five terms. So reaching Not Fixable that way is an **inference**, and
+on this task the inference was also false.
 
 ## What acceptance validated, and what it did not
 

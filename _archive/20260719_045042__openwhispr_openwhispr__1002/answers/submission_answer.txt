@@ -1,0 +1,140 @@
+Submitter Answers - Fixable
+Task: 20260719_045042__openwhispr_openwhispr__1002
+
+What is your analysis of the Sentinel task? (both occurrences)
+Fixable
+[Internal] Validity: Fixable
+
+Select where the task had issues (check all that apply):
+- [x] Instructions
+- [x] Tests
+- [x] Oracle Solution
+- [x] Environment/Dockerfile
+
+What issues did you find with the task?
+- [x] Every requirement in the instructions is not properly tested
+- [x] All test requirements are not properly specified in the instructions
+- [ ] The instructions appear LLM generated
+- [x] The instructions are overly-prescriptive
+- [x] The task leaks solution information
+- [ ] The oracle does not implement the solution following the instructions
+- [ ] Less than 10 fail-to-pass tests in the test suite
+
+Issue details:
+
+1) Every requirement in the instructions is not properly tested - Three things the instruction asked for had no test behind them at all. The instruction said the provider slug yields the IPC channels get-<base>-key and save-<base>-key and named the IPC layer as one of the four places that duplicate the plumbing, but nothing in the graded suite ever loaded src/helpers/ipcHandlers.js. I measured this by building the manifest, the generated accessors and the preload bridges and leaving the main process alone. That scores 12 of 12 and reward 1.0, so a solution where every key saves and nothing loads passes the task. The instruction also said the sandboxed preload cannot require a local module, and nothing enforced that either. And the test named "BYOK env vars are included in the EnvironmentManager secret set" did not check that. Its body only repeated the save-and-clear assertions that the round-trip test above it already made. Separately the suite was padded rather than broad. The source PR ships four tests and the bundle reached twelve by restating them. Test 12 repeated test 1's presence check, test 9 repeated part of test 1's uniqueness check, test 7 repeated test 2, and test 8 asserted a success object that the base _saveKey returns unconditionally whatever the change does. Test 12's own title claimed each entry carries no fields beyond the five and its body never checked that. Finally pass_to_pass was empty and allow_extra_failures was true, in a repo that ships 213 top-level tests across 28 files, so nothing outside the new feature could affect the reward.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I rewrote the graded suite as 18 tests that each grade one contract, and I proved each one by breaking exactly what it covers and watching the reward drop. The IPC layer is now graded by loading the real src/helpers/ipcHandlers.js with a stand-in electron whose ipcMain records channels, calling the real setupHandlers, then asserting both channels exist for every manifest entry and that saving through a channel is readable through the manager. Stubbing the channel so it writes to a private store drops the reward to 0.0 and fails "sentinel a save channel round-trips through the environment manager". The sandbox rule is now graded by loading preload.js with local requires blocked, which is what the sandbox does, so a preload that imports the manifest throws instead of quietly passing. The secret-set requirement is graded through saveAllKeysToEnvFile, which only writes an environment variable into the app's env file when that variable is one the manager tracks. Removing the manifest spread from the manager's secret list drops the reward to 0.0 and fails "sentinel manifest environment variables are persisted with the manager's other secrets". pass_to_pass went from 0 to 211, being every existing test that passes at base across all 28 files, and allow_extra_failures is now false because the run executes exactly the graded set. Round 1 found a fourth requirement in the same state and it was mine. The whole point of the change is that adding a provider becomes a one entry edit, and my round 0 suite only checked that the eight entries in the manifest work. A solution that declares the manifest and then hand writes the eight accessors and the eight channel registrations alongside it passed all 13 tests. I built that solution to be sure rather than reasoning about it, and it scored 13 of 13. Two new tests close it by adding a ninth provider to the manifest at run time, reloading the secret manager and the IPC layer against it, and asserting that provider now has working accessors and both channels without any other edit. The same hand written solution now fails exactly those two and nothing else.
+
+2) All test requirements are not properly specified in the instructions - Two of the twelve graded tests called env.saveOpenrouterKey and env.getOpenrouterKey by exact spelling. Neither name exists at the base commit and neither appeared anywhere in instruction.md. The instruction only said naming should be consistent with the seven providers already in the codebase. Base has getOpenAIKey with the acronym capitalised, so getOpenRouterKey is at least as natural a reading as getOpenrouterKey, and an agent that picks it fails two tests for a naming coin flip. The preload test had a worse version of the same problem. It read preload.js as text with fs.readFileSync and matched a regex that required double-quoted values, the property order base then get then save, and no trailing comma inside the object. A correct preload written with single quotes, or with the properties in another order, or built from a loop, fails a test it has no way to anticipate. To make that regex fair the instruction had to publish the exact declaration form BYOK_KEY_BRIDGES = [ ... ]; which is a test detail rather than a requirement.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The graded tests now read the accessor names out of the manifest instead of hardcoding them, so the agent declares the names and the suite follows. No openrouter method name appears in the instruction or in any assertion. The only names the tests still pin are the seven that exist at the base commit, which is the preserved-names requirement and is derivable by reading the repo. The preload test no longer reads source text. It loads preload.js, captures what the context bridge exposes, calls each exposed accessor and asserts which channel it invoked. That grades the behaviour the requirement is actually about, and it is stronger than the regex was, because it catches a bridge pointing at the wrong channel. Pointing a bridge at store-<base>-key instead of save-<base>-key drops the reward to 0.0.
+
+3) The instructions are overly-prescriptive - The instruction handed over the file layout of the change before the agent had read anything. It named src/helpers/environment.js, src/helpers/ipcHandlers.js and preload.js and described what each one holds today, which is the investigation step rather than the requirement. It closed with the line "The test files remain unchanged.", which is verifier mechanics and belongs in the harness rather than in a ticket. Its longest paragraph ran 1112 characters and carried the context, the failure mode and four field definitions in one block.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I rewrote it as eleven short paragraphs whose longest is 602 characters. It now describes the four places by what they do rather than by where they are, so the agent still knows a renderer bridge and an IPC layer are involved without being handed the paths. The verifier line is gone, and the harness restores the test tree itself so the line is no longer needed. The one path still stated is src/config/secretKeys.js, which is the module the agent has to create and the shared import path both processes and the graded tests use, so it is a contract rather than navigation. I also added the two requirements that had been left implicit, that the main process registers the channels and that the existing names, environment variables and channels survive.
+
+4) The task leaks solution information - The shipped environment/repo/.git held 69 unreachable objects, and two of them are git stash commits of the solved tree. Reading them takes two commands that any agent can run.
+
+    git fsck --unreachable --no-progress
+    git cat-file -p 09ea89d78c0b343cb5785a200c65ace737f68355
+
+That prints the finished preload.js in full, including the line { base: "openrouter", get: "getOpenrouterKey", save: "saveOpenrouterKey" }, which is the exact tuple the shipped graded regex was matching on. Blob e4a23f9aee39644dbd85e6b1662286aca27b5499 prints the finished src/helpers/environment.js with the manifest spread and the accessor generation loop, and blob cd688b4f0dbfc7e3c228767819a622dca9e3b998 prints the finished src/helpers/ipcHandlers.js. The stash tree also carries the patched test/helpers/snippetsDatabase.test.js. Every other git check on the bundle passed while this was sitting there. There is no remote, git rev-list --all --not HEAD is empty, and the working tree looks clean apart from four mode bits. Only git fsck reports it. On a smaller note the instruction published the literal array declaration the preload test matched against, which handed over a piece of the answer for no benefit.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I cleared the stash, expired the reflog including unreachable entries, ran gc with prune=now, and removed logs, ORIG_HEAD, AUTO_MERGE and refs/remotes. git fsck --unreachable now prints nothing and .git contains exactly config, description, HEAD, hooks, index, info, objects, packed-refs and refs. Because gc packs the refs and deletes the loose ref files, I write refs/heads/main back afterwards so .git/refs is never an empty directory that an extractor can drop. That matters here because the platform's own download of this task carries zero directory entries. The instruction no longer names the array or its declaration form, since the test that needed it is gone.
+
+Additional findings outside the listed categories:
+
+5) The verifier awarded reward 1.0 on a failing run - tests/test.sh recorded raw_exit_code and its success expression never read it, so any nonzero exit from the test command still graded as success. I proved it rather than reading it. Pulling the embedded grader out of the shipped test.sh and running it over one fully passing log gives reward 1 at raw exit 0 and reward 1 at raw exit 1. Fixable. The gate now sits inside the grader's success expression rather than in an early bailout, so a failing agent is still scored as a failed trial instead of an invalid one. The same log now gives reward 1 at raw exit 0 and reward 0 at raw exit 1. I measured the runner's bare exit on a fully green tree first and it is 0, so the gate cannot fail the oracle. I also changed the runner's stderr from truncating to appending, because the old form wiped the restore and patch messages written moments earlier, and emitted set -e into the generated runner.
+
+6) The verifier had no test-tree restore, and the graded file carried the name an agent would pick - test.sh went straight from git apply to a three-way apply to patch --forward. The patch created test/helpers/secretKeys.test.js, which is the obvious file name in the obvious directory for a task whose deliverable is src/config/secretKeys.js, and it also edited the pre-existing test/helpers/snippetsDatabase.test.js. An agent that writes either file makes the patch refuse, and that is reported as a harness failure rather than a wrong answer, which makes the whole difficulty run untrustworthy. Fixable. The graded file is renamed to test/helpers/sentinelByokManifest.test.js, which no agent would choose, and test.sh now restores the whole test tree from a gzipped tarball of the base tree embedded in itself as base64, then deletes the paths the patch creates. It uses no git at all, because the workspace the verifier runs in is not a git repository. Measured on nine hostile cases, all at reward 1.0 and 229 of 229. Those include an agent that writes its own file at the graded path, commits it and deletes .git, an agent that breaks a pre-existing test and commits, a directory planted at the graded path, no .git at all, and the whole test directory deleted.
+
+7) The oracle script undid its own work on a second run - solution/solve.sh ended with git apply -p1 -R as its fallback, so once the tree was already patched both forward attempts failed and the fallback removed the solution while exiting 0. The platform runs the oracle three times. Fixable. It is now forward-only, with a reverse check that exits early when the patch is already applied, a plain apply, a three-way retry and a loud failure. Three invocations in one container now report "already applied; nothing to do" on runs two and three and the changed-file count holds at 41.
+
+8) The golden patch did not match the source PR in either direction - It carried src/components/notes/PersonalNotesView.tsx and src/stores/actionProcessingStore.ts, which gate note title generation on an opt-in flag and have nothing to do with secret plumbing. Neither file is in PR 1002. It also omitted two files the PR does carry, .github/workflows/tests.yml and docs/network-allowlist.md, and the second of those is the OpenRouter host being added to the allowlist, which is part of onboarding the provider. Fixable. I dropped the two unrelated files and added the two the PR carries, taking both hunks from the PR rather than regenerating them. The patch now covers 40 of 40 non-test files the PR touches with nothing extra. The two test files the PR changes stay out of the golden patch, where they belong.
+
+9) Both shipped scripts were not executable - tests/test.sh and solution/solve.sh were both 0644. That fails at run time rather than at build time so nothing local catches it. Fixable, both are now 0755 and I checked the mode inside the built zip rather than only in the working copy.
+
+10) Git hygiene beyond the leaked objects - The bundle shipped a reflog at .git/logs/HEAD, which fails the platform's own no-reflog check on its own, plus ORIG_HEAD, AUTO_MERGE, a broken refs/remotes/origin/HEAD pointing at a branch that does not exist, and a working tree dirty on four tracked files that had lost their executable bit. Fixable, all cleared, and git status --porcelain now prints nothing.
+
+11) Gaps in task.toml - [environment] os was missing, [metadata] difficulty_explanation was missing, and execution.timeout_sec was 1800 against a verifier timeout of 300, so the inner limit could never fire. The agent timeout was 1800 against a ceiling of 7200 on a repo whose image install compiles native modules. Fixable. os is now linux, difficulty_explanation describes what makes the change hard, the verifier timeout is 900 with an execution timeout of 600 underneath it, and the agent timeout is 7200. The oracle runs in 1.22 seconds so the headroom is large.
+
+12) The test patch widened a silent skip - It broadened the skip guard in test/helpers/snippetsDatabase.test.js so the snippets suite also skips when the native binding cannot be located. That file was in the graded command and owned no graded id, so the whole suite skipping was invisible. Fixable. That hunk is gone, the test patch no longer touches any pre-existing file, and the six snippets tests are now regression guards, so a skip makes them missing and the reward drops instead of passing quietly.
+
+13) The instruction promised more than the source pull request delivers - It opened by saying each provider's plumbing is spelled out in four places and that it should be defined exactly once, and it counted the settings store among those four. The pull request does not do that. Its settings store change never mentions the shared module. It hand writes fourteen openrouter strings and keeps one setter per provider, routed through a small local helper. So the instruction was promising an architecture the oracle does not implement, and no test could honestly enforce it. Fixable, and it took two rounds to get right. Round 1 narrowed the instruction rather than changing the oracle, which was correct as far as it went, because making the store derive from the manifest would be adding behaviour the pull request does not have. What round 1 got wrong was leaving the store ungraded on the grounds that renderer TypeScript could not be loaded by the test runner. Round 2 loads it. The shared definition covers the secret manager, the main process channels and the renderer bridge, which are the three layers it really does drive, and the settings store keeps its own setters while the manifest records the key each provider persists under. All of that is now graded. The store key has to follow the same naming the seven existing providers use, the store has to hold a value and a setter under that key, and saving through that setter has to reach the same provider's save accessor.
+
+--- Phase 2 (completed after the evals pass) ---
+
+Files Changed:
+1. instruction.md
+   Changed: rewritten in round 0 and revised again in round 1. Round 0 removed the two internal source paths and the description of where the code lives today, removed the line about test files staying unchanged, removed the literal BYOK_KEY_BRIDGES declaration form, added the main process channel registration requirement and the preserved-names requirement, and split one 1112 character paragraph into shorter ones. Round 1 stopped claiming the settings store is unified by the shared definition, because the source PR does not do that, and restated two sentences that described how to build the change as the outcome they are there for. Round 2 dropped the required ordering of the eight providers, which was arbitrary, and added the settings-store contract now that it is graded. Eleven paragraphs, longest 602 characters.
+   Why: issues 1, 2, 3, 4 and 13.
+2. environment/problem_statement.md
+   Changed: re-copied from instruction.md so the two are byte-identical.
+   Why: the copy has to track the instruction.
+3. solution/golden.patch
+   Changed: regenerated. Dropped src/components/notes/PersonalNotesView.tsx and src/stores/actionProcessingStore.ts, added .github/workflows/tests.yml and docs/network-allowlist.md from the PR.
+   Why: issue 8.
+4. solution/solve.sh
+   Changed: rewritten forward-only with an already-applied probe, a plain apply, a three-way retry and a loud failure, plus a guard that re-runs the script under bash if it is handed to sh. Mode 0755.
+   Why: issues 7 and 9.
+5. tests/tests.patch
+   Changed: regenerated as a create-only patch that adds one file, test/helpers/sentinelByokManifest.test.js, carrying 18 graded tests. The old secretKeys.test.js and the snippetsDatabase.test.js hunk are both gone. Round 1 added three tests, two that prove a provider added to the manifest works end to end with no other edit and one that pins the settings store key naming.
+   Why: issues 1, 2, 6, 12 and 13.
+6. tests/config.json
+   Changed: fail_to_pass is 18 new ids, pass_to_pass went from 0 to 211, allow_extra_failures went from true to false, execution.timeout_sec went from 1800 to 600, and the graded command now runs the new file plus all 28 pre-existing test files. Graded total 229.
+   Why: issues 1, 11 and 13.
+7. tests/test.sh
+   Changed: added a base64 payload of the base test tree that is restored before the patch is applied, added a sweep that deletes the paths the patch creates, gated the reward on raw_exit_code inside the grader, changed the runner's stderr from truncating to appending, emitted set -e into the generated runner, and added the bash re-exec guard. Mode 0755.
+   Why: issues 5, 6 and 9.
+8. task.toml
+   Changed: added [environment] os and [metadata] difficulty_explanation, raised the agent timeout to 7200 and the verifier timeout to 900 so the execution timeout of 600 sits underneath it.
+   Why: issue 11.
+
+Git metadata inside environment/repo was also cleaned, which changes no file in the tree. The stash was cleared, the reflog expired, gc run with prune=now, logs, ORIG_HEAD, AUTO_MERGE and refs/remotes removed, the four mode bits restored, and the loose refs/heads/main written back after the gc.
+
+PR additions:
+NA
+
+Post-fix confirmation (each verified after fixes):
+[x] Every requirement in the instructions is properly tested
+[x] All test requirements are properly specified in the instructions
+[x] The instructions do not sound like an LLM generated them
+[x] The instructions are not overly-prescriptive
+[x] The task does not leak solution information
+[x] The oracle implements the solution following the instructions
+[x] The PR was not modified in any way beyond what is allowed by the guidelines
+[x] More than 10 fail-to-pass tests in the test suite (counted: 18)
+
+Send to reviewer: No, not on this upload. This is the round 2 resubmission and the review gate has not seen it yet. The local battery is green, but the difficulty screen has still never run on this task, because the agentic judge gates it and has blocked twice. I will upload with the box unchecked, read the judge report and whatever the screen returns, and decide from those.
+
+What makes this task difficult?
+Writing the manifest is the easy half. The work is finding every place that has to derive from it and keeping the seven providers that already work working while an eighth is added. The plumbing is spread over a secret manager, a main process IPC layer with 381 handlers, a sandboxed renderer bridge that cannot import the manifest and so has to carry its own copy, and a settings store. Three of those are easy to spot and one is easy to miss, and missing it produces exactly the symptom the ticket describes, a key that saves and never loads. The preload is the awkward one, because the natural move is to import the shared module and that is the one thing the sandbox forbids, so the agent has to notice the constraint and then keep the duplicate in step by hand. Clearing a key is easy to get wrong as well. Saving an empty string has to remove the environment variable instead of writing an empty one, and an implementation that treats the manifest as a plain lookup table misses that without anything obvious breaking. Then there is the existing suite. 211 tests have to stay green through a refactor that deletes 60 lines of hand-written accessors and regenerates them on the prototype.
+
+Senior engineer estimate: 40+ minutes
+
+Comments for Reviewer:
+This is revision 2. The review gate blocked round 1 at the agentic judge with a coverage finding, and it named one hole. It was real and it is closed. Everything below was measured against a fresh extract of the exact zip being uploaded, in an image built from that extract. Zip sha256 5a7862675ea1d448a3c5a4dadb07482a16e1d5c01a865cab8773d460d75138ae.
+The finding was that nothing graded the settings store, so a solution that never wires OpenRouter into it would still pass. That was true. Round 1 had narrowed the instruction instead of grading the store, on the grounds that it is renderer TypeScript the test runner cannot load. That reasoning was wrong and this round fixes it rather than narrowing again. The store loads in about 150 milliseconds behind a small loader hook that does exactly what the app's bundler does, which is add the file extension node will not guess and declare the json import attribute node requires. The store's own code runs unmodified. Two new tests then grade it end to end. Every provider has to have a value and a setter under its own store key, and saving through that setter has to reach that provider's save accessor and not some other provider's.
+I checked the three ways an implementation could get this wrong and each one is caught. Leaving OpenRouter out of the store entirely fails both new tests. Pointing its setter at another provider's save accessor fails the routing test. Renaming its store key fails the key test. In all three the reward goes to 0.
+The other change this round is a subtraction. Both readers marked the instruction down for over specification, and the one item on their list that no test needed was the required ordering of the eight providers. That was arbitrary, so the instruction now says the order is up to the implementer and the test grades the set instead of the sequence. Everything else they quoted, the module path, the exported array, the five field names and the channel shape, is called by name in a graded test, so cutting it would trade an advisory score for tests an agent cannot satisfy.
+Battery on this zip. NOP gives reward 0 with a nonzero raw exit and no infrastructure error, and it is zero for the right reason. 0 of the 18 graded tests pass at base and 211 of 211 regression guards execute and pass in the same run, so the run reached the test phase rather than aborting. The oracle passes 3 of 3 at reward 1.0 with 229 of 229 required tests and no unexpected failures, invoking solve.sh three times in one container, and runs two and three report the patch is already applied. Oracle runtime 2.58 seconds against a 900 second verifier timeout. Seventeen hostile deletes each drop the reward to 0.0 and each names the test that caught it. Nine agent and environment cases hold at reward 1.0 and 229 of 229, including an agent that writes its own file at the graded path then commits and deletes .git, a directory planted at the graded path, the whole test directory deleted, both entrypoints run under sh, and a shifted timezone and locale.
+One thing I want to flag because it is mine and it is worth knowing. The round 1 report said a solution that declares the manifest but hand codes the accessors and channels alongside it would pass, and it was right. I wrote that solution and it scored 13 of 13 against the round 1 suite. The two tests added for it add a ninth provider to the manifest at run time and require it to work end to end with no other edit, and the same hand coded solution now fails exactly those two.
+The difficulty metadata is unchanged and still marked down by both readers, for the medium against hard clash and for pass at k recorded as 0 of 3 rather than a full attempt count. Those are the arrival values from the platform's own hardening run, not numbers I produced, and the guidelines tell me not to hand edit difficulty or pass rate fields to satisfy a check. The submitter has confirmed they should stay as they are. They are also stale in a way worth saying out loud, because that 0 of 3 was measured on the bundle as it arrived, where two graded tests demanded an accessor name the instruction never gave and a third matched renderer source with a formatting sensitive regex, so no agent could have passed it. If you want them aligned, say so and I will make the change and attribute it to your note. Separately the metadata block shown in the platform disagrees with task.toml on two network fields, agent allowed_hosts and environment network_mode. The file keeps api.portkey.ai and a public build network, which is what the guidelines require and what lets npm ci run at build time.
+Unchanged from earlier rounds and still worth knowing. The test patch does not touch the snippets test file, because the pull request widens a skip guard there and a silent skip would hide six regression guards. Those six are pass to pass instead, so a skip drops the reward. The Dockerfile still ends with a CMD that runs npm test, which has no matching script at the base commit; Harbor overrides the CMD and the pull request's own package.json change adds the script, so nothing downstream breaks, and repairing it is not on the list of environment fixes I am allowed to make.
+
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+85 minutes
+
+How long did it take you to complete the initial task rewrite only?
+120 minutes
+
+How long did it take you to complete the additional questions on the form?
+15 minutes
+
+Total submission time: 220 minutes
+
+How long did it take you to complete all revisions?
+120 minutes

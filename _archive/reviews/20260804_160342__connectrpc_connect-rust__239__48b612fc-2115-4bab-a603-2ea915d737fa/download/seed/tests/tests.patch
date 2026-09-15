@@ -1,0 +1,445 @@
+diff --git a/connectrpc-build/src/lib.rs b/connectrpc-build/src/lib.rs
+index fe4b2d6..a3254f0 100644
+--- a/connectrpc-build/src/lib.rs
++++ b/connectrpc-build/src/lib.rs
+@@ -1392,4 +1392,123 @@ service NoteService {
+         write_if_changed(&path, b"new").unwrap();
+         assert_eq!(std::fs::read(&path).unwrap(), b"new");
+     }
++
++    /// Build a descriptor set that overruns buffa's default element-memory
++    /// budget. The budget charges `size_of::<FileDescriptorProto>()` per
++    /// element rather than encoded bytes, so many tiny files trip it while
++    /// staying small on the wire — which is exactly why descriptor sets hit it
++    /// at a few megabytes. Derived from the live size, because a literal count
++    /// stops overrunning the budget the moment that struct shrinks — see
++    /// `connectrpc::test_budget` for the full rationale and the buffa 0.9.1
++    /// change that proved it.
++    fn over_default_budget_set() -> Vec<u8> {
++        use buffa_codegen::generated::descriptor::FileDescriptorProto;
++
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let n = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..n)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("f{i}.proto")),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        buffa::Message::encode_to_vec(&set)
++    }
++
++    /// The regression this crate's decode path exists to prevent: a build's
++    /// own descriptors must decode even when they exceed the bound sized for
++    /// untrusted wire input.
++    ///
++    /// The first assertion is the control. Without it the second would pass
++    /// whether or not the tooling options do anything at all.
++    #[test]
++    fn the_tooling_options_decode_a_set_the_untrusted_default_rejects() {
++        let bytes = over_default_budget_set();
++
++        assert!(
++            matches!(
++                FileDescriptorSet::decode_from_slice(&bytes),
++                Err(buffa::DecodeError::ElementMemoryLimitExceeded)
++            ),
++            "fixture no longer exceeds the default budget ({} encoded bytes); \
++             it must, or the assertion below proves nothing",
++            bytes.len()
++        );
++
++        let opts = buffa_codegen::tooling_decode_options().expect("no override set");
++        opts.decode_from_slice::<FileDescriptorSet>(&bytes)
++            .expect("a build's own descriptors must decode under the tooling budget");
++    }
++
++    /// An over-budget failure has to correct buffa's hint, which offers a
++    /// plugin option that cannot be set from a build script.
++    #[test]
++    fn an_over_budget_decode_names_only_the_remedy_a_build_script_has() {
++        let rendered = descriptor_decode_error(
++            &buffa::DecodeError::ElementMemoryLimitExceeded,
++            buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++        )
++        .to_string();
++
++        assert!(
++            rendered.contains(buffa_codegen::ELEMENT_MEMORY_LIMIT_ENV),
++            "must name the variable that works here: {rendered}"
++        );
++        assert!(
++            rendered.contains("build script"),
++            "must say why the plugin option does not apply: {rendered}"
++        );
++        assert!(
++            rendered.contains("connectrpc/connect-rust"),
++            "must point at our guide, not buffa's: {rendered}"
++        );
++    }
++
++    /// A malformed set must not be dressed up as a budget problem — that
++    /// would send someone raising a limit that cannot help.
++    #[test]
++    fn a_malformed_set_is_not_reported_as_a_budget_problem() {
++        let rendered = descriptor_decode_error(
++            &buffa::DecodeError::UnexpectedEof,
++            buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++        )
++        .to_string();
++
++        assert!(
++            !rendered.contains(buffa_codegen::ELEMENT_MEMORY_LIMIT_ENV),
++            "a truncated set must not point at the budget: {rendered}"
++        );
++    }
++
++    /// The tooling budget must be higher than the wire-input default so that
++    /// a build whose schema exceeds the default can actually decode.  A
++    /// tooling budget equal to or below the default provides no remedy.
++    #[test]
++    fn tooling_budget_exceeds_the_untrusted_default() {
++        let opts = buffa_codegen::tooling_decode_options().expect("no override set");
++        assert!(
++            opts.element_memory_limit() > buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++            "tooling budget ({}) must exceed the wire-input default ({})",
++            opts.element_memory_limit(),
++            buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++        );
++    }
++
++    /// An over-budget error must point at documentation, not leave the
++    /// operator guessing where to find the workaround.
++    #[test]
++    fn an_over_budget_build_error_contains_guide_url() {
++        let rendered = descriptor_decode_error(
++            &buffa::DecodeError::ElementMemoryLimitExceeded,
++            buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++        )
++        .to_string();
++        assert!(
++            rendered.contains("https://github.com"),
++            "must link to documentation: {rendered}"
++        );
++    }
+ }
+diff --git a/connectrpc-codegen/src/codegen.rs b/connectrpc-codegen/src/codegen.rs
+index 01f9c57..8c50e8a 100644
+--- a/connectrpc-codegen/src/codegen.rs
++++ b/connectrpc-codegen/src/codegen.rs
+@@ -4640,6 +4640,47 @@ mod tests {
+         );
+     }
+ 
++    /// `element_memory_limit` is read off the wire before the request is
++    /// decoded, so by the time options are parsed it is a leftover. Rejecting
++    /// it would fail the build of the only person who ever sets it — someone
++    /// whose schema was too large to decode without it.
++    #[test]
++    fn plugin_accepts_the_element_memory_limit_option_it_consumed_pre_decode() {
++        for value in ["unlimited", "max", "2147483648"] {
++            let request = CodeGeneratorRequest {
++                parameter: Some(format!(
++                    "buffa_module=crate::proto,{}={value}",
++                    buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT
++                )),
++                file_to_generate: vec![],
++                proto_file: vec![],
++                ..Default::default()
++            };
++            generate(&request).unwrap_or_else(|e| {
++                panic!("element_memory_limit={value} must not reach the unknown-option arm: {e}")
++            });
++        }
++    }
++
++    /// The unknown-option error must enumerate `element_memory_limit=` in
++    /// its supported-options list so that someone who accidentally passes
++    /// it as a plain option — rather than via `decode_request` — gets a
++    /// useful diagnostic rather than a terse rejection.
++    #[test]
++    fn unknown_option_error_enumerates_the_element_memory_limit_option() {
++        let request = CodeGeneratorRequest {
++            parameter: Some("no_such_option=true".to_string()),
++            file_to_generate: vec![],
++            proto_file: vec![],
++            ..Default::default()
++        };
++        let err = generate(&request).unwrap_err().to_string();
++        assert!(
++            err.contains("element_memory_limit="),
++            "error must enumerate element_memory_limit= in the supported list: {err}"
++        );
++    }
++
+     #[test]
+     fn plugin_file_per_package_collapses_output() {
+         // End-to-end through the protoc entry point: one `<dotted.pkg>.rs`
+diff --git a/connectrpc-reflection/src/reflector.rs b/connectrpc-reflection/src/reflector.rs
+index 1816367..418f3ac 100644
+--- a/connectrpc-reflection/src/reflector.rs
++++ b/connectrpc-reflection/src/reflector.rs
+@@ -819,6 +819,126 @@ mod tests {
+         assert!(matches!(err, ReflectionError::SharedPool));
+     }
+ 
++    /// The runtime path deliberately stays bounded, so an oversized set must
++    /// reach the caller as `ElementBudget` — the variant that says the bytes
++    /// are fine — and not as a decode failure that reads like corruption.
++    #[test]
++    fn an_oversized_set_reports_the_element_budget_not_a_decode_failure() {
++        // Charged per element on struct size, so many small files exceed the
++        // budget while staying small on the wire. The count is derived rather
++        // than written as a literal: the charge tracks
++        // `size_of::<FileDescriptorProto>()`, so a literal silently stops
++        // exceeding the budget whenever that struct shrinks, and the test
++        // would then assert a rejection that no longer happens. Same
++        // derivation as `connectrpc::test_budget` and connectrpc-build's
++        // `over_default_budget_set`, repeated because a `#[cfg(test)]` helper
++        // cannot cross a crate boundary; that module carries the full
++        // rationale.
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let n = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..n)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("f{i}.proto")),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        let bytes = buffa::Message::encode_to_vec(&set);
++
++        let err = Reflector::from_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "expected ElementBudget, got {err:?}"
++        );
++        // The message has to say the schema is large, not that the bytes are
++        // bad — that distinction is the whole reason the variant exists.
++        let rendered = err.to_string();
++        assert!(
++            rendered.contains("well-formed"),
++            "message should absolve the bytes, got {rendered:?}"
++        );
++    }
++
++    /// Complement: an over-budget set must not be reported as a
++    /// `Decode` failure — that variant means the bytes are bad, but
++    /// these bytes are well-formed.
++    #[test]
++    fn element_budget_error_is_not_a_decode_failure() {
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let n = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..n)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("f{i}.proto")),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        let bytes = buffa::Message::encode_to_vec(&set);
++        let err = Reflector::from_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            !matches!(err, ReflectionError::Decode(_)),
++            "an over-budget set must not map to Decode(_): {err:?}"
++        );
++    }
++
++    /// The explicit `From<buffa::DecodeError>` impl routes
++    /// `ElementMemoryLimitExceeded` to `ElementBudget` and not to
++    /// `Decode`.  Testing this directly guards against a future
++    /// `#[from]` re-addition that would silently undo the routing.
++    #[test]
++    fn element_memory_limit_exceeded_converts_to_element_budget() {
++        let err: ReflectionError = buffa::DecodeError::ElementMemoryLimitExceeded.into();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "ElementMemoryLimitExceeded must convert to ElementBudget via From: {err:?}"
++        );
++    }
++
++    /// Complement: every `DecodeError` variant that is *not*
++    /// `ElementMemoryLimitExceeded` must convert to `Decode(_)`, not
++    /// `ElementBudget`.  This pins the other arm of the routing and
++    /// ensures the From impl is not inadvertently collapsed to a
++    /// wildcard that sends everything to `ElementBudget`.
++    #[test]
++    fn non_budget_decode_errors_become_decode_variant() {
++        let err: ReflectionError = buffa::DecodeError::UnexpectedEof.into();
++        assert!(
++            matches!(err, ReflectionError::Decode(_)),
++            "DecodeError::UnexpectedEof must convert to Decode(_) via From, not ElementBudget: {err:?}"
++        );
++    }
++
++    /// `add_descriptor_set_bytes` is a second decode path in the reflector.
++    /// The explicit `From<buffa::DecodeError>` impl governs both paths via
++    /// `?`, so an over-budget set reaching that method must also yield
++    /// `ElementBudget` rather than `Decode`.
++    #[test]
++    fn add_bytes_of_oversized_set_returns_element_budget() {
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let n = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..n)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("g{i}.proto")),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        let bytes = buffa::Message::encode_to_vec(&set);
++
++        let mut reflector = Reflector::from_descriptor_set_bytes(&[]).unwrap();
++        let err = reflector.add_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "add_descriptor_set_bytes must return ElementBudget for an over-budget set, got {err:?}"
++        );
++    }
++
+     #[test]
+     fn construction_errors() {
+         // Truncated length prefix.
+diff --git a/connectrpc/src/handler.rs b/connectrpc/src/handler.rs
+index 2d3d506..22df4bb 100644
+--- a/connectrpc/src/handler.rs
++++ b/connectrpc/src/handler.rs
+@@ -1224,6 +1224,7 @@ where
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use crate::test_budget::elements_over_default_budget;
+     use buffa_types::google::protobuf::__buffa::view::StringValueView;
+     use buffa_types::google::protobuf::StringValue;
+ 
+@@ -1463,15 +1464,18 @@ mod tests {
+     }
+ 
+     /// Owned-message handlers decode through `Payload`/`decode_request`
+-    /// rather than the view helpers, and that path silently used buffa's
+-    /// defaults until the limits were threaded onto `Payload` too. Both
++    /// rather than the view helpers, so they read their budget from the
++    /// `DecodeOptions` carried on `Payload`. That is easy to leave
++    /// unattached, which silently falls back to buffa's defaults, so both
+     /// owned entry points are pinned here.
+     #[test]
+     fn owned_message_decoding_honours_the_configured_limit() {
+         use buffa_types::google::protobuf::{ListValue, Value};
+ 
++        // Decoded as owned `Value`s, so the owned footprint sets the count.
++        let n = elements_over_default_budget::<Value>();
+         let list = ListValue {
+-            values: (0..800_000).map(|_| Value::default()).collect(),
++            values: (0..n).map(|_| Value::default()).collect(),
+             ..Default::default()
+         };
+         let encoded = Bytes::from(buffa::Message::encode_to_vec(&list));
+@@ -1490,7 +1494,7 @@ mod tests {
+         let decoded: ListValue =
+             decode_request(&encoded, CodecFormat::Proto, &raised.decode_options())
+                 .expect("raised budget must admit");
+-        assert_eq!(decoded.values.len(), 800_000);
++        assert_eq!(decoded.values.len(), n);
+ 
+         // `Payload::take_message`, used by the owned-message unary wrapper.
+         let payload = crate::Payload::new(encoded.clone(), CodecFormat::Proto);
+@@ -1503,18 +1507,22 @@ mod tests {
+         let decoded: ListValue = payload
+             .take_message()
+             .expect("a payload carrying raised limits must admit");
+-        assert_eq!(decoded.values.len(), 800_000);
++        assert_eq!(decoded.values.len(), n);
+     }
+ 
+     /// The budget rejection names the limit to raise, since it is the one
+     /// decode failure an operator can fix without the peer changing.
+     #[test]
+     fn an_over_budget_decode_says_which_limit_to_raise() {
+-        use buffa_types::google::protobuf::__buffa::view::ListValueView;
++        use buffa_types::google::protobuf::__buffa::view::{ListValueView, ValueView};
+         use buffa_types::google::protobuf::{ListValue, Value};
+ 
++        // Decoded as borrowed `ValueView`s, so the view footprint — the
++        // smaller of the two — sets the count.
+         let list = ListValue {
+-            values: (0..800_000).map(|_| Value::default()).collect(),
++            values: (0..elements_over_default_budget::<ValueView<'_>>())
++                .map(|_| Value::default())
++                .collect(),
+             ..Default::default()
+         };
+         let encoded = Bytes::from(buffa::Message::encode_to_vec(&list));
+@@ -1550,12 +1558,12 @@ mod tests {
+     /// nothing would still pass.
+     #[test]
+     fn element_memory_limit_is_taken_from_the_configured_limits() {
+-        use buffa_types::google::protobuf::__buffa::view::ListValueView;
++        use buffa_types::google::protobuf::__buffa::view::{ListValueView, ValueView};
+         use buffa_types::google::protobuf::{ListValue, Value};
+ 
+         // Element footprint is what the budget charges, not element
+         // contents, so this stays small on the wire.
+-        let n = 800_000;
++        let n = elements_over_default_budget::<ValueView<'_>>();
+         let list = ListValue {
+             values: (0..n).map(|_| Value::default()).collect(),
+             ..Default::default()
+@@ -1565,7 +1573,7 @@ mod tests {
+         let defaults = crate::Limits::default();
+         let err =
+             decode_borrowed_request_view::<ListValueView<'_>>(&encoded, &defaults.decode_options())
+-                .expect_err("800k elements must exceed the 32 MiB default");
++                .expect_err("the fixture must exceed the default element-memory budget");
+         assert_eq!(err.code, crate::error::ErrorCode::InvalidArgument);
+ 
+         let raised = crate::Limits::default().element_memory_limit(usize::MAX);
+diff --git a/connectrpc/src/lib.rs b/connectrpc/src/lib.rs
+index 2fbb27c..d4b317a 100644
+--- a/connectrpc/src/lib.rs
++++ b/connectrpc/src/lib.rs
+@@ -212,6 +212,9 @@ pub mod service;
+ pub mod spec;
+ pub mod stream_message;
+ 
++#[cfg(test)]
++pub(crate) mod test_budget;
++
+ // Optional: HTTP client
+ pub mod client;
+ 
+diff --git a/connectrpc/src/stream_message.rs b/connectrpc/src/stream_message.rs
+index 4ffb871..ab012c0 100644
+--- a/connectrpc/src/stream_message.rs
++++ b/connectrpc/src/stream_message.rs
+@@ -214,13 +214,21 @@ mod tests {
+ 
+     #[test]
+     fn from_message_accepts_more_elements_than_the_wire_budget_allows() {
++        use buffa_types::google::protobuf::__buffa::view::ValueView;
+         use buffa_types::google::protobuf::{ListValue, Value};
+ 
+         // Enough elements to exceed buffa's 32 MiB element-memory default.
+         // Element footprint is what that budget charges, not element
+         // contents, so this stays small on the wire — a single large payload
+         // would not trip it however big it got.
+-        let n = 800_000;
++        //
++        // Two decodes must both be over budget here: the control below, which
++        // materialises owned `Value` (48 bytes), and `from_message` itself,
++        // which materialises `ValueView` (32 bytes). Sizing by the *smaller*
++        // is what clears both. Sizing by `Value` puts the view decode at 0.83x
++        // the budget, and the test then passes with `from_message`'s
++        // element-memory lift deleted outright — proving nothing.
++        let n = crate::test_budget::elements_over_default_budget::<ValueView<'_>>();
+         let list = ListValue {
+             values: (0..n).map(|_| Value::default()).collect(),
+             ..Default::default()

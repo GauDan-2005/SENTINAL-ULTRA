@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260801_211601__ggrossetie_asciidoctor-web-pdf__79",
+  "submission_id": "7c2fb5e2-f2ba-4d17-a581-9a7dfcf1e1cd_submission_2026-08-18T18_38_15.660Z",
+  "repo": "",
+  "pr": "",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-19",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2: read the bundle and cross-check the platform data block"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test -p connectrpc-build -p connectrpc-codegen -p connectrpc-reflection --lib"
+    ],
+    "selected_test_files_to_run": [
+      "connectrpc/src/test_budget.rs"
+    ],
+    "env": {
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "connectrpc-build::tests::the_tooling_options_decode_a_set_the_untrusted_default_rejects",
+      "connectrpc-build::tests::an_over_budget_decode_names_only_the_remedy_a_build_script_has",
+      "connectrpc-build::tests::a_malformed_set_is_not_reported_as_a_budget_problem",
+      "connectrpc-build::tests::tooling_budget_exceeds_the_untrusted_default",
+      "connectrpc-build::tests::an_over_budget_build_error_contains_guide_url",
+      "connectrpc-codegen::codegen::tests::plugin_accepts_the_element_memory_limit_option_it_consumed_pre_decode",
+      "connectrpc-codegen::codegen::tests::unknown_option_error_enumerates_the_element_memory_limit_option",
+      "connectrpc-reflection::reflector::tests::an_oversized_set_reports_the_element_budget_not_a_decode_failure",
+      "connectrpc-reflection::reflector::tests::element_budget_error_is_not_a_decode_failure",
+      "connectrpc-reflection::reflector::tests::element_memory_limit_exceeded_converts_to_element_budget",
+      "connectrpc-reflection::reflector::tests::non_budget_decode_errors_become_decode_variant",
+      "connectrpc-reflection::reflector::tests::add_bytes_of_oversized_set_returns_element_budget"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "test (?P<name>[\\w:]+) \\.\\.\\. ok",
+      "fail_regex": "test (?P<name>[\\w:]+) \\.\\.\\. FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

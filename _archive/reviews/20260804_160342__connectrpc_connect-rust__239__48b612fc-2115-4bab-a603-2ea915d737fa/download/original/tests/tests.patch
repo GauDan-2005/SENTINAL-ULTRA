@@ -1,0 +1,717 @@
+diff --git a/connectrpc-build/tests/element_budget.rs b/connectrpc-build/tests/element_budget.rs
+new file mode 100644
+index 0000000..d68fa23
+--- /dev/null
++++ b/connectrpc-build/tests/element_budget.rs
+@@ -0,0 +1,302 @@
++//! Element-memory budget behaviour of the public `connectrpc-build` API.
++//!
++//! Everything here drives `Config::compile`, the entry point a build script
++//! calls, so the checks hold for any implementation that gets the observable
++//! behaviour right.
++
++mod element_budget {
++    use std::process::Command;
++    use std::sync::{Mutex, MutexGuard};
++
++    use buffa::Message;
++    use buffa_codegen::generated::descriptor::{FileDescriptorProto, FileDescriptorSet};
++    use connectrpc_build::Config;
++
++    /// Documented override for the budget a build applies to its descriptors.
++    const BUDGET_ENV: &str = "BUFFA_ELEMENT_MEMORY_LIMIT";
++
++    /// Serialises the tests that set `BUDGET_ENV`: it is process-global, and a
++    /// concurrent compile in this binary would otherwise pick up a budget that
++    /// is not the one its own case configured.
++    static ENV_LOCK: Mutex<()> = Mutex::new(());
++
++    fn env_lock() -> MutexGuard<'static, ()> {
++        // A panicking test poisons the lock; the data is `()`, so carrying on
++        // costs nothing and keeps one failure from cascading.
++        ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
++    }
++
++    fn fixture(name: &str) -> String {
++        format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
++    }
++
++    /// A descriptor set that a build could plausibly produce and that the
++    /// untrusted-input budget rejects.
++    ///
++    /// The budget is charged per element on struct size rather than on encoded
++    /// bytes, so the count is derived from the live `size_of` — a literal would
++    /// quietly stop exceeding the budget as soon as that struct shrank, and the
++    /// test would then prove nothing.
++    fn over_default_budget_set() -> Vec<u8> {
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let count = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..count)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("bulk/f{i}.proto")),
++                    package: Some("bulk.v1".into()),
++                    syntax: Some("proto3".into()),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        set.encode_to_vec()
++    }
++
++    /// A set the untrusted default still admits, but a 1024-byte budget does
++    /// not. Needed so a lowered override is not confused with the default
++    /// rejection of a huge schema.
++    fn over_tiny_budget_set() -> Vec<u8> {
++        let per_element = std::mem::size_of::<FileDescriptorProto>().max(1);
++        let count = (1024 / per_element) + 2;
++        assert!(
++            count * per_element < buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++            "tiny-over fixture spilled into the untrusted default"
++        );
++        let set = FileDescriptorSet {
++            file: (0..count)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("tiny/f{i}.proto")),
++                    package: Some("tiny.v1".into()),
++                    syntax: Some("proto3".into()),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        set.encode_to_vec()
++    }
++
++    /// Compile a small, valid descriptor set with `BUDGET_ENV` set to `limit`,
++    /// and return the resulting error text.
++    fn compile_error_with_budget(limit: &str) -> String {
++        let _guard = env_lock();
++        let out = tempfile::tempdir().unwrap();
++
++        // SAFETY: `ENV_LOCK` is held, and every other test in this binary that
++        // compiles takes the same lock, so no other thread reads the
++        // environment while it is modified here.
++        unsafe { std::env::set_var(BUDGET_ENV, limit) };
++        let result = Config::new()
++            .descriptor_set(fixture("echo.fds.bin"))
++            .files(&["echo.proto"])
++            .out_dir(out.path())
++            .compile();
++        // SAFETY: as above.
++        unsafe { std::env::remove_var(BUDGET_ENV) };
++
++        match result {
++            Ok(()) => panic!("a {limit}-byte budget must reject this descriptor set"),
++            Err(e) => e.to_string(),
++        }
++    }
++
++    /// The regression: descriptors a build produced itself must compile even
++    /// when they are larger than the bound meant for untrusted wire input.
++    ///
++    /// The first assertion is the control. Without it the compile below would
++    /// pass whether or not the budget in force was ever raised.
++    #[test]
++    fn a_schema_over_the_untrusted_default_budget_compiles() {
++        let _guard = env_lock();
++        let bytes = over_default_budget_set();
++
++        assert!(
++            matches!(
++                FileDescriptorSet::decode_from_slice(&bytes),
++                Err(buffa::DecodeError::ElementMemoryLimitExceeded)
++            ),
++            "fixture no longer exceeds the untrusted default budget \
++             ({} encoded bytes); it must, or the compile below proves nothing",
++            bytes.len()
++        );
++
++        let dir = tempfile::tempdir().unwrap();
++        let set_path = dir.path().join("bulk.fds.bin");
++        std::fs::write(&set_path, &bytes).unwrap();
++        let out = tempfile::tempdir().unwrap();
++
++        Config::new()
++            .descriptor_set(&set_path)
++            .files(&["bulk/f0.proto"])
++            .out_dir(out.path())
++            .compile()
++            .expect("an ordinary large schema must compile");
++    }
++
++    /// Lowering has to work too. A compile that always uses the compiler-sized
++    /// default, and ignores the variable, would still admit this set.
++    #[test]
++    fn a_low_environment_budget_rejects_a_set_the_tooling_default_would_admit() {
++        let _guard = env_lock();
++        let bytes = over_tiny_budget_set();
++        let dir = tempfile::tempdir().unwrap();
++        let set_path = dir.path().join("tiny.fds.bin");
++        std::fs::write(&set_path, &bytes).unwrap();
++        let out = tempfile::tempdir().unwrap();
++
++        unsafe { std::env::set_var(BUDGET_ENV, "1024") };
++        let result = Config::new()
++            .descriptor_set(&set_path)
++            .files(&["tiny/f0.proto"])
++            .out_dir(out.path())
++            .compile();
++        unsafe { std::env::remove_var(BUDGET_ENV) };
++
++        let err = result.expect_err("a 1024-byte budget must reject this set");
++        let rendered = err.to_string();
++        assert!(
++            rendered.contains(BUDGET_ENV),
++            "a lowered budget is still a budget failure: {rendered}"
++        );
++    }
++
++    /// The documented raise that a build script can actually set.
++    #[test]
++    fn an_unlimited_environment_budget_admits_a_set_the_untrusted_default_rejects() {
++        let _guard = env_lock();
++        let bytes = over_default_budget_set();
++        assert!(
++            matches!(
++                FileDescriptorSet::decode_from_slice(&bytes),
++                Err(buffa::DecodeError::ElementMemoryLimitExceeded)
++            ),
++            "fixture no longer exceeds the untrusted default budget"
++        );
++
++        let dir = tempfile::tempdir().unwrap();
++        let set_path = dir.path().join("bulk.fds.bin");
++        std::fs::write(&set_path, &bytes).unwrap();
++        let out = tempfile::tempdir().unwrap();
++
++        unsafe { std::env::set_var(BUDGET_ENV, "unlimited") };
++        let result = Config::new()
++            .descriptor_set(&set_path)
++            .files(&["bulk/f0.proto"])
++            .out_dir(out.path())
++            .compile();
++        unsafe { std::env::remove_var(BUDGET_ENV) };
++
++        result.expect("unlimited must admit a set the untrusted default rejects");
++    }
++
++    /// An over-budget build failure has to name the override that a build
++    /// script can actually reach.
++    #[test]
++    fn an_over_budget_compile_names_the_environment_override() {
++        let rendered = compile_error_with_budget("1024");
++        assert!(
++            rendered.contains(BUDGET_ENV),
++            "must name the variable that works here: {rendered}"
++        );
++    }
++
++    /// It also has to say why the plugin option is not the answer here, since
++    /// that is the remedy the underlying error offers first.
++    #[test]
++    fn an_over_budget_compile_explains_that_a_build_script_has_no_plugin_options() {
++        let rendered = compile_error_with_budget("1024");
++        assert!(
++            rendered.contains("build script"),
++            "must say why the plugin option does not apply: {rendered}"
++        );
++    }
++
++    /// And it has to point at this project's documentation rather than leave
++    /// the reader to find the workaround.
++    #[test]
++    fn an_over_budget_compile_links_the_connectrpc_guide() {
++        let rendered = compile_error_with_budget("1024");
++        assert!(
++            rendered.contains("connectrpc/connect-rust"),
++            "must link this project's guide: {rendered}"
++        );
++    }
++
++    /// A budget the build reads is a build input: cargo has to be told, or a
++    /// build that succeeded with the variable set is reused unchanged after it
++    /// changes, and the setting looks inert.
++    ///
++    /// Directives go to this process's stdout, which the harness swallows, so
++    /// the compile runs in a child process with output captured.
++    #[test]
++    fn the_build_declares_a_rebuild_trigger_for_the_budget_variable() {
++        let exe = std::env::current_exe().expect("test binary path");
++        let output = Command::new(exe)
++            .args([
++                "element_budget::a_compile_emits_its_rebuild_triggers",
++                "--exact",
++                "--nocapture",
++                "--test-threads=1",
++            ])
++            .env_remove(BUDGET_ENV)
++            .output()
++            .expect("re-running this test binary must work");
++
++        let stdout = String::from_utf8_lossy(&output.stdout);
++        assert!(
++            output.status.success(),
++            "the child compile failed:\n{stdout}{}",
++            String::from_utf8_lossy(&output.stderr)
++        );
++        assert!(
++            stdout.contains(&format!("cargo:rerun-if-env-changed={BUDGET_ENV}")),
++            "the build must declare {BUDGET_ENV} as a rebuild trigger, got:\n{stdout}"
++        );
++    }
++
++    /// The compile whose stdout the test above inspects. It stands on its own
++    /// as a check that the ordinary precompiled-set path still works.
++    #[test]
++    fn a_compile_emits_its_rebuild_triggers() {
++        let _guard = env_lock();
++        let out = tempfile::tempdir().unwrap();
++
++        Config::new()
++            .descriptor_set(fixture("echo.fds.bin"))
++            .files(&["echo.proto"])
++            .out_dir(out.path())
++            .compile()
++            .expect("the fixture must compile");
++    }
++
++    /// A corrupt set must not be dressed up as a budget problem: that sends
++    /// the reader off raising a limit that was never the cause.
++    #[test]
++    fn a_malformed_descriptor_set_is_not_reported_as_a_budget_problem() {
++        let _guard = env_lock();
++        let dir = tempfile::tempdir().unwrap();
++        let set_path = dir.path().join("truncated.fds.bin");
++        // A length-delimited field one byte long whose payload never arrives.
++        std::fs::write(&set_path, [0x0a, 0x7f]).unwrap();
++        let out = tempfile::tempdir().unwrap();
++
++        let err = Config::new()
++            .descriptor_set(&set_path)
++            .files(&["echo.proto"])
++            .out_dir(out.path())
++            .compile()
++            .expect_err("a truncated descriptor set must fail")
++            .to_string();
++
++        assert!(
++            !err.contains(BUDGET_ENV),
++            "a truncated set must not point at the budget: {err}"
++        );
++        assert!(
++            err.to_lowercase().contains("decode"),
++            "it should still report a decode failure: {err}"
++        );
++    }
++}
+diff --git a/connectrpc-codegen/src/codegen.rs b/connectrpc-codegen/src/codegen.rs
+index 01f9c57..a91bf22 100644
+--- a/connectrpc-codegen/src/codegen.rs
++++ b/connectrpc-codegen/src/codegen.rs
+@@ -4859,4 +4859,40 @@ mod tests {
+         assert_eq!(response.minimum_edition, Some(Edition::EDITION_2023 as i32));
+         assert_eq!(response.maximum_edition, Some(Edition::EDITION_2024 as i32));
+     }
++
++    /// The budget option is read off the wire before the request is decoded,
++    /// so by the time the option string is parsed it is a leftover. Rejecting
++    /// it would fail the build of the one caller who ever sets it: whoever's
++    /// schema was too large to decode without it.
++    #[test]
++    fn generate_accepts_the_element_memory_limit_option() {
++        for value in ["unlimited", "2147483648"] {
++            let request = CodeGeneratorRequest {
++                parameter: Some(format!(
++                    "buffa_module=crate::proto,element_memory_limit={value}"
++                )),
++                ..Default::default()
++            };
++
++            generate(&request)
++                .unwrap_or_else(|e| panic!("element_memory_limit={value} must be accepted: {e}"));
++        }
++    }
++
++    /// The unknown-option error doubles as the plugin's option documentation,
++    /// so the budget option has to appear in it. Left out, the one documented
++    /// way to raise the bound reads as unsupported.
++    #[test]
++    fn unknown_option_error_lists_the_element_memory_limit_option() {
++        let request = CodeGeneratorRequest {
++            parameter: Some("no_such_option=true".to_string()),
++            ..Default::default()
++        };
++
++        let err = generate(&request).unwrap_err().to_string();
++        assert!(
++            err.contains("element_memory_limit="),
++            "the supported-option list must include element_memory_limit=: {err}"
++        );
++    }
+ }
+diff --git a/connectrpc-codegen/tests/plugin_cli.rs b/connectrpc-codegen/tests/plugin_cli.rs
+new file mode 100644
+index 0000000..da78fbf
+--- /dev/null
++++ b/connectrpc-codegen/tests/plugin_cli.rs
+@@ -0,0 +1,238 @@
++//! End-to-end coverage of the `protoc-gen-connect-rust` binary.
++//!
++//! These drive the plugin the way `protoc` and `buf` do: a
++//! `CodeGeneratorRequest` on stdin, a response or a failure back out.
++
++mod plugin_cli {
++    use std::io::Write;
++    use std::process::{Command, Output, Stdio};
++
++    use buffa::Message;
++    use buffa_codegen::generated::descriptor::FileDescriptorProto;
++    use connectrpc_codegen::plugin::{CodeGeneratorRequest, CodeGeneratorResponse};
++
++    const BUDGET_ENV: &str = "BUFFA_ELEMENT_MEMORY_LIMIT";
++
++    /// Feed `request` to the plugin binary over stdin, as a compiler would.
++    fn run_plugin(request: &CodeGeneratorRequest) -> Output {
++        run_plugin_with_env(request, None)
++    }
++
++    fn run_plugin_with_env(request: &CodeGeneratorRequest, env: Option<&str>) -> Output {
++        let encoded = request.encode_to_vec();
++        let mut cmd = Command::new(env!("CARGO_BIN_EXE_protoc-gen-connect-rust"));
++        cmd.stdin(Stdio::piped())
++            .stdout(Stdio::piped())
++            .stderr(Stdio::piped())
++            .env_remove(BUDGET_ENV);
++        if let Some(value) = env {
++            cmd.env(BUDGET_ENV, value);
++        }
++        let mut child = cmd.spawn().expect("the plugin binary must be runnable");
++        child
++            .stdin
++            .take()
++            .expect("stdin is piped")
++            .write_all(&encoded)
++            .expect("the plugin must consume its request");
++        child.wait_with_output().expect("the plugin must terminate")
++    }
++
++    /// A request whose descriptors are larger than the budget sized for
++    /// untrusted wire input. The count is derived from the live `size_of`,
++    /// since the budget is charged per element on struct size; a literal would
++    /// silently stop exceeding it whenever that struct shrank.
++    fn over_default_budget_request() -> CodeGeneratorRequest {
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let count = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        CodeGeneratorRequest {
++            proto_file: (0..count)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("bulk/f{i}.proto")),
++                    package: Some("bulk.v1".into()),
++                    syntax: Some("proto3".into()),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        }
++    }
++
++    /// A request the untrusted default still admits, but a 1024-byte budget
++    /// does not. Needed so a lowered option is not confused with the default
++    /// rejection of a huge schema.
++    fn over_tiny_budget_request() -> CodeGeneratorRequest {
++        let per_element = std::mem::size_of::<FileDescriptorProto>().max(1);
++        let count = (1024 / per_element) + 2;
++        assert!(
++            count * per_element < buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
++            "tiny-over fixture spilled into the untrusted default"
++        );
++        CodeGeneratorRequest {
++            proto_file: (0..count)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("tiny/f{i}.proto")),
++                    package: Some("tiny.v1".into()),
++                    syntax: Some("proto3".into()),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        }
++    }
++
++    /// The regression, at the level a user meets it: `buf generate` over an
++    /// ordinary large schema must not die in the plugin.
++    #[test]
++    fn the_plugin_generates_from_a_schema_over_the_untrusted_default_budget() {
++        let request = over_default_budget_request();
++
++        // Control: the same bytes are rejected under the untrusted default, so
++        // a passing run below means the plugin decodes under a larger bound.
++        let encoded = request.encode_to_vec();
++        assert!(
++            matches!(
++                CodeGeneratorRequest::decode_from_slice(&encoded),
++                Err(buffa::DecodeError::ElementMemoryLimitExceeded)
++            ),
++            "fixture no longer exceeds the untrusted default budget \
++             ({} encoded bytes)",
++            encoded.len()
++        );
++
++        let output = run_plugin(&request);
++        assert!(
++            output.status.success(),
++            "the plugin rejected an ordinary large schema: {}",
++            String::from_utf8_lossy(&output.stderr)
++        );
++        CodeGeneratorResponse::decode_from_slice(&output.stdout)
++            .expect("the plugin must answer with a CodeGeneratorResponse");
++    }
++
++    /// Lowering is what proves the option was applied to the decode, not
++    /// accepted later and ignored. A plugin that always uses the compiler-sized
++    /// default would still generate this request.
++    #[test]
++    fn a_low_plugin_budget_rejects_a_request_the_tooling_default_would_admit() {
++        let mut request = over_tiny_budget_request();
++        request.parameter = Some("element_memory_limit=1024".to_string());
++
++        let output = run_plugin(&request);
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        assert!(
++            !output.status.success(),
++            "a 1024-byte plugin budget must reject this request: {stderr}"
++        );
++        assert!(
++            !stderr.contains("unknown plugin option"),
++            "must fail the decode, not the leftover parse: {stderr}"
++        );
++        assert!(
++            stderr.contains("memory") || stderr.contains("budget") || stderr.contains("decode"),
++            "a lowered option is a decode-budget failure: {stderr}"
++        );
++    }
++
++    /// The documented raise, through the option a `buf generate` user can set.
++    #[test]
++    fn an_unlimited_plugin_budget_admits_a_request_the_untrusted_default_rejects() {
++        let mut request = over_default_budget_request();
++        request.parameter = Some("element_memory_limit=unlimited".to_string());
++
++        let encoded = request.encode_to_vec();
++        assert!(
++            matches!(
++                CodeGeneratorRequest::decode_from_slice(&encoded),
++                Err(buffa::DecodeError::ElementMemoryLimitExceeded)
++            ),
++            "fixture no longer exceeds the untrusted default budget"
++        );
++
++        let output = run_plugin(&request);
++        assert!(
++            output.status.success(),
++            "unlimited must admit a request the untrusted default rejects: {}",
++            String::from_utf8_lossy(&output.stderr)
++        );
++    }
++
++    /// The same env var that a build script sets also has to reach the plugin
++    /// when the option is absent. Otherwise a `buf generate` run cannot raise
++    /// every plugin with one setting.
++    #[test]
++    fn a_low_environment_budget_rejects_a_plugin_request_the_tooling_default_would_admit() {
++        let request = over_tiny_budget_request();
++        let output = run_plugin_with_env(&request, Some("1024"));
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        assert!(
++            !output.status.success(),
++            "BUFFA_ELEMENT_MEMORY_LIMIT=1024 must reject this request: {stderr}"
++        );
++        assert!(
++            !stderr.contains("unknown plugin option"),
++            "must fail the decode, not option parsing: {stderr}"
++        );
++    }
++
++    /// Per-plugin option wins over the process-wide variable. A plugin that
++    /// only reads the environment would admit this request.
++    #[test]
++    fn the_plugin_option_wins_over_the_environment_variable() {
++        let mut request = over_tiny_budget_request();
++        request.parameter = Some("element_memory_limit=1024".to_string());
++
++        let output = run_plugin_with_env(&request, Some("unlimited"));
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        assert!(
++            !output.status.success(),
++            "element_memory_limit=1024 must beat an unlimited environment: {stderr}"
++        );
++        assert!(
++            !stderr.contains("unknown plugin option"),
++            "must fail the decode, not the leftover parse: {stderr}"
++        );
++    }
++
++    /// Whoever sets the budget option is exactly the user whose schema could
++    /// not be decoded without it, so the plugin must not then reject their
++    /// parameter string as unknown.
++    #[test]
++    fn the_plugin_accepts_the_element_memory_limit_parameter() {
++        for value in ["unlimited", "2147483648"] {
++            let request = CodeGeneratorRequest {
++                parameter: Some(format!("buffa_module=crate::proto,element_memory_limit={value}")),
++                ..Default::default()
++            };
++
++            let output = run_plugin(&request);
++            assert!(
++                output.status.success(),
++                "element_memory_limit={value} must be accepted: {}",
++                String::from_utf8_lossy(&output.stderr)
++            );
++        }
++    }
++
++    /// An unknown option still fails, and its list of supported options has to
++    /// mention the budget option — otherwise the one documented way to raise
++    /// the bound looks unsupported.
++    #[test]
++    fn the_plugin_lists_the_budget_option_when_rejecting_an_unknown_one() {
++        let request = CodeGeneratorRequest {
++            parameter: Some("no_such_option=true".to_string()),
++            ..Default::default()
++        };
++
++        let output = run_plugin(&request);
++        assert!(
++            !output.status.success(),
++            "an unknown option must still fail the run"
++        );
++        let stderr = String::from_utf8_lossy(&output.stderr);
++        assert!(
++            stderr.contains("element_memory_limit="),
++            "the supported-option list must include element_memory_limit=: {stderr}"
++        );
++    }
++}
+diff --git a/connectrpc-reflection/src/reflector.rs b/connectrpc-reflection/src/reflector.rs
+index 1816367..1cc9ff2 100644
+--- a/connectrpc-reflection/src/reflector.rs
++++ b/connectrpc-reflection/src/reflector.rs
+@@ -842,4 +842,115 @@ mod tests {
+             _ => panic!("expected services"),
+         }
+     }
++
++    /// A well-formed descriptor set that is larger than the budget the runtime
++    /// applies to descriptors it did not produce itself.
++    ///
++    /// The budget is charged per element on struct size rather than on encoded
++    /// bytes, so many tiny files exceed it while staying small on the wire.
++    /// The count is derived from the live `size_of` because a literal would
++    /// quietly stop exceeding the budget whenever that struct shrank, leaving
++    /// these tests asserting a rejection that no longer happens.
++    fn over_budget_set_bytes(prefix: &str) -> Vec<u8> {
++        let per_element = std::mem::size_of::<FileDescriptorProto>();
++        let count = (buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / per_element) * 5 / 4;
++        let set = FileDescriptorSet {
++            file: (0..count)
++                .map(|i| FileDescriptorProto {
++                    name: Some(format!("{prefix}{i}.proto")),
++                    ..Default::default()
++                })
++                .collect(),
++            ..Default::default()
++        };
++        buffa::Message::encode_to_vec(&set)
++    }
++
++    /// The runtime path stays bounded on purpose, so an oversized set has to
++    /// reach the caller as the budget error, whose message says the bytes are
++    /// fine, rather than as a failure that reads like corruption.
++    #[test]
++    fn an_oversized_set_reports_the_element_budget() {
++        let bytes = over_budget_set_bytes("f");
++
++        let err = Reflector::from_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "expected ElementBudget, got {err:?}"
++        );
++
++        let rendered = err.to_string();
++        assert!(
++            rendered.contains("well-formed"),
++            "the message should absolve the bytes, got {rendered:?}"
++        );
++    }
++
++    /// The complement: an oversized set must not arrive as a decode failure,
++    /// which would tell the operator their descriptors are damaged.
++    #[test]
++    fn an_oversized_set_is_not_reported_as_a_decode_failure() {
++        let bytes = over_budget_set_bytes("g");
++
++        let err = Reflector::from_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            !matches!(err, ReflectionError::Decode(_)),
++            "an over-budget set must not map to Decode(_): {err:?}"
++        );
++    }
++
++    /// Adding to an existing reflector is the other way bytes get in, and it
++    /// has to classify them the same way.
++    #[test]
++    fn adding_an_oversized_set_reports_the_element_budget() {
++        let bytes = over_budget_set_bytes("h");
++
++        let mut reflector = Reflector::from_descriptor_set_bytes(&[]).unwrap();
++        let err = reflector.add_descriptor_set_bytes(&bytes).unwrap_err();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "adding an over-budget set must report ElementBudget, got {err:?}"
++        );
++    }
++
++    /// The classification lives in the conversion itself, so a decode path
++    /// added later cannot report an over-budget set as corruption.
++    #[test]
++    fn an_over_budget_decode_error_converts_to_the_element_budget_variant() {
++        let err: ReflectionError = buffa::DecodeError::ElementMemoryLimitExceeded.into();
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "an over-budget decode error must convert to ElementBudget: {err:?}"
++        );
++    }
++
++    /// And the other arm: everything that really is a wire-level failure still
++    /// converts to the decode variant.
++    #[test]
++    fn other_decode_errors_convert_to_the_decode_variant() {
++        let err: ReflectionError = buffa::DecodeError::UnexpectedEof.into();
++        assert!(
++            matches!(err, ReflectionError::Decode(_)),
++            "a truncated message must convert to Decode(_), not ElementBudget: {err:?}"
++        );
++    }
++
++    /// The codegen overrides must not leak onto the runtime path. A reflection
++    /// service can be handed descriptors by a peer, so raising the build
++    /// variable still has to leave this set over budget.
++    #[test]
++    fn reflection_stays_bounded_when_the_budget_environment_is_raised() {
++        let bytes = over_budget_set_bytes("i");
++        // SAFETY: this crate's tests do not otherwise mutate the variable, and
++        // the restore below runs even if the assertions panic via drop? We
++        // restore explicitly so a later test in this process sees a clean env.
++        unsafe { std::env::set_var("BUFFA_ELEMENT_MEMORY_LIMIT", "unlimited") };
++        let err = Reflector::from_descriptor_set_bytes(&bytes).unwrap_err();
++        unsafe { std::env::remove_var("BUFFA_ELEMENT_MEMORY_LIMIT") };
++        assert!(
++            matches!(err, ReflectionError::ElementBudget),
++            "runtime must stay on the untrusted default even when {env} is unlimited, got {err:?}",
++            env = "BUFFA_ELEMENT_MEMORY_LIMIT",
++        );
++    }
+ }

@@ -1,0 +1,52 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "/usr/local/go/bin/go test -json ./..."
+    ],
+    "selected_test_files_to_run": [
+      "pkg/tui/dropdown_test.go",
+      "pkg/tui/gqlexplorer/formitem_test.go",
+      "pkg/tui/gqlexplorer/model_test.go",
+      "pkg/tui/mouse_test.go",
+      "pkg/tui/selector_test.go"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "pkg/tui::TestNewMouseZonePrefixesAreUnique",
+      "pkg/tui::TestMouseZoneIDJoinsParts",
+      "pkg/tui::TestScanMouseZonesRegistersMarkedRegionWithoutChangingVisibleText",
+      "pkg/tui::TestHitAndZonePos",
+      "pkg/tui::TestHitReturnsFalseOutsideZone",
+      "pkg/tui::TestIsLeftClick",
+      "pkg/tui::TestSelectorMouseClickSelectsItem",
+      "pkg/tui::TestSelectorMouseClickSearchFocusesInput",
+      "pkg/tui::TestDropdownExpandMethod",
+      "pkg/tui::TestDropdownSelectMethod",
+      "pkg/tui/gqlexplorer::TestDetailFormMouseClickFocusesTextInputAndEnablesArg",
+      "pkg/tui/gqlexplorer::TestDetailFormMouseClickTogglesExpandableField",
+      "pkg/tui/gqlexplorer::TestDetailFormMouseClickExpandsAndSelectsDropdown",
+      "pkg/tui/gqlexplorer::TestMouseClickSelectsOperationAndMovesCursor",
+      "pkg/tui/gqlexplorer::TestMouseClickTogglesEndpointAndMovesEndpointCursor",
+      "pkg/tui/gqlexplorer::TestMouseClickDetailFormItemFocusesDetailPanel",
+      "pkg/tui/gqlexplorer::TestMouseClickSearchInputFocusesLeftPanelAndTyping"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "go-test",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

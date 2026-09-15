@@ -3,6 +3,7 @@ id: non-derivable-private-names
 status: locally-verified
 last_verified: 2026-08-06
 verified_by:
+  - 20260806_080603__tair-opensource_redisshake__657
   - 20260809_080653__sysprog21_elfuse__162
   - 20260805_220102__xaaha_hulak__118
 evidence: "17 of 17 graded ids in a bundle depended on six private method names that existed nowhere except the reference solution; repointing the tests at the rendered view removed all six and every hostile probe still fired"
@@ -208,3 +209,66 @@ walks assertions against requirements, and a `waitFor`, a barrier, a fixture bui
 finder can carry a contract that no assertion mentions. Read the helpers as if each precondition
 they rely on were an assertion, because for a failing implementation that is exactly what they are.
 The remedy is the same either way: state the rule, or stop depending on it.
+
+
+## Third instance, and the new half: a de-prescription round can REMOVE derivability (redisshake 657, 2026-08-18, peer review)
+
+The two instances above are about a name that was never stated. This one is about a name that **was**
+stated and then got deleted while the tests that need it stayed put, which is a different way in and
+the one no round is watching for.
+
+The arc, from the reviewer side with both zips in hand:
+
+1. The seed's `instruction.md:20` named the three concrete types outright, "the exported concrete
+   types `TairStringObject`, `TairHashObject`, and `TairZsetObject` in package `internal/rdb/types`",
+   inside an "Interface contract" block. Derivable, because stated.
+2. The instruction judge failed the task on navigation, quoting that block for naming the packages to
+   edit and the symbols to create in them.
+3. The submitter deleted the whole block. The judge went to a full pass. The graded tests were not
+   touched and still name all three types, on sixteen lines of `tests/tests.patch`.
+4. What the instruction says now, at line 5, is "`exstrtype` is a TairString" and "an `exstrtype`
+   payload yields the TairString type". An implementer taking that at its word writes `TairString`.
+
+Measured, golden applied, rename in **product source only**, inside the task image with the network
+off:
+
+```bash
+grep -rl 'TairStringObject\|TairHashObject\|TairZsetObject' --include=*.go /app \
+  | xargs sed -i 's/TairStringObject/TairString/g; s/TairHashObject/TairHash/g; s/TairZsetObject/TairZset/g'
+bash /tests/test.sh     # reward 0, 3 of 14, "undefined: TairStringObject"
+```
+
+Only the three `internal/commands` ids survive, and they survive because they reach `CalcKeys`, which
+exists at base. The eleven ids in `internal/rdb/types` go down together on one compile error, which is
+the per-package property this note already carries.
+
+**The counter-argument is real and has to be stated, because it is what makes this arguable rather
+than obvious.** The base repo genuinely uses the convention: `internal/rdb/types` at the base commit
+carries `StringObject`, `HashObject`, `ZsetObject`, `ListObject`, `SetObject`, `StreamObject` and
+`ModuleObject`, so `TairStringObject` is where a reader of the surrounding code lands, and
+`docs/guidelines.md:157` allows a name that follows a standard convention. What tips it is that the
+instruction is **not silent**. It names the type and names it differently. A stated name beats a
+convention, and the reader has no reason to prefer the convention over the sentence in front of them.
+
+### The rule this adds
+
+**The round that answers a prescriptiveness or navigation finding is the round that owes a
+derivability audit.** They pull in opposite directions by construction: the finding asks you to
+remove names, and every name you remove is a name the tests may still require. Run the standing audit
+from this note over every identifier the graded tests touch, in the same round, before the zip:
+
+```bash
+git -C environment/repo grep -c -- "<name>" HEAD -- '*.go'   # empty means the symbol is new
+grep -c -- "<name>" instruction.md                            # 0 means it is now unstated
+#   absent at base AND unstated  ->  you just created this defect while fixing another one
+```
+
+This is the same shape as `clarity-fixes-spend-difficulty.md` one level over. There, a solvability fix
+spends difficulty. Here, a prescriptiveness fix spends derivability. In both cases the round that
+closes one finding opens the next one, and nothing in the loop connects them.
+
+**And the remedy is not "put the block back".** A naming requirement and navigation are different
+things. "The three concrete types are named `TairStringObject`, `TairHashObject` and `TairZsetObject`"
+states an observable contract. "Create them in package `internal/rdb/structure` alongside these six
+reader functions" is the navigation the judge actually flagged. The first is safe to state and the
+second is not, and collapsing them is what makes a submitter delete both.

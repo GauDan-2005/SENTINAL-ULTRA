@@ -4,14 +4,14 @@ _Owner of CLAUDE.md **Section 6**. Loaded every session._
 
 Created in Step 9 as `tasks/<Original Directory Name>/answers/submission_answer.txt` - only after every step for the current task is complete and the user has provided the time numbers.
 
-Six rules that apply to all four templates - the three submitter paths below and the Path D reviewer template at the end of this file:
+Six rules for building these templates - the three submitter paths below and the Path D reviewer template at the end of this file. The first five hold for all four; the sixth describes a field that only Path B carries:
 
 - **Humanized last.** Once the file is filled in, run the `humanizer` skill over every free-text answer in it and save the result back. Paths, names, commands, code, checkbox lines and the time numbers stay verbatim. A template filled in but not yet humanized is not a finished file.
 - **The file is living, not a one-time artifact.** Every revision round edits it (Step 10) and re-humanizes what changed. It must always describe the bundle currently sitting in `tasks/<name>/upload/`.
 - **No word wrap.** Each paragraph is one unbroken line. The placeholders below are short only because they are placeholders; the real text replacing them runs as long as it needs to on a single line.
 - **No em dashes anywhere in these templates or in the file built from them.** The issue-block and sub-answer markers are hyphens. Section 5 bans em dashes and exempts only code examples, and a template that shows one is where the wrong inference starts. Verify with a bare count and no exclusions: `grep -cP '\x{2014}' <file>` must return 0.
-- **The handling-time block is four asked numbers plus a computed total** (Step 8). The total is fields 1 + 2 + 3 and the revision figure is tracked separately - an inference, not verified behaviour, see Step 8 before writing it. The ranges printed below are sanity hints, not limits: the one accepted bundle shipped 260 and 195.
-- **The Send-to-reviewer decision is a stored field**, filled from the Step 7 gate. The platform's own eval summary panels (Static, Difficulty, Oracle, Quality) are read-only outputs and are deliberately NOT template fields - their results belong in `task.md` and in Comments for Reviewer, not copied into an answers slot nobody pastes them into.
+- **The handling-time block is four asked numbers plus a computed total** (Step 8). The total is fields 1 + 2 + 3 and the revision figure is tracked separately - an inference, not verified behaviour, see Step 8 before writing it. The ranges printed below are sanity hints, not limits: the accepted bundles run 195 to 260 on the total and 0 to 370 on revisions, kvdex at 260 and 195.
+- **The pre-submit gate decision is a stored field**, filled from the Step 7 gate, and it appears on Path B only. It used to be called Send to reviewer, after a checkbox that was removed from the form on 2026-08-05 (`docs/tasking-guide.md:251`). A submission whose evals pass now reaches the reviewer queue on its own, and one whose evals fail comes back to you, so there is nothing to paste and nothing to tick. The field is a record of whether the gate was clear at the moment the task was submitted, which is what the next round has to re-read. The platform's own eval summary panels (Static, Difficulty, Oracle, Quality) are read-only outputs and are deliberately NOT template fields - their results belong in `task.md` and in Comments for Reviewer, not copied into an answers slot nobody pastes them into.
 
 ### Path A - Valid as-is
 
@@ -30,7 +30,7 @@ Compliance checklist (each verified against the files):
 [x] The instructions are not overly-prescriptive
 [x] The task does not leak solution information
 [x] The oracle implements the solution following the instructions
-[x] Contains more than 10 fail-to-pass tests in the test suite (counted: N)
+[x] Contains more than 10 fail-to-pass tests in test suite (counted: N)
 
 Local oracle and NOP run: [user-reported result]
 
@@ -85,7 +85,7 @@ What issues did you find with the task?
 - [ ] The instructions are overly-prescriptive
 - [ ] The task leaks solution information
 - [ ] The oracle does not implement the solution following the instructions
-- [ ] Less than 10 fail-to-pass tests in the test suite
+- [ ] Less than 10 fail-to-pass tests in test suite
 
 Issue details (pastebox, comes after both checkbox lists):
 [Issue Category] must be one of the seven exact strings from the list above, copied verbatim.
@@ -116,9 +116,9 @@ Post-fix confirmation (each verified after fixes):
 [x] The task does not leak solution information
 [x] The oracle implements the solution following the instructions
 [x] The PR was not modified in any way beyond what is allowed by the guidelines
-[x] More than 10 fail-to-pass tests in the test suite (counted: N)
+[x] More than 10 fail-to-pass tests in test suite (counted: N)
 
-Send to reviewer: [Yes / No - which Step 7 gate condition failed, why you sent anyway, and what you tried]
+Pre-submit gate: [Clear / Not clear - which Step 7 condition was unmet, what was still outstanding, and what happened next. Record only. There is no checkbox on the form, and a submission that fails an eval is returned to you instead of reaching a reviewer, so a Not clear line names work still to do and never a reason for going ahead anyway]
 
 What makes this task difficult?
 [1 short paragraph]
@@ -198,32 +198,35 @@ How long did it take you to complete all revisions?
 
 ### Path D - Peer review (`review_answer.txt`)
 
-Not a submitter path. Created at `review_tasks/<Original Directory Name>/answers/review_answer.txt`
-when a review is assigned. Full workflow in Section 12. Same six rules as the submitter templates above:
-humanized last, living across rounds, no word wrap, **no em dashes anywhere**, and the Section 5
-writing rules in full.
+Created at `review_tasks/<Original Directory Name>/answers/review_answer.txt`. The standard reviewer
+path is a five-minute platform-first static review, with one recorded five-minute static extension at
+most. Form-ready completion ends the timer. Section 12 owns verdict substance and Section 13 owns the
+timed sequence.
 
-The live form has **four** questions where `docs/tasking-guide.md:401-459` describes seven. Confirmed by
-two independent captures on 2026-08-11 (mithril/expressa, then cista 172), so the two extra fields are
-**not** template fields any more. Where the submitter's answers were unavailable, record that under the
-answer rather than inventing a `PENDING` form field for it.
+Same writing requirements as the submitter templates apply here: one unwrapped paragraph per line, no
+em dash or scoring vocabulary in the paste, and **humanized last**. The humanizer edits reviewer-written
+prose only. It never changes facts, citations, remedies, score, verdict, or duration. Do not modify the
+humanizer skill or its Cursor twin for this path.
 
-```
+The reviewer page has seven questions. Q2a, Q2b, and Q3 are conditional on the verdict radio, so only
+the applicable branch is pasted. Read the rebuttal before Q4 and record the actual elapsed time in Q6.
+
+```text
 Reviewer Answers
 Task: [Original Directory Name]
-Submission zip: [the zip you were given]
-
+Original task zip: [original id and timestamp]
+Reviewed artifact: [submitted zip when supplied, otherwise original task zip]
+Track: [timed-static-v1]
+Review duration: [actual elapsed minutes]
 
 Q1. What is your verdict for this Submission?
 
 [Accept / Needs Revision / Reject]
-(Reject ONLY when the "maximum revision reached" dialog is showing AND it still needs work)
+(Reject only when the maximum-revisions dialog is visible and the task still needs work.)
 
 
 Q2a. If Accept - confirm the task meets all the following requirements
-(the 2026-08-11 cista capture showed only the last five of these six, missing the first, but that
-paste was visibly truncated elsewhere. Keep all six until an untruncated Accept-branch capture says
-otherwise, and tick only what you verified.)
+
 [ ] Tests every requirement in the instructions
 [ ] Test requirements are specified in the instructions
 [ ] Does not appear generated by an LLM
@@ -231,7 +234,12 @@ otherwise, and tick only what you verified.)
 [ ] Oracle solution matches the instruction requirements
 [ ] Instructions are not overly-prescriptive
 
+(Tick only what this review verified. An Accept with one to four smaller confirmed issues leaves the
+relevant non-absolute box unticked and explains the coaching in Q3.)
+
+
 Q2b. If Needs Revision - Error Categories (select all that apply)
+
 - [ ] Instruction Styling
 - [ ] Instruction Prescriptiveness
 - [ ] Test <-> Instruction Misalignment
@@ -252,41 +260,78 @@ Q2b. If Needs Revision - Error Categories (select all that apply)
 - [ ] PR Relevancy
 - [ ] Other
 
+(Tick the smallest set covering notes actually written.)
+
 
 Q3. Please explain in more detail what revisions are needed
 
-[Open with what is RIGHT, with the measurements, before any note. Then one line saying which
-findings are measured and which are read.]
-
-Note 1. [one line stating the finding]
-[the evidence, with the numbers if you measured it]
-Guidelines reference. [the docs/ section that makes it a defect, where one does]
-What to do. [the fix]
-
-Note 2. ...
-
-Note N. [the closing note: what you looked at and are NOT asking to change, including any
-finding you filed and withdrew, with why. An unticked box and an overlooked one look identical
-to a submitter.]
+[When the Reviewer Feedback block exists, begin with "Previous reviewer feedback follow-up". For every
+earlier item, reproduce the feedback detail briefly, give direct current evidence, and label it Done,
+Partly done, Not done, or Not assessed. Then begin "New findings from this review" and number only
+confirmed new issues. Each note names the direct file, line, archive entry, page panel, or submitter
+statement that supports it and gives the smallest remedy. State a Fixable or Unfixable bucket when it
+matters. For an Accept with one to four confirmed smaller issues, write concrete coaching here. Do not
+put rubric labels, pillar names, requirement numbers, or tally counts in this paste.]
 
 
-Q4. What is the overall quality of the submission?
+Q4. Acknowledgement of Submitter Rebuttal
+
+- [ ] I read the submitter's rebuttal and it does not change my review outcome.
+- [ ] I read the submitter's rebuttal and revised my review outcome accordingly.
+- [ ] No rebuttal comments available.
+
+
+Q5. What is the overall quality of the submission?
 
 [1-5] / 5
 
-[one paragraph. A bundle whose golden and tests reproduce the PR exactly cannot be a 1, however
-many verifier defects it carries.]
+[One short paragraph tying the score to the confirmed evidence. Scores 1 and 2 pair with Needs
+Revision. Scores 3 through 5 pair with Accept.]
+
+
+Q6. How long (in minutes) did it take you to complete this review?
+
+[actual timer value] minutes
 
 
 --- Not part of the paste. Record only. ---
 
-Submitter answers. [Whether they were supplied. Three reviews now have received the zip alone, and
-on cista 172 the submitter confirmed the platform shows nothing else, so this is the normal case.
-Name the one or two notes their answers could already have closed. Every other note has to stand on
-the bundle, which is what makes it safe to hand over unread.]
+## Review timer
+Track: timed-static-v1
+Review UUID: [exact platform review task UUID, or NOT SUPPLIED]
+Started: [timestamp after bootstrap]
+Base deadline: [timestamp]
+Extension used: [no / trigger class and timestamp]
+Form-ready: [timestamp]
+Actual elapsed: [minutes]
 
-Form shape. [Anything the live form did today that the template does not predict. Two captures on
-2026-08-11 agree on four questions and on the absence of the Acknowledgement of Submitter Rebuttal
-and review-duration fields that docs/tasking-guide.md:401-459 describes, so their absence is settled
-and does not need re-recording. A NEW difference does.]
+## Evidence reviewed
+Original task zip: [id, timestamp, sha256]
+Submitted task zip: [id, timestamp, sha256, or NOT SUPPLIED]
+Reviewed artifact: [submitted zip when supplied, otherwise original task zip]
+Reviewer page: [branch, panels, submitter answers, rebuttal, prior feedback actually read]
+
+## Previous reviewer feedback
+[For every item in the Reviewer Feedback block: item, direct current evidence, and one mark: fixed / partial / still open / not assessed. Reconcile this checklist before listing new items. No Accept while a required item is not assessed.]
+
+## Fast static gate
+[PASS / FAIL / SKIP names only]
+
+## In-depth extension
+[Not used, or the one trigger, the narrow static question, command/read performed, and result. No
+Docker, Harbor, Oracle, NOP, container, mutation, or battery entry belongs here.]
+
+## Rubric tally
+[Confirmed findings only. Plain record vocabulary is allowed here: severity, the supporting pillar or
+secondary requirement, provenance, bucket, verdict, and score. Observations are named as non-counting.]
+
+## Deferred maintenance
+[If previous reviewer feedback was present, record one evidence or clarity lesson for future review
+writing without copying its boilerplate. If this verdict is Accept, add or update the task learning in
+`learning/bundles-i-accepted-as-reviewer.md` and any genuinely new learning note. Append the exact
+Review UUID once to root `review_tally.md`. After matching sha256 confirms the retained
+`review_tasks/<name>/download/` copies, remove the original ZIP source copy and any submitted ZIP source copy that
+sit directly in the workspace root. Never remove retained downloads, archives, or `logs_artifact.zip`.
+Then record register, calibration, root-ZIP cleanup, and archive status. This work starts after
+form-ready and never changes the recorded review duration.]
 ```

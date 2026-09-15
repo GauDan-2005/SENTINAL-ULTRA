@@ -52,6 +52,7 @@ cat <<'SCHEMA'
     "static":           "PASS",              // PASS | FAIL | not-run
     "prescriptiveness": {"score": 0.25, "findings": 4, "result": "FAIL"},
     "difficulty":       {"valid_trials": 3, "total": 16, "pass_rate": "1/3",
+                         "checks_run": 2, "checks_remaining": 2,
                          "error": "tests.patch did not apply"},
     "oracle":           {"passed": 3, "of": 3},
     "quality":          {"criteria_pass": 15, "of": 15, "failed_ids": []}
@@ -69,9 +70,19 @@ cat <<'SCHEMA'
 #   oracle            passed < of  (the platform runs the oracle 3 times and needs 3 of 3)
 #   quality           criteria_pass < of, or failed_ids non-empty
 #
+# THE DIFFICULTY BUDGET: checks_run and checks_remaining are the two read-only fields the
+# platform added on 2026-08-14 (docs/faq.md, "Difficulty checks are now capped"). Copy them off
+# the live submission every round, because nothing else records them and they cannot be
+# reconstructed later. Four difficulty checks that RUN AND RETURN A RESULT exhaust the budget
+# and the platform then sets the verdict to Invalid Difficulty itself. Both keys are optional
+# and a missing one reads as unknown, never as a full budget. A reviewer sending the task back
+# resets the count to zero, so checks_run can legitimately go DOWN between rounds.
+#
 # TWO STRIKES: the same check fails in two consecutive rounds whose fix_applied differ. That
 # means two different locally-verified fixes both missed, so the model of the environment is
-# wrong. Remove the dependency instead of refining the theory.
+# wrong. Remove the dependency instead of refining the theory. With the budget at four, two
+# strikes now costs half of it, which is the argument for measuring a lever before spending a
+# check on it rather than after.
 SCHEMA
 exit 0
 fi
@@ -175,10 +186,21 @@ def cell(r, name):
         return str(c)
     if name == "difficulty":
         if isinstance(c, dict):
+            # the platform's own budget, added 2026-08-14. Optional, and shown whenever it was
+            # recorded, because a round with one check left is not the same round as a round
+            # with four however the trials came out.
+            # kept short on purpose: the trend table pads its cells to a fixed width, so a
+            # longer suffix silently pushes every column out of alignment.
+            run, left = c.get("checks_run"), c.get("checks_remaining")
+            budget = ""
+            if run is not None:
+                budget = " [{}/4]".format(run)
+            elif left is not None:
+                budget = " [{}left]".format(left)
             v, t = c.get("valid_trials"), c.get("total")
             if v is None or t is None:
-                return str(c)
-            return f"{int(t) - int(v)}/{t} inv"
+                return str(c) if not budget else str(c) + budget
+            return f"{int(t) - int(v)}/{t} inv" + budget
         return str(c)
     if name == "oracle":
         if isinstance(c, dict):

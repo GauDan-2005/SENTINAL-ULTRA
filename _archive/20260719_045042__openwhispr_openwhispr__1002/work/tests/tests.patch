@@ -1,0 +1,582 @@
+diff --git a/test/helpers/sentinelByokManifest.test.js b/test/helpers/sentinelByokManifest.test.js
+new file mode 100644
+index 00000000..c19dea11
+--- /dev/null
++++ b/test/helpers/sentinelByokManifest.test.js
+@@ -0,0 +1,576 @@
++// dotenv prints a rotating tip to stdout on every config() call, which lands in
++// the middle of the runner's TAP stream and derails it. Silence it before
++// anything under test can load dotenv.
++process.env.DOTENV_CONFIG_QUIET = "true";
++
++const test = require("node:test");
++const assert = require("node:assert");
++const os = require("os");
++const path = require("path");
++const fs = require("fs");
++const Module = require("module");
++
++const APP_ROOT = path.join(__dirname, "..", "..");
++const PRELOAD_PATH = path.join(APP_ROOT, "preload.js");
++
++// Electron only exists inside a running Electron process, and the OS keyring
++// must not be touched from a test run, so both are stood in for here. With
++// encryption unavailable the secret manager takes its plaintext process.env
++// path, which is what lets a save be observed directly.
++const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), "ow-byok-"));
++process.resourcesPath = tmpUserData;
++
++let exposedApi = null;
++const rendererInvocations = [];
++const mainChannels = new Map();
++
++const fakeElectron = {
++  app: { getPath: () => tmpUserData, getVersion: () => "0.0.0", on() {} },
++  safeStorage: { isEncryptionAvailable: () => false },
++  contextBridge: {
++    exposeInMainWorld: (_name, api) => {
++      exposedApi = api;
++    },
++  },
++  ipcRenderer: {
++    invoke: (channel, ...args) => {
++      rendererInvocations.push({ channel, args });
++      return Promise.resolve(null);
++    },
++    on() {},
++    once() {},
++    send() {},
++    removeListener() {},
++    removeAllListeners() {},
++  },
++  ipcMain: {
++    handle: (channel, handler) => mainChannels.set(channel, handler),
++    on() {},
++    removeHandler() {},
++  },
++  shell: { openExternal: async () => ({}) },
++  BrowserWindow: class {
++    static getAllWindows() {
++      return [];
++    }
++  },
++  systemPreferences: { getMediaAccessStatus: () => "granted" },
++  net: { request: () => ({ on() {}, end() {} }) },
++  webUtils: { getPathForFile: () => "" },
++};
++
++const realLoad = Module._load;
++Module._load = function (request, ...rest) {
++  if (request === "electron") return fakeElectron;
++  if (request === "@napi-rs/keyring") throw new Error("keyring disabled under test");
++  return realLoad.call(this, request, ...rest);
++};
++
++const { BYOK_API_KEYS } = require("../../src/config/secretKeys");
++const EnvironmentManager = require("../../src/helpers/environment");
++const IPCHandlers = require("../../src/helpers/ipcHandlers");
++
++// The providers, accessors and channels that already existed before this
++// change. Every one of them is readable in the repository at the base commit,
++// and all of them have to survive the move to a generated manifest.
++const PROVIDER_SLUGS = [
++  "openai",
++  "anthropic",
++  "gemini",
++  "groq",
++  "xai",
++  "mistral",
++  "openrouter",
++  "tinfoil",
++];
++const LEGACY_ACCESSORS = [
++  ["openai", "OPENAI_API_KEY", "getOpenAIKey", "saveOpenAIKey"],
++  ["anthropic", "ANTHROPIC_API_KEY", "getAnthropicKey", "saveAnthropicKey"],
++  ["gemini", "GEMINI_API_KEY", "getGeminiKey", "saveGeminiKey"],
++  ["groq", "GROQ_API_KEY", "getGroqKey", "saveGroqKey"],
++  ["xai", "XAI_API_KEY", "getXaiKey", "saveXaiKey"],
++  ["mistral", "MISTRAL_API_KEY", "getMistralKey", "saveMistralKey"],
++  ["tinfoil", "TINFOIL_API_KEY", "getTinfoilKey", "saveTinfoilKey"],
++];
++const NON_BYOK_ACCESSORS = [
++  "getAssemblyAIKey",
++  "saveAssemblyAIKey",
++  "getDeepgramKey",
++  "saveDeepgramKey",
++  "getCortiClientId",
++  "saveCortiClientId",
++  "getCortiClientSecret",
++  "saveCortiClientSecret",
++  "getCustomTranscriptionKey",
++  "saveCustomTranscriptionKey",
++  "getCleanupCustomKey",
++  "saveCleanupCustomKey",
++];
++
++const REQUIRED_FIELDS = ["base", "env", "get", "save", "storeKey"];
++
++function clearByokEnv() {
++  for (const entry of BYOK_API_KEYS) delete process.env[entry.env];
++}
++
++function freshManager() {
++  const manager = new EnvironmentManager();
++  clearByokEnv();
++  return manager;
++}
++
++// Load preload.js the way the sandboxed windows load it: electron is the only
++// module it may reach for. A preload that requires the manifest instead of
++// carrying its own copy throws here, which is the behaviour under sandbox.
++function loadPreloadUnderSandbox() {
++  exposedApi = null;
++  rendererInvocations.length = 0;
++  delete require.cache[PRELOAD_PATH];
++  const previous = Module._load;
++  Module._load = function (request, ...rest) {
++    if (request === "electron") return fakeElectron;
++    if (request.startsWith(".") || path.isAbsolute(request)) {
++      throw new Error(`sandboxed preload may not require a local module: ${request}`);
++    }
++    return realLoad.call(this, request, ...rest);
++  };
++  try {
++    realLoad.call(Module, PRELOAD_PATH, module, false);
++  } finally {
++    Module._load = previous;
++  }
++  assert.ok(exposedApi, "preload.js exposed an api on the context bridge");
++  return exposedApi;
++}
++
++function registerMainChannels(manager) {
++  mainChannels.clear();
++  const handlers = Object.create(IPCHandlers.prototype);
++  handlers.environmentManager = manager;
++  IPCHandlers.prototype.setupHandlers.call(handlers);
++  return mainChannels;
++}
++
++// A provider that is in no way special, used to check that adding one entry is
++// genuinely all it takes. Reload the manager and the IPC layer against a
++// manifest carrying this extra entry, then put everything back.
++const ADDED_PROVIDER = {
++  base: "sentinelprobe",
++  env: "SENTINELPROBE_API_KEY",
++  get: "getSentinelprobeKey",
++  save: "saveSentinelprobeKey",
++  storeKey: "sentinelprobeApiKey",
++};
++
++const MANIFEST_PATH = require.resolve("../../src/config/secretKeys");
++const MANAGER_PATH = require.resolve("../../src/helpers/environment");
++const IPC_PATH = require.resolve("../../src/helpers/ipcHandlers");
++
++function withProviderAddedToManifest(body) {
++  const previous = Module._load;
++  const drop = () => {
++    for (const p of [MANIFEST_PATH, MANAGER_PATH, IPC_PATH]) delete require.cache[p];
++  };
++  drop();
++  Module._load = function (request, parent, isMain) {
++    if (request === "electron") return fakeElectron;
++    if (request === "@napi-rs/keyring") throw new Error("keyring disabled under test");
++    try {
++      if (Module._resolveFilename(request, parent) === MANIFEST_PATH) {
++        return { BYOK_API_KEYS: [...BYOK_API_KEYS, ADDED_PROVIDER] };
++      }
++    } catch {
++      // not resolvable from here, fall through to the normal loader
++    }
++    return realLoad.call(this, request, parent, isMain);
++  };
++  try {
++    return body({
++      Manager: require(MANAGER_PATH),
++      Handlers: require(IPC_PATH),
++      added: ADDED_PROVIDER,
++    });
++  } finally {
++    Module._load = previous;
++    drop();
++    delete process.env[ADDED_PROVIDER.env];
++  }
++}
++
++test("sentinel the manifest covers exactly the eight named providers", () => {
++  assert.ok(Array.isArray(BYOK_API_KEYS), "BYOK_API_KEYS is an array");
++  assert.equal(BYOK_API_KEYS.length, 8, "manifest holds exactly eight providers");
++  assert.deepEqual(
++    [...BYOK_API_KEYS.map((entry) => entry.base)].sort(),
++    [...PROVIDER_SLUGS].sort(),
++    "every provider the brief names is present, and nothing else is"
++  );
++});
++
++test("sentinel every manifest entry is complete and no two entries collide", () => {
++  const seen = {};
++  for (const field of REQUIRED_FIELDS) seen[field] = new Set();
++  for (const entry of BYOK_API_KEYS) {
++    for (const field of REQUIRED_FIELDS) {
++      const value = entry[field];
++      assert.equal(typeof value, "string", `${field} is a string on ${entry.base}`);
++      assert.ok(value.length > 0, `${field} is not empty on ${entry.base}`);
++      assert.ok(!seen[field].has(value), `${field} ${value} is used twice in the manifest`);
++      seen[field].add(value);
++    }
++  }
++});
++
++test("sentinel manifest environment variables follow the naming already in the codebase", () => {
++  for (const entry of BYOK_API_KEYS) {
++    assert.equal(
++      entry.env,
++      `${entry.base.toUpperCase()}_API_KEY`,
++      `${entry.base} names its environment variable the way the existing providers do`
++    );
++  }
++});
++
++test("sentinel every manifest key round-trips through a generated accessor", () => {
++  const manager = freshManager();
++  for (const entry of BYOK_API_KEYS) {
++    assert.equal(typeof manager[entry.get], "function", `${entry.get} was generated`);
++    assert.equal(typeof manager[entry.save], "function", `${entry.save} was generated`);
++
++    const secret = `sk-sentinel-${entry.base}-1`;
++    const result = manager[entry.save](secret);
++    assert.ok(result && result.success === true, `${entry.save} reports success`);
++    assert.equal(manager[entry.get](), secret, `${entry.base} reads back what was saved`);
++    assert.equal(process.env[entry.env], secret, `${entry.base} reached its environment variable`);
++  }
++  clearByokEnv();
++});
++
++test("sentinel clearing a key empties the accessor and removes the environment variable", () => {
++  const manager = freshManager();
++  for (const entry of BYOK_API_KEYS) {
++    manager[entry.save](`sk-sentinel-${entry.base}-2`);
++    assert.equal(process.env[entry.env], `sk-sentinel-${entry.base}-2`);
++    manager[entry.save]("");
++    assert.equal(manager[entry.get](), "", `${entry.base} reads back empty once cleared`);
++    assert.equal(
++      process.env[entry.env],
++      undefined,
++      `${entry.env} is gone rather than left with a stale value`
++    );
++  }
++});
++
++test("sentinel manifest environment variables are persisted with the manager's other secrets", async () => {
++  const manager = freshManager();
++  for (const entry of BYOK_API_KEYS) manager[entry.save](`sk-sentinel-${entry.base}-3`);
++  manager.saveAssemblyAIKey("sk-sentinel-assemblyai");
++
++  await manager.saveAllKeysToEnvFile();
++  const written = fs.readFileSync(path.join(tmpUserData, ".env"), "utf8");
++
++  for (const entry of BYOK_API_KEYS) {
++    assert.ok(
++      written.includes(`${entry.env}=sk-sentinel-${entry.base}-3`),
++      `${entry.env} was persisted alongside the other secrets`
++    );
++  }
++  assert.ok(
++    written.includes("ASSEMBLYAI_API_KEY=sk-sentinel-assemblyai"),
++    "the secrets that are not in the manifest are still persisted too"
++  );
++
++  for (const entry of BYOK_API_KEYS) manager[entry.save]("");
++  manager.saveAssemblyAIKey("");
++});
++
++test("sentinel openrouter stores its secret independently of every other provider", () => {
++  const openrouter = BYOK_API_KEYS.find((entry) => entry.base === "openrouter");
++  assert.ok(openrouter, "openrouter is in the manifest");
++
++  const manager = freshManager();
++  manager[openrouter.save]("sk-sentinel-openrouter-only");
++  for (const entry of BYOK_API_KEYS) {
++    if (entry.base === "openrouter") continue;
++    assert.equal(manager[entry.get](), "", `${entry.base} was not written by the openrouter save`);
++    assert.equal(process.env[entry.env], undefined, `${entry.env} was not written either`);
++  }
++
++  const neighbour = BYOK_API_KEYS.find((entry) => entry.base === "openai");
++  manager[neighbour.save]("sk-sentinel-openai-only");
++  assert.equal(
++    manager[openrouter.get](),
++    "sk-sentinel-openrouter-only",
++    "the openrouter secret survives another provider being saved"
++  );
++
++  manager[openrouter.save]("");
++  manager[neighbour.save]("");
++});
++
++test("sentinel the accessors that existed before the change still work", () => {
++  const manager = freshManager();
++  for (const [base, env, get, save] of LEGACY_ACCESSORS) {
++    const entry = BYOK_API_KEYS.find((candidate) => candidate.base === base);
++    assert.ok(entry, `${base} is still in the manifest`);
++    assert.equal(entry.env, env, `${base} kept the environment variable it already used`);
++    assert.equal(entry.get, get, `${base} kept its getter name`);
++    assert.equal(entry.save, save, `${base} kept its setter name`);
++    assert.equal(typeof manager[get], "function", `${get} is still callable`);
++    assert.equal(typeof manager[save], "function", `${save} is still callable`);
++  }
++  for (const name of NON_BYOK_ACCESSORS) {
++    assert.equal(typeof manager[name], "function", `${name} was left alone`);
++  }
++});
++
++test("sentinel the sandboxed preload exposes a bridge for every manifest entry", () => {
++  const api = loadPreloadUnderSandbox();
++  for (const entry of BYOK_API_KEYS) {
++    assert.equal(typeof api[entry.get], "function", `${entry.get} is bridged to the renderer`);
++    assert.equal(typeof api[entry.save], "function", `${entry.save} is bridged to the renderer`);
++  }
++});
++
++test("sentinel every preload bridge invokes its own manifest channel", () => {
++  const api = loadPreloadUnderSandbox();
++  for (const entry of BYOK_API_KEYS) {
++    rendererInvocations.length = 0;
++    api[entry.get]();
++    assert.equal(rendererInvocations.length, 1, `${entry.get} made exactly one call`);
++    assert.equal(rendererInvocations[0].channel, `get-${entry.base}-key`);
++    assert.deepEqual(rendererInvocations[0].args, [], `${entry.get} passes no argument`);
++
++    rendererInvocations.length = 0;
++    api[entry.save](`sk-sentinel-${entry.base}-bridge`);
++    assert.equal(rendererInvocations.length, 1, `${entry.save} made exactly one call`);
++    assert.equal(rendererInvocations[0].channel, `save-${entry.base}-key`);
++    assert.deepEqual(rendererInvocations[0].args, [`sk-sentinel-${entry.base}-bridge`]);
++  }
++});
++
++test("sentinel the main process answers a get and a save channel for every manifest entry", () => {
++  const channels = registerMainChannels(freshManager());
++  for (const entry of BYOK_API_KEYS) {
++    assert.ok(
++      channels.has(`get-${entry.base}-key`),
++      `the main process registered get-${entry.base}-key`
++    );
++    assert.ok(
++      channels.has(`save-${entry.base}-key`),
++      `the main process registered save-${entry.base}-key`
++    );
++  }
++});
++
++test("sentinel every channel the preload calls is one the main process registered", () => {
++  const channels = registerMainChannels(freshManager());
++  const api = loadPreloadUnderSandbox();
++  const called = new Set();
++  for (const entry of BYOK_API_KEYS) {
++    rendererInvocations.length = 0;
++    api[entry.get]();
++    api[entry.save]("sk-sentinel-lockstep");
++    for (const call of rendererInvocations) called.add(call.channel);
++  }
++  assert.equal(called.size, BYOK_API_KEYS.length * 2, "one get and one save call per provider");
++  for (const channel of called) {
++    assert.ok(channels.has(channel), `${channel} is answered by the main process`);
++  }
++});
++
++test("sentinel a save channel round-trips through the environment manager", async () => {
++  const manager = freshManager();
++  const channels = registerMainChannels(manager);
++  for (const entry of BYOK_API_KEYS) {
++    const secret = `sk-sentinel-${entry.base}-channel`;
++    await channels.get(`save-${entry.base}-key`)({}, secret);
++    assert.equal(
++      await channels.get(`get-${entry.base}-key`)({}),
++      secret,
++      `get-${entry.base}-key returns what save-${entry.base}-key stored`
++    );
++    assert.equal(
++      manager[entry.get](),
++      secret,
++      `the channel wrote through the manager rather than a store of its own`
++    );
++    await channels.get(`save-${entry.base}-key`)({}, "");
++  }
++});
++
++test("sentinel each store key follows the naming the existing providers use", () => {
++  for (const entry of BYOK_API_KEYS) {
++    assert.equal(
++      entry.storeKey,
++      `${entry.base}ApiKey`,
++      `${entry.base} names its settings-store key the way the existing providers do`
++    );
++  }
++});
++
++test("sentinel a provider added to the manifest gets working accessors with no other edit", () => {
++  withProviderAddedToManifest(({ Manager, added }) => {
++    const manager = new Manager();
++    assert.equal(
++      typeof manager[added.get],
++      "function",
++      "the manager exposes a getter for a provider it was never told about by hand"
++    );
++    assert.equal(typeof manager[added.save], "function", "as well as the matching setter");
++
++    const secret = "sk-sentinel-added-provider";
++    const result = manager[added.save](secret);
++    assert.ok(result && result.success === true, "the generated setter reports success");
++    assert.equal(manager[added.get](), secret, "the new provider round-trips");
++    assert.equal(process.env[added.env], secret, "and reached its own environment variable");
++    manager[added.save]("");
++    assert.equal(process.env[added.env], undefined, "and clears like every other provider");
++  });
++  const untouched = freshManager();
++  assert.equal(
++    typeof untouched[ADDED_PROVIDER.get],
++    "undefined",
++    "the extra provider is gone again once the manifest is back to normal"
++  );
++});
++
++test("sentinel a provider added to the manifest gets main process channels with no other edit", () => {
++  withProviderAddedToManifest(({ Manager, Handlers, added }) => {
++    const manager = new Manager();
++    mainChannels.clear();
++    const handlers = Object.create(Handlers.prototype);
++    handlers.environmentManager = manager;
++    Handlers.prototype.setupHandlers.call(handlers);
++
++    assert.ok(
++      mainChannels.has(`get-${added.base}-key`),
++      "the main process answers a get channel for a provider it was never told about by hand"
++    );
++    assert.ok(mainChannels.has(`save-${added.base}-key`), "as well as the matching save channel");
++  });
++  const channels = registerMainChannels(freshManager());
++  assert.equal(
++    channels.has(`get-${ADDED_PROVIDER.base}-key`),
++    false,
++    "the extra channel is gone again once the manifest is back to normal"
++  );
++});
++
++// The settings store is renderer TypeScript that Vite resolves without file
++// extensions and imports JSON with. Node needs both spelled out, so the loader
++// hook below is the browser bundler's resolution rules and nothing more: it
++// adds the extension node will not guess and declares the json attribute node
++// requires. The store's own module body runs unmodified.
++let storeModulePromise = null;
++function loadSettingsStore() {
++  if (storeModulePromise) return storeModulePromise;
++  const { registerHooks } = require("node:module");
++  registerHooks({
++    resolve(spec, ctx, next) {
++      if ((spec.startsWith(".") || spec.startsWith("/")) && ctx.parentURL) {
++        const from = path.dirname(new URL(ctx.parentURL).pathname);
++        const base = path.resolve(from, spec);
++        for (const ext of ["", ".ts", ".tsx", ".js", ".json", "/index.ts", "/index.tsx", "/index.js"]) {
++          const candidate = base + ext;
++          try {
++            if (fs.statSync(candidate).isFile()) {
++              const resolved = next(new URL(`file://${candidate}`).href, ctx);
++              return candidate.endsWith(".json")
++                ? { ...resolved, importAttributes: { type: "json" } }
++                : resolved;
++            }
++          } catch {
++            // not this extension, try the next
++          }
++        }
++      }
++      const resolved = next(spec, ctx);
++      return (resolved.url || "").endsWith(".json")
++        ? { ...resolved, importAttributes: { type: "json" } }
++        : resolved;
++    },
++  });
++  // The renderer globals the store touches while loading. It is a browser
++  // module, so it expects a window and somewhere to keep local state.
++  globalThis.window = globalThis;
++  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
++  globalThis.dispatchEvent = () => true;
++  globalThis.addEventListener = () => {};
++  globalThis.removeEventListener = () => {};
++  if (typeof globalThis.Event !== "function") {
++    globalThis.Event = class {
++      constructor(type) {
++        this.type = type;
++      }
++    };
++  }
++  storeModulePromise = import(path.join(APP_ROOT, "src", "stores", "settingsStore.ts"));
++  return storeModulePromise;
++}
++
++function setterNameFor(storeKey) {
++  return `set${storeKey[0].toUpperCase()}${storeKey.slice(1)}`;
++}
++
++test("sentinel the settings store keeps a key and a setter for every manifest entry", async () => {
++  const { useSettingsStore } = await loadSettingsStore();
++  for (const entry of BYOK_API_KEYS) {
++    const state = useSettingsStore.getState();
++    assert.ok(
++      entry.storeKey in state,
++      `the store holds ${entry.storeKey} so ${entry.base} has somewhere to be saved`
++    );
++    const setter = state[setterNameFor(entry.storeKey)];
++    assert.equal(typeof setter, "function", `${entry.base} has a settings-store setter`);
++
++    setter(`sk-store-${entry.base}`);
++    assert.equal(
++      useSettingsStore.getState()[entry.storeKey],
++      `sk-store-${entry.base}`,
++      `setting ${entry.base} lands under its own store key`
++    );
++  }
++  for (const entry of BYOK_API_KEYS) useSettingsStore.getState()[setterNameFor(entry.storeKey)]("");
++});
++
++test("sentinel each settings store setter reaches that provider's save accessor", async () => {
++  const { useSettingsStore } = await loadSettingsStore();
++  const reached = [];
++  const previousApi = globalThis.electronAPI;
++  globalThis.electronAPI = new Proxy(
++    {},
++    {
++      get: (_target, name) =>
++        typeof name === "string" && /^(save|get)/.test(name)
++          ? (...args) => {
++              reached.push({ name, args });
++              return Promise.resolve(null);
++            }
++          : undefined,
++      has: () => true,
++    }
++  );
++  try {
++    for (const entry of BYOK_API_KEYS) {
++      useSettingsStore.getState()[setterNameFor(entry.storeKey)](`sk-route-${entry.base}`);
++    }
++    // the store debounces the write to the main process
++    for (const wait of [0, 250, 600, 1200, 2500]) {
++      await new Promise((resolve) => setTimeout(resolve, wait));
++      if (reached.length >= BYOK_API_KEYS.length) break;
++    }
++    const names = new Set(reached.map((call) => call.name));
++    for (const entry of BYOK_API_KEYS) {
++      assert.ok(
++        names.has(entry.save),
++        `saving ${entry.base} in the settings store reaches ${entry.save}, the accessor the manifest names`
++      );
++    }
++  } finally {
++    globalThis.electronAPI = previousApi;
++    for (const entry of BYOK_API_KEYS) {
++      useSettingsStore.getState()[setterNameFor(entry.storeKey)]("");
++    }
++  }
++});

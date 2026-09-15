@@ -1,0 +1,384 @@
+diff --git a/test/fixtures/empty-doc.adoc b/test/fixtures/empty-doc.adoc
+new file mode 100644
+index 0000000..1786de0
+--- /dev/null
++++ b/test/fixtures/empty-doc.adoc
+@@ -0,0 +1,3 @@
++= Title
++
++Just a paragraph with no sections.
+diff --git a/test/fixtures/sections.adoc b/test/fixtures/sections.adoc
+new file mode 100644
+index 0000000..5adb63f
+--- /dev/null
++++ b/test/fixtures/sections.adoc
+@@ -0,0 +1,49 @@
++= Title
++
++<<<
++
++== Section 1
++
++<<<
++
++=== Section 1.1
++
++<<<
++
++==== Section 1.1.1
++
++<<<
++
++===== Section 1.1.1.1
++
++<<<
++
++== Section 2
++
++<<<
++
++=== Section 2.1
++
++<<<
++
++=== Section 2.2
++
++<<<
++
++== Section 3
++
++<<<
++
++=== Section 3.1
++
++<<<
++
++==== Section 3.1.1
++
++<<<
++
++== Section 4
++
++<<<
++
++=== Section 4.1
+diff --git a/test/fixtures/umlaut-section.adoc b/test/fixtures/umlaut-section.adoc
+new file mode 100644
+index 0000000..8f68546
+--- /dev/null
++++ b/test/fixtures/umlaut-section.adoc
+@@ -0,0 +1,7 @@
++= Title
++
++<<<
++
++== Öar i Östersjön
++
++Some content.
+diff --git a/test/output/.gitkeep b/test/output/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/test/pdf_test.js b/test/pdf_test.js
+new file mode 100644
+index 0000000..3e61b08
+--- /dev/null
++++ b/test/pdf_test.js
+@@ -0,0 +1,298 @@
++/* global it, describe, Opal */
++const fs = require('fs')
++const { PDFDocument, PDFName, PDFDict, PDFString, PDFNumber } = require('pdf-lib')
++const chai = require('chai')
++const expect = chai.expect
++const dirtyChai = require('dirty-chai')
++chai.use(dirtyChai)
++
++const asciidoctor = require('@asciidoctor/core')()
++const converter = require('../lib/converter.js')
++const templates = require('../lib/document/templates.js')
++converter.registerTemplateConverter(asciidoctor, templates)
++
++function asDict (pdfDoc, maybeRef) {
++  if (!maybeRef) {
++    return null
++  }
++  const obj = pdfDoc.context.lookup(maybeRef)
++  return obj instanceof PDFDict ? obj : null
++}
++
++function destOf (dict) {
++  const dest = dict.get(PDFName.of('Dest'))
++  if (!dest) {
++    return ''
++  }
++  if (typeof dest.encodedName === 'string') {
++    return dest.encodedName
++  }
++  return String(dest)
++}
++
++function titleOf (dict) {
++  const title = dict.get(PDFName.of('Title'))
++  if (title instanceof PDFString) {
++    return title.decodeText()
++  }
++  return title ? String(title) : ''
++}
++
++function hasNoOutlineEntries (pdfDoc) {
++  const outlinesRef = pdfDoc.catalog.get(PDFName.of('Outlines'))
++  if (!outlinesRef) {
++    return true
++  }
++  const root = asDict(pdfDoc, outlinesRef)
++  if (!root) {
++    return true
++  }
++  const first = root.get(PDFName.of('First'))
++  if (!first) {
++    return true
++  }
++  return asDict(pdfDoc, first) == null
++}
++
++function collectOutlineItems (pdfDoc) {
++  const outlinesRef = pdfDoc.catalog.get(PDFName.of('Outlines'))
++  expect(outlinesRef, 'catalog must reference /Outlines').to.exist()
++  const root = asDict(pdfDoc, outlinesRef)
++  expect(root, '/Outlines must resolve to a dictionary').to.exist()
++
++  const first = root.get(PDFName.of('First'))
++  const last = root.get(PDFName.of('Last'))
++  expect(first, '/Outlines must have /First').to.exist()
++  expect(last, '/Outlines must have /Last').to.exist()
++  expect(asDict(pdfDoc, first), '/Outlines /First must resolve').to.exist()
++  expect(asDict(pdfDoc, last), '/Outlines /Last must resolve').to.exist()
++  const rootCount = root.get(PDFName.of('Count'))
++  expect(rootCount, '/Outlines must have /Count').to.exist()
++
++  const items = []
++
++  const walkSiblings = (startRef) => {
++    let currentRef = startRef
++    let prevRef = null
++    while (currentRef) {
++      const dict = asDict(pdfDoc, currentRef)
++      expect(dict, 'outline item ref must resolve to a dictionary').to.exist()
++
++      const title = dict.get(PDFName.of('Title'))
++      const dest = dict.get(PDFName.of('Dest'))
++      expect(title, 'outline item must have /Title').to.exist()
++      expect(dest, 'outline item must have /Dest').to.exist()
++
++      const parent = dict.get(PDFName.of('Parent'))
++      expect(parent, 'outline item must have /Parent').to.exist()
++      expect(asDict(pdfDoc, parent), '/Parent must resolve to a dictionary').to.exist()
++
++      const childFirst = dict.get(PDFName.of('First'))
++      const childLast = dict.get(PDFName.of('Last'))
++      const count = dict.get(PDFName.of('Count'))
++      const next = dict.get(PDFName.of('Next'))
++      const prev = dict.get(PDFName.of('Prev'))
++
++      if (childFirst) {
++        expect(childLast, 'parent outline item must have /Last when it has /First').to.exist()
++        expect(count, 'parent outline item must have /Count when it has children').to.exist()
++        expect(count instanceof PDFNumber).to.equal(true)
++        expect(asDict(pdfDoc, childFirst), '/First must resolve to a dictionary').to.exist()
++        expect(asDict(pdfDoc, childLast), '/Last must resolve to a dictionary').to.exist()
++      }
++
++      if (prevRef) {
++        expect(prev, 'non-first sibling must have /Prev').to.exist()
++        expect(asDict(pdfDoc, prev), '/Prev must resolve to a dictionary').to.exist()
++      }
++      if (next) {
++        expect(asDict(pdfDoc, next), '/Next must resolve to a dictionary').to.exist()
++      }
++
++      items.push({
++        dest: destOf(dict),
++        title: titleOf(dict),
++        dict,
++        ref: currentRef,
++        hasFirst: Boolean(childFirst),
++        hasLast: Boolean(childLast),
++        hasCount: Boolean(count),
++        hasNext: Boolean(next),
++        hasPrev: Boolean(prev)
++      })
++
++      if (childFirst) {
++        walkSiblings(childFirst)
++      }
++
++      prevRef = currentRef
++      currentRef = next || null
++    }
++  }
++
++  walkSiblings(first)
++  return items
++}
++
++describe('PDF converter', () => {
++  const convert = async (inputFile, outputFile, options) => {
++    const opts = options || {}
++    opts.to_file = outputFile
++    await converter.convert(asciidoctor, inputFile, opts, false)
++    return PDFDocument.load(fs.readFileSync(outputFile))
++  }
++
++  it('should generate a PDF outline even if the TOC is absent from the output', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toc: 'macro' } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-toc-absent.pdf`, options)
++    const refs = collectOutlineItems(pdfDoc)
++    expect(refs.length).to.equal(9)
++    expect(refs[0].dest).to.equal('/_section_1')
++  })
++
++  it('should generate a PDF outline even if the TOC is not enabled', async function () {
++    this.timeout(60000)
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-toc-disabled.pdf`)
++    const refs = collectOutlineItems(pdfDoc)
++    expect(refs.length).to.equal(9)
++    expect(refs[0].dest).to.equal('/_section_1')
++  })
++
++  it('should honor toclevels 1 when generating a PDF outline', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toclevels: 1 } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-toclevels-1.pdf`, options)
++    const refs = collectOutlineItems(pdfDoc)
++    expect(refs.length).to.equal(4)
++    expect(refs[0].dest).to.equal('/_section_1')
++  })
++
++  it('should honor toclevels 3 when generating a PDF outline', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toclevels: 3 } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-toclevels-3.pdf`, options)
++    const refs = collectOutlineItems(pdfDoc)
++    expect(refs.length).to.equal(11)
++    expect(refs[0].dest).to.equal('/_section_1')
++  })
++
++  it('should use section titles as outline entry labels', async function () {
++    this.timeout(60000)
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-titles.pdf`)
++    const refs = collectOutlineItems(pdfDoc)
++    const titles = refs.map((r) => r.title)
++    expect(titles).to.include('Section 1')
++    expect(titles).to.include('Section 1.1')
++    expect(titles).to.include('Section 2')
++  })
++
++  it('should nest child outline entries under their parent section', async function () {
++    this.timeout(60000)
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-nested.pdf`)
++    const refs = collectOutlineItems(pdfDoc)
++    const section1 = refs.find((d) => d.dest === '/_section_1')
++    expect(section1).to.exist()
++    expect(section1.hasFirst).to.be.true()
++    expect(section1.hasLast).to.be.true()
++    expect(section1.hasCount).to.be.true()
++    const firstChild = asDict(pdfDoc, section1.dict.get(PDFName.of('First')))
++    const lastChild = asDict(pdfDoc, section1.dict.get(PDFName.of('Last')))
++    expect(firstChild).to.exist()
++    expect(lastChild).to.exist()
++    expect(destOf(firstChild)).to.equal('/_section_1_1')
++    expect(destOf(lastChild)).to.equal('/_section_1_1')
++  })
++
++  it('should link sibling outline entries with Next and Prev', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toclevels: 1 } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-siblings.pdf`, options)
++    const refs = collectOutlineItems(pdfDoc)
++    const section1 = refs.find((d) => d.dest === '/_section_1')
++    const section2 = refs.find((d) => d.dest === '/_section_2')
++    expect(section1.hasNext).to.be.true()
++    expect(section2.hasPrev).to.be.true()
++    const nextOf1 = asDict(pdfDoc, section1.dict.get(PDFName.of('Next')))
++    const prevOf2 = asDict(pdfDoc, section2.dict.get(PDFName.of('Prev')))
++    expect(nextOf1).to.exist()
++    expect(prevOf2).to.exist()
++    expect(destOf(nextOf1)).to.equal('/_section_2')
++    expect(destOf(prevOf2)).to.equal('/_section_1')
++  })
++
++  it('should include nested section destinations within toclevels', async function () {
++    this.timeout(60000)
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-nested-dest.pdf`)
++    const refs = collectOutlineItems(pdfDoc)
++    const dests = refs.map((d) => d.dest)
++    expect(dests).to.include('/_section_1_1')
++    expect(dests).to.not.include('/_section_1_1_1')
++  })
++
++  it('should leave a document with no sections without an outline', async function () {
++    this.timeout(60000)
++    const pdfDoc = await convert(`${__dirname}/fixtures/empty-doc.adoc`, `${__dirname}/output/empty-doc.pdf`)
++    expect(hasNoOutlineEntries(pdfDoc)).to.be.true()
++  })
++
++  it('should still generate an outline when toc is explicitly enabled', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toc: '' } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-toc-enabled.pdf`, options)
++    const refs = collectOutlineItems(pdfDoc)
++    expect(refs.length).to.equal(9)
++  })
++
++  it('should include all top-level section destinations at toclevels 1', async function () {
++    this.timeout(60000)
++    const options = { attributes: { toclevels: 1 } }
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, `${__dirname}/output/sections-top-level-dests.pdf`, options)
++    const dests = collectOutlineItems(pdfDoc).map((d) => d.dest)
++    expect(dests).to.have.members(['/_section_1', '/_section_2', '/_section_3', '/_section_4'])
++  })
++
++  it('should warn and continue when a section destination is missing from the PDF', async function () {
++    this.timeout(60000)
++    const warnings = []
++    const originalWarn = console.warn
++    console.warn = (msg) => { warnings.push(String(msg)) }
++    try {
++      const pdfDoc = await convert(`${__dirname}/fixtures/umlaut-section.adoc`, `${__dirname}/output/umlaut-section.pdf`)
++      expect(pdfDoc).to.exist()
++      expect(warnings.some((w) => /destination|outline|Unable to find/i.test(w))).to.be.true()
++    } finally {
++      console.warn = originalWarn
++    }
++  })
++
++  it('should write the outlined PDF when converting to a file path', async function () {
++    this.timeout(60000)
++    const outputFile = `${__dirname}/output/sections-file-outline.pdf`
++    const pdfDoc = await convert(`${__dirname}/fixtures/sections.adoc`, outputFile)
++    expect(fs.existsSync(outputFile)).to.be.true()
++    expect(collectOutlineItems(pdfDoc).length).to.equal(9)
++  })
++
++  it('should print the outlined PDF to stdout when writing to stdout', async function () {
++    this.timeout(60000)
++    const chunks = []
++    const originalWrite = process.stdout.write.bind(process.stdout)
++    process.stdout.write = (chunk, encoding, cb) => {
++      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding || 'binary'))
++      if (typeof encoding === 'function') encoding()
++      if (typeof cb === 'function') cb()
++      return true
++    }
++    try {
++      const opts = { to_file: Opal.gvars.stdout }
++      await converter.convert(asciidoctor, `${__dirname}/fixtures/sections.adoc`, opts, false)
++      const pdfBytes = Buffer.concat(chunks)
++      expect(pdfBytes.length).to.be.above(100)
++      const pdfDoc = await PDFDocument.load(pdfBytes)
++      expect(collectOutlineItems(pdfDoc).length).to.equal(9)
++    } finally {
++      process.stdout.write = originalWrite
++    }
++  })
++})

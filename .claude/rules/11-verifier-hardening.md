@@ -2,7 +2,7 @@ _Owner of CLAUDE.md **Section 10**. Loaded every session._
 
 ## 10. Verifier hardening - what passes every eval and still comes back
 
-Everything here comes from real submissions that cleared Static Checks, the Difficulty Check, the Oracle Check and the Quality Check judge, and were still sent back by the reviewing EC. The evals grade the task as declared; a reviewer reads what the verifier actually does. Work this list before the Step 5.5 runs, and again before Send to reviewer.
+Everything here comes from real submissions that cleared Static Checks, the Difficulty Check, the Oracle Check and the Quality Check judge, and were still sent back by the reviewing EC. The evals grade the task as declared; a reviewer reads what the verifier actually does. Work this list before the Step 5.5 runs, and again before you submit.
 
 Each item says how far the docs back it. **Docs rule** = stated in `docs/`. **Docs criterion** = the docs state the property and this is the way to verify it. **Practice** = not in `docs/`; a defect-avoidance technique, applied with judgment and disclosed in Comments for Reviewer.
 
@@ -42,7 +42,9 @@ Each item says how far the docs back it. **Docs rule** = stated in `docs/`. **Do
 - **Name the new files something no agent would choose.** `SubtypeManagerTest.java` for a class called `SubtypeManager` is the obvious name in the obvious package, and an agent writes it as a matter of course. A `Sentinel`-prefixed verifier-only file cannot collide. Renaming changes the ids in `grading.fail_to_pass` and `execution.selected_test_files_to_run`, so update both, and keep the file matching whatever pattern the runner collects (surefire needs `*Test.java`).
 - **The prefix has to be a legal module identifier in the target language, or the file is never collected.** A name the runner cannot import is not a graded test, it is a missing one, and every trial reports the ids missing while the file sits right there in the tree. Work with the language's own rules: `test_foo_sentinel.py` for pytest (a leading digit or a hyphen makes it unimportable), `foo.sentinel.test.ts` for deno and vitest, `SentinelFooTest.java` for surefire, `sentinel_foo.rs` for a cargo integration test. The shipped bundles use `SentinelSubtypeManagerTest.java`, `SettingsJavaTest.java` and `sentinel_pqcp_verifier.rs`. Confirm collection by running the suite once and seeing the new ids reported, not by reading the filename.
 
-**The restore step, written correctly. Do NOT use git.** Three git-based designs shipped on kvdex 245 across three rounds and none of them measurably worked, while every one passed every local scenario that could be constructed. The verify-time workspace is not a git repository: reproduced locally, and named outright by four codex trial analyses in a sibling task's report. A restore that touches git, in any form, is a wasted round. Full history in `learning/tests-patch-vs-agent-edits.md`, now platform-confirmed by kvdex 245's acceptance on 2026-08-04.
+**The restore step, written correctly. Do NOT use git.** Three git-based designs shipped on kvdex 245 across three rounds and none of them measurably worked, while every one passed every local scenario that could be constructed. A restore that touches git, in any form, is a wasted round.
+
+**Do not give "the verify-time workspace is not a git repository" as the reason, because it is per-bundle and it is checkable.** That was true on kvdex 245 and equalsverifier 1166 and is measured **false** on firefly 1123, where the image carries `/usr/bin/git`, `/app` is inside a work tree at the declared base commit and the pack holds 53553 objects. A peer reviewer disproved the sentence in one command, and the rest of an answer inherits the doubt. The two reasons that hold either way: a directory-scoped `git checkout <base> -- <dir>` reverts the **product source** sharing those directories, measured at **reward 0.0, 0 of 59** with the oracle applied, and a `*_test.go`-scoped one fails **destructively** once `.git` is absent or partial, because the `find -delete` lands while the `git ls-tree` restore silently does not, leaving no test files at all. Full matrix in `learning/git-restore-fails-for-a-different-reason.md` (LEDGER L74). Full history in `learning/tests-patch-vs-agent-edits.md`, now platform-confirmed by kvdex 245's acceptance on 2026-08-04.
 
 Pick the shape by measuring where the graded ids live:
 
@@ -54,15 +56,15 @@ touched = set(re.findall(r'^diff --git a/(\S+)', patch, re.M))
 added = '\n'.join(l[1:] for l in patch.splitlines()
                   if l.startswith('+') and not l.startswith('+++'))
 
-# Graded ids come in four shapes and each maps back to a file differently:
-#   tests/x.test.ts::name       path::name    (deno, pytest, vitest, jest)
-#   pkg.ClassTest::method       fqcn::method  (gradle, kotlin)
-#   pkg.ClassTest#method        fqcn#method   (junit, surefire)
-#   module::test  /  bare_test  symbol only   (cargo, ctest, go)
-# The first three name a file. The fourth does not, so it is resolved by where the
-# symbol occurs: only in tests.patch means inside, in an unpatched test file means
-# outside, nowhere means UNRESOLVED. Never let a shape you cannot map fall through
-# and count as outside - that is the reading that picks the wrong restore design.
+# Graded ids come in FIVE shapes and each maps back to a file differently:
+#   tests/x.test.ts::name           path::name     (deno, pytest, vitest, jest)
+#   pkg.ClassTest::method           fqcn::method   (gradle, kotlin)
+#   pkg.ClassTest#method            fqcn#method    (junit, surefire)
+#   example.com/m/pkg::TestFunc     IMPORT path    (go)  <- has / AND . and is NOT a file
+#   module::test  /  bare_test      symbol only    (cargo, ctest)
+# The first three name a file. The fourth names a PACKAGE and has to be mapped
+# through go.mod. The fifth names neither and is resolved by where the symbol
+# occurs. Never let a shape you cannot map fall through and count as outside.
 stems = set()
 for t in touched:
     stems.add(t)                                              # exact path
@@ -71,6 +73,49 @@ for t in touched:
     for lang in ('java', 'kotlin'):                           # FQCN, maven / gradle layout
         if lang in parts:
             stems.add('.'.join(parts[parts.index(lang) + 1:]).rsplit('.', 1)[0])
+
+# ---- Go support. Three things the naive version gets silently wrong: a test on a
+# CONTEXT line of a modified file, a name defined in a DIFFERENT package, and a
+# NESTED module whose path is not its directory. All three printed a number with
+# zero UNRESOLVED, which is the worst way for this to fail.
+modules = []                                                  # (module path, dir), longest first
+for root, dirs, files in os.walk('environment/repo'):
+    dirs[:] = [d for d in dirs if d != '.git']
+    if 'go.mod' in files:
+        m = re.search(r'^module\s+(\S+)', open(os.path.join(root, 'go.mod')).read(), re.M)
+        if m:
+            modules.append((m.group(1), os.path.relpath(root, 'environment/repo').strip('./')))
+modules.sort(key=lambda t: -len(t[0]))
+
+creates, cur = set(), None                                    # a create shows its WHOLE content
+for line in patch.splitlines():
+    m = re.match(r'^diff --git a/\S+ b/(\S+)', line)
+    if m: cur = m.group(1); continue
+    if line.startswith('new file mode') and cur: creates.add(cur)
+
+defs_by_dir, complete, patched_dirs, cur = {}, {}, set(), None
+for line in patch.splitlines():
+    m = re.match(r'^\+\+\+ b/(\S+)', line)
+    if m:
+        cur = m.group(1); d = os.path.dirname(cur); patched_dirs.add(d)
+        complete[d] = complete.get(d, True) and (cur in creates)
+        continue
+    if cur is None: continue
+    m = re.match(r'^[ +]func\s+([A-Za-z_]\w*)\s*\(', line)     # added AND context lines
+    if m: defs_by_dir.setdefault(os.path.dirname(cur), set()).add(m.group(1))
+
+def go_classify(head, name):
+    for mod, mdir in modules:
+        if head == mod or head.startswith(mod + '/'):
+            sub = head[len(mod):].lstrip('/')
+            d = os.path.normpath(os.path.join(mdir, sub)) if mdir else sub
+            d = '' if d == '.' else d
+            if d not in patched_dirs: return 'outside'
+            if re.split(r'[ (/]', name)[0] in defs_by_dir.get(d, set()): return 'inside'
+            # not defined by the patch. Only safe to call outside when every patched
+            # file in that directory is a create, so the patch shows all of them.
+            return 'outside' if complete.get(d) else 'unresolved'
+    return None
 
 tokens = set()                                                # every word in the UNPATCHED tests
 for root, dirs, files in os.walk('environment/repo'):
@@ -89,10 +134,18 @@ inside, outside, unresolved = [], [], []
 for i in g['fail_to_pass'] + g.get('pass_to_pass', []):
     head, name = i.rsplit('#', 1) if '#' in i else (
                  i.rsplit('::', 1) if '::' in i else ('', i))
-    if head and ('/' in head or '.' in head):                 # the id names its file or class
-        (inside if head in stems else outside).append(i)
-        continue
-    sym = re.split(r'[ (]', name)[0]                          # symbol-only id: cargo, ctest, go
+    if head and ('/' in head or '.' in head):                 # names a file, a class or a package
+        if head in stems:
+            inside.append(i); continue                        # a file the patch touches
+        if os.path.exists(os.path.join('environment/repo', head)):
+            outside.append(i); continue                       # a real file the patch does not touch
+        go = go_classify(head, name)
+        if go:
+            {'inside': inside, 'outside': outside, 'unresolved': unresolved}[go].append(i); continue
+        if '/' not in head:
+            outside.append(i); continue                       # FQCN: the stems set is authoritative
+        unresolved.append(i); continue                        # a slashed head that is neither
+    sym = re.split(r'[ (]', name)[0]                          # symbol-only id: cargo, ctest
     if head and re.search(r'\b%s\b' % re.escape(head), added):
         inside.append(i)
     elif re.search(r'\b%s\b' % re.escape(sym), added):
@@ -110,9 +163,15 @@ if unresolved:
 PY
 ```
 
-Re-measured 2026-08-04 against every bundle on this machine: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177 and `21 of 38` on libcrux 1165. On a synthetic fixture whose id matches neither a patched file nor any symbol it prints `UNRESOLVED` instead of a number. The earlier version of this snippet split every id on `::` and read the left half as a path, which made all 20 of AltBeacon's `pkg.ClassTest::method` ids and all 17 of libcrux's `module::test` ids look like files it had never patched. On libcrux it printed `35 of 35` against the 35-id config of the day, and hand resolution put the real figure at 21 outside. The config has since grown to 38 ids and the corrected snippet reads `21 of 38`, so the outside count is the number that matched. **An UNRESOLVED line means the count is not yet an answer.** Resolve those ids by hand and re-run before you pick a shape, because the whole point of the number is which of the two designs below you build.
+Re-measured 2026-08-16 against the seven archived bundles the snippet resolves, plus equalsverifier 1166, which is still in `tasks/`: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177, `21 of 38` on libcrux 1165, `19 of 43` on xlwings 2719, `0 of 24` on elfuse 162, and the two Go bundles the Go arm was added for, **`330 of 350` on hulak 118 and `7 of 33` on redisshake 1005**.
 
-**Whichever shape you pick, derive the delete list from the patch and not from a directory list.** `tests.patch` can create a file **outside every directory the graded specs live in**, and an agent file at that path breaks all three apply routes even with those directories pristine. Measured on mithril.js 2021, where the patch creates `ospec-json-runner.js` at the repo root: with `render/tests`, `ospec` and `test-utils` all restored, `git apply` says `already exists in working directory`, `--3way` says `does not exist in index`, and `patch -p1 --forward` skips the hunk. Read the creates out of the patch itself, `sed -n 's|^+++ b/||p' /tests/tests.patch`, and delete every one before applying (LEDGER L71). This is L9 in a new costume.
+**The Go arm is not optional and its absence was silent, which is the worst way for this to fail.** Before it, a Go id's head (`github.com/xaaha/hulak/pkg/tui`) contained both `/` and `.`, so it took the file-path branch, could never match a repo-relative stem, and every graded id was counted **outside with zero UNRESOLVED lines**. hulak 118 printed `350 of 350` against a true 330, and redisshake 1005 printed `33 of 33` against a true 7 - both accepted bundles, so the defect has been live since 2026-08-05, when the id-shape-aware version was first written. The UNRESOLVED guard rail could not help, because nothing was unresolved; the snippet was confidently wrong rather than honestly stuck. LEDGER **L7** named this class in 2026-08-04 and prescribed exactly this snippet as the remedy, so L7 is reopened rather than closed. **Validated 2026-08-16 across eight bundles, seven archived plus equalsverifier 1166 from `tasks/`**: the four previously hand-checked figures reproduce unchanged, the two Go figures become correct, and nothing else moved. The eighth archived bundle, **statrs 315, is the one it does not resolve**: `3 of 127` with 106 UNRESOLVED cargo ids, so the cargo arm is unvalidated there and that count is not an answer yet.
+
+**The first Go arm written for this was itself wrong in three silent ways**, each printing a number with zero UNRESOLVED, and all three are fixed above. A test function on a **context** line of a modified file was never found, because the search read only `+` lines. A name defined in a **different** package was matched, because the search read the whole added blob rather than the hunks under that package. And a **nested** `go.mod` whose module path is not its directory fell through to outside. The rule that replaced the guessing: a directory the patch does not touch is outside, a name the patch defines there is inside, and a name it does not define is outside **only when every patched file in that directory is a create**, so the patch shows all of them, and UNRESOLVED otherwise. On a synthetic fixture whose id matches neither a patched file nor any symbol it prints `UNRESOLVED` instead of a number. The earlier version of this snippet split every id on `::` and read the left half as a path, which made all 20 of AltBeacon's `pkg.ClassTest::method` ids and all 17 of libcrux's `module::test` ids look like files it had never patched. On libcrux it printed `35 of 35` against the 35-id config of the day, and hand resolution put the real figure at 21 outside. The config has since grown to 38 ids and the corrected snippet reads `21 of 38`, so the outside count is the number that matched. **An UNRESOLVED line means the count is not yet an answer.** Resolve those ids by hand and re-run before you pick a shape, because the whole point of the number is which of the two designs below you build.
+
+**Re-run it on any open task whose number was recorded before 2026-08-16, because the correction moves some of them.** Measured on the five tasks still in `tasks/` that day: firefly 1123 goes from `59 of 59` to **`14 of 59`**, openwhispr 1002 to `144 of 229`, ziti-sdk-c 668 to `0 of 26`, deepfabric 297 to `0 of 16`, and equalsverifier 1166 is unchanged at `1124 of 1223`. A number that moves from all-outside to mostly-inside is the difference between needing the full payload and needing only a create-only patch, so a recorded figure from before that date is a design decision resting on a wrong measurement.
+
+**Whichever shape you pick, derive the delete list from the patch and not from a directory list.** `tests.patch` can create a file **outside every directory the graded specs live in**, and an agent file at that path breaks all three apply routes even with those directories pristine. Measured on mithril.js 2021, where the patch creates `ospec-json-runner.js` at the repo root: with `render/tests`, `ospec` and `test-utils` all restored, `git apply` says `already exists in working directory`, `--3way` says `does not exist in index`, and `patch -p1 --forward` skips the hunk. **The third route is the dangerous one, measured on asciidoctor-web-pdf 79 (2026-08-19): `patch -p1 --forward` exits 0 while skipping the colliding create, so `test.sh` counts the patch as applied and the skipped graded file reports every id missing, a merit-looking zero with no infra marker.** Read the creates out of the patch itself, `sed -n 's|^+++ b/||p' /tests/tests.patch`, and delete every one before applying (LEDGER L71, `learning/patch-forward-skips-colliding-creates.md`). This is L9 in a new costume.
 
 **A missing restore is also an Oracle Check defect, which is not where this section files it.** `test.sh` applies `tests.patch` on every invocation, so the second cycle lands on a tree that already carries it. Measured 1 of 3 on mithril.js 2021 and independently on cista 172. If you take nothing else from this section, take that a bundle with no restore fails the platform's 3/3 oracle bar on its own, whatever `solve.sh` does (`learning/oracle-protocol-is-solve-then-verify.md`).
 
@@ -180,7 +239,7 @@ Stub out one requirement the instruction states, in a throwaway copy, and re-run
 
   **`git apply --3way` is the prescribed retry, not a defect.** The banned thing is a reverse apply that counts as SUCCESS after the forward apply failed, because that inverts a correct tree on the second run and hides a patch that never applied. Step 3 above is a forward apply with better merge logic and cannot invert anything. Grep for the tell before you build: `grep -n 'apply.* -R' solution/solve.sh`. A `-R` inside a `--check` probe is the idempotency test and is correct. A `-R` that actually applies, as a fallback, is always the bug.
 - **`solve.sh` applies `golden.patch` and does nothing else.** Every delete, rename and content edit of a tracked path lives inside the patch, never as an `rm`, `mv`, `sed` or `cp` line in the script. A script that mutates tracked files outside the patch passes the Oracle Check, because the check only asks whether the verifier goes green, and then the reviewer reads a golden patch that does not describe the solved state. The diff of the patch has to be the whole solution. Setup lines that touch nothing tracked (`cd /app`, `set -euo pipefail`, an echo) are fine.
-- **Golden patch scoped to the PR.** `docs/guidelines.md`: only what resolves the task, no drive-by edits. Diff the patch's file list against the PR's (Step 2 item 9). Missing files count too - docs and changelogs the PR touched belong in golden.
+- **Golden patch scoped to the PR, and this check runs ONE way only.** `docs/guidelines.md:289`: only what resolves the task, no drive-by edits. Diff the patch's file list against the PR's (Step 2 item 9) and file the extra files golden carries that the PR never touched. **The reverse direction is not a finding.** A docs or changelog file the PR touched and golden omits is the normal accepted shape: `docs/guidelines.md:289` requires no mirror, and **7 of 8** archived goldens ship no `.md` or docs file at all, accepted kvdex 245 included at 38 golden files against a 198-file PR, and the eighth is AltBeacon 1177 shipping its `CHANGELOG.md`. This bullet used to read "missing files count too", that note was filed on mithril.js 2021 and withdrawn, and the omitted changelog line there carried the PR URL and three issue numbers, so leaving it out was the safer reading (LEDGER L59). Outside reviewer prompt packs still state it both ways, which is where it keeps coming back from, so check L59 before filing it.
 - **Test files stay out of golden.** Golden carries non-test changes; graded test changes travel in `tests/tests.patch` (Step 2 item 9). Measured 2026-08-04: not one of the four bundles here has a test file in `solution/golden.patch`, including the accepted kvdex 245.
 
   **Open question, tested and not confirmed: does a PR-aligned expectation update to a pre-existing test belong in golden?** The claim was that it must, because the Quality Check applies golden alone. Checked against `docs/` and against the four bundles and it does not hold up as stated. `docs/tasking-guide.md:266` says the Quality Check judges READ the instruction, tests, oracle solution and task directory - they score files, they do not apply a patch. The check that does apply golden is the Oracle Check (`docs/tasking-guide.md:244`), and it runs `solve.sh` and then `test.sh`, so `tests.patch` lands there too and an expectation update inside `tests.patch` is present during the oracle run. So there is no measured mechanism that needs the update to travel with golden. Until a real report says otherwise, keep expectation updates in `tests.patch` and let the affected id move from `pass_to_pass` into `fail_to_pass`, since that is what it has become. What would settle it: a downloaded Quality or Oracle report that fails on a pre-existing test whose expectation `tests.patch` updates. Paste that report into `learning/` if it ever arrives.
@@ -217,6 +276,24 @@ Some runners execute a whole package or module in **one process**: Go is the cle
 - **Disclose it in Comments for Reviewer**, because a reader opening the file will ask why two tests skip
 
 The payoff shows up in the NOP as well as the oracle: the graded ids still execute and report individually at base, instead of the whole unit reading as a compile-shaped zero that `verify-in-the-image.md` warns proves nothing.
+
+**Same one-process family, third mechanism: a graded test that mutates a process singleton leaks into the
+rest of the suite.** Added 2026-08-14 from android-beacon 1177. The graded tests run in the same process
+as the pre-existing suite, so a test that binds a consumer to a process-wide manager, installs a static
+calculator, or builds and starts a service leaves that state behind for the next test class. The suite is
+usually ordered such that the damage lands on `pass_to_pass`, which is the half you did not write and the
+half a reviewer reads as a regression.
+
+- The teardown has to be **class-level** (`@After`, `tearDown`, a fixture finaliser), not a line at the
+  end of the test body, because an assertion that throws skips everything after it and the leak happens
+  precisely on the runs that fail
+- It has to be **idempotent**, since it runs after tests that never created the state
+- Prove it rather than assume it. The check is the full graded set, not the one test: on that task the
+  battery ran all 230 ids after adding a test that builds a `BeaconService`, and `pass_to_pass` stayed at
+  210 including the pre-existing `BeaconServiceTest` that drives the same class
+
+This is the mirror of the section above. There the risk is one test killing the process; here it is one
+test surviving it and changing what the next one sees.
 
 ### 10.10 Grading a target the verifier cannot run (practice)
 
@@ -323,6 +400,23 @@ case where the swallowed install is load-bearing and the fix is the listed row. 
 7 and 8 in `learning/stock-bundle-defect-baseline.md`.
 
 
+**The noisy writer is not always the agent's code. It is often a dependency of yours.** Added
+2026-08-11 from openwhispr 1002. A graded test called a manager method that persists secrets, which
+internally calls `dotenv.config()`. dotenv 17 prints a rotating promotional tip to stdout on every
+call, one of which lands mid-stream in the runner's own TAP output and derails node's TAP parser:
+the file is reported as a single `not ok` with a parse error, the remaining tests never run, and
+the count silently drops from 13 to 6. It is intermittent, because the tip rotates and only some
+of them break the parse.
+
+The tell is a run that reports **fewer tests than the file defines** while every individual test
+that did report passed. Count the ids, not the failures.
+
+The fix is to silence the writer, not to work around the parser. dotenv reads
+`process.env.DOTENV_CONFIG_QUIET` at call time, so one line at the top of the graded file, before
+anything can load it, is enough. Any library that logs on import or on first use has the same
+shape: a JSON-mode runner is just as easy to derail as a TAP one. When a graded test drives real
+application code, ask what that code prints.
+
 ### 10.13 A graded test must not reach the deliverable by its file path (docs criterion)
 
 Added 2026-08-11 from the cista 172 peer review.
@@ -368,3 +462,37 @@ Re-run `git apply --check` after any hand edit, or regenerate the patch instead.
 
 Full write-up and the pytest, cargo, deno and JUnit equivalents in
 `learning/graded-tests-that-import-the-deliverable.md`.
+
+### 10.14 Grade the derivation, not only the instances (practice)
+
+Added 2026-08-11 from openwhispr 1002, which was blocked at the agentic judge twice on this.
+
+When the task's point is structural, that one definition exists and everything derives from it,
+a suite can grade every stated behaviour and still be blind to the requirement. Measured: an
+implementation that declared the required manifest and then hand-wrote the eight accessors and
+the eight channel registrations beside it scored **13 of 13** against a suite whose every id had
+a firing hostile probe. Each instance was correct. Nothing asked where the instances came from.
+
+Grade it by changing the shared input and watching the consumers follow:
+
+1. Add an entry that exists nowhere else in the repository.
+2. Drop the consumers from the module cache, not just the input, since they captured the old
+   value at load time.
+3. Reload and require them to have picked the new entry up with no other edit.
+4. Restore, and assert the entry is gone again, so nothing leaks into the next test.
+
+Match the shared input by **resolved path** (`Module._resolveFilename(request, parent)`), because
+consumers spell the same import differently. Say which consumers the property covers: a sandboxed
+copy that inlines its data by design cannot follow a runtime change and must be excluded, or the
+test asserts something the task never asked for.
+
+The same hand-coded implementation then fails exactly the two derivation ids and nothing else,
+which is what a discriminating test looks like. It is also a measured difficulty lever, since
+hand-writing the instances is a plausible thing for a competent implementer to do, and it costs
+no instruction surface: the requirement was already stated, and restating it as an outcome
+("a ninth entry should work end to end on its own") rather than a mechanism ("the manager derives
+its accessors from the manifest") answers the over-specification axis at the same time.
+
+The trigger phrases in an instruction are "exactly once", "single source of truth", "adding one
+should be enough" and "without touching anything else". A judge reads those as requirements.
+Full detail in `learning/grade-the-derivation-not-the-instances.md`.

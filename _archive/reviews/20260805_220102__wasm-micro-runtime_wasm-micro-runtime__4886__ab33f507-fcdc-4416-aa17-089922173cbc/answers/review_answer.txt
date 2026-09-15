@@ -1,0 +1,99 @@
+Reviewer Answers
+Task: 20260805_220102__wasm-micro-runtime_wasm-micro-runtime__4886
+Submitted zip: 4e2fdfd9-59a3-4e50-b513-c2300b5e2399_submission_2026-08-16T19_00_50.678Z.zip
+Track: timed-static-v1
+Review duration: 7 minutes
+
+Q1. What is your verdict for this Submission?
+
+Needs Revision
+
+
+Q2b. If Needs Revision - Error Categories (select all that apply)
+
+- [ ] Instruction Styling
+- [ ] Instruction Prescriptiveness
+- [ ] Test <-> Instruction Misalignment
+- [ ] Test Coverage Issues
+- [ ] Exposing Hints/Answers
+- [ ] Oracle Solution Issues
+- [ ] PR Scope Violation
+- [ ] Test Build Issues
+- [ ] Time-Based Tests
+- [ ] Task Difficulty
+- [x] Metadata Issues
+- [ ] Uses Internet
+- [ ] Agent Timeout
+- [ ] Wrong Coding Language
+- [ ] Test Dependency Location
+- [ ] Pinning Issues
+- [ ] Environment
+- [ ] PR Relevancy
+- [x] Other
+
+
+Q3. Please explain in more detail what revisions are needed
+
+The earlier instruction issue is fixed. instruction.md no longer points the reader to internal header locations and it matches environment/problem_statement.md.
+
+1) Restore the tracked file environment/repo/product-mini/platforms/linux-sgx/enclave-sample/Enclave/Enclave_private.pem. The submitted repository records it as deleted from the base checkout. This changes the starting repository even though it is not part of PR 4886. Restore the tracked checkout before packaging.
+2) Complete the metadata in task.toml. The environment block has no os value and repo_license is empty while environment/repo/LICENSE is Apache licensed. Record the required Linux operating system and the matching Apache-2.0 identifier.
+3) Rebuild the archive with zip -rXy. The submitter says the archive used zip -rXDy and the submitted archive has environment/repo/.git/refs/heads/main but no directory entry for environment/repo/.git/refs. Keep the required Git directory entries in the rebuilt archive.
+
+
+Q4. Acknowledgement of Submitter Rebuttal
+
+- [x] No rebuttal comments available.
+
+
+Q5. What is the overall quality of the submission?
+
+2 / 5
+
+The earlier instruction rewrite fixed the header-location advice, and the page shows successful task evaluations. The remaining issues are specific and fixable. The task needs a corrected package.
+
+
+Q6. How long (in minutes) did it take you to complete this review?
+
+7 minutes
+
+
+--- Not part of the paste. Record only. ---
+
+## Review timer
+Track: timed-static-v1
+Review UUID: ab33f507-fcdc-4416-aa17-089922173cbc
+Started: 2026-08-19T12:23:37Z
+Base deadline: 2026-08-19T12:28:37Z
+Extension used: direct Major signal at 2026-08-19T12:25:01Z
+Form-ready: 2026-08-19T12:30:14Z
+Actual elapsed: 6 minutes 37 seconds
+
+## Evidence reviewed
+Submitted zip: 4e2fdfd9-59a3-4e50-b513-c2300b5e2399_submission_2026-08-16T19_00_50.678Z.zip, sha256 675d1c046b772c1c
+Seed zip: 35924bc2-ee3a-4522-89e4-f24219e6aec0_submission.zip, sha256 75b1e1eb98221962
+Reviewer page: full current paste received. Read the submitter Fixable answer, Files Changed, PR additions, Comments for Reviewer, prior reviewer feedback, difficulty counters, all evaluation panels, and the maximum-revisions state. The page showed no separate rebuttal comments panel and no maximum-revisions dialog.
+Panels: Static Checks passed. Prescriptiveness shown. Difficulty PASS MEDIUM at 2 of 4 codex-gpt-5-5 runs. Agentic Judge OK. Oracle PASS 3 of 3. NOP PASS 0 of 1. Quality Check 15 of 15.
+
+## Fast static gate
+FAIL 10-static: task.toml has no environment os value and an empty repo_license value.
+FAIL 20-git: repository has one tracked deletion at product-mini/platforms/linux-sgx/enclave-sample/Enclave/Enclave_private.pem.
+FAIL 30-package: archive lacks the environment/repo/.git/refs directory entry and includes three VSCode extension .vscode files.
+Observation: 40-grader reported a pipefail issue, but config.json starts its sole command with set -uo pipefail and its command text has no pipeline. It is not counted.
+
+## In-depth extension
+Trigger: direct Major or scope signal from the dirty submitted repository and missing Git archive directory entry.
+Question: confirm the archive and repository facts, their narrow remedy, and whether the reported grader result is real.
+Static reads: work/instruction.md line 3 and line 5 have no internal header paths or declared-next-to coaching. work/environment/problem_statement.md matches it. tests/tests.patch creates only three files. GitHub PR 4886 lists all eight non-test golden.patch paths, including .gitignore. task.toml line 11 has repo_license = "" and its environment block has no os. work/tests/test.sh lines 151 through 153 invoke bash without pipefail, but work/tests/config.json line 5 itself sets pipefail and contains no pipeline.
+Result: the prior instruction finding is resolved. The dirty checkout, incomplete metadata, and archive directory-entry omission remain actionable. The grader signal is an observation only.
+
+## Rubric tally
+1. Confirmed Major. Pillar 5. Fixable. The submitted repository is dirty because a tracked file is deleted from the declared base checkout.
+2. Confirmed Minor. Metadata completeness. Fixable. task.toml omits environment os and has an empty repo_license despite the Apache license file.
+3. Confirmed Minor. Package construction. Fixable. The archive was built with -D and is missing the Git refs directory entry.
+Observation only. VSCode extension .vscode entries may be tracked project files and were not treated as a task defect.
+Observation only. The preflight pipefail report does not match the actual command shape.
+Verdict: Needs Revision from one confirmed Major. Score: 2.
+
+## Deferred maintenance
+PENDING after form-ready.

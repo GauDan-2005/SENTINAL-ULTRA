@@ -1,0 +1,76 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "python -m pytest -v tests/test_sentinel_async_load.py tests/test_custom_scripts_call.py"
+    ],
+    "selected_test_files_to_run": [
+      "tests/test_sentinel_async_load.py",
+      "tests/test_custom_scripts_call.py"
+    ],
+    "env": {},
+    "timeout_sec": 240
+  },
+  "grading": {
+    "fail_to_pass": [
+      "tests/test_sentinel_async_load.py::test_sentinel_async_fetch_read_raises_with_actionable_message",
+      "tests/test_sentinel_async_load.py::test_sentinel_regular_book_load_values_false_is_metadata_only",
+      "tests/test_sentinel_async_load.py::test_sentinel_metadata_only_load_does_not_clobber_loaded_values",
+      "tests/test_sentinel_async_load.py::test_sentinel_sheet_load_affects_only_that_sheet",
+      "tests/test_sentinel_async_load.py::test_sentinel_sheet_load_defaults_to_metadata_only",
+      "tests/test_sentinel_async_load.py::test_sentinel_sheet_load_values_false_is_metadata_only",
+      "tests/test_sentinel_async_load.py::test_sentinel_loaded_values_survive_a_sheet_rename",
+      "tests/test_sentinel_async_load.py::test_sentinel_public_wrapper_read_raises_with_actionable_message",
+      "tests/test_sentinel_async_load.py::test_sentinel_public_book_load_forwards_values",
+      "tests/test_sentinel_async_load.py::test_sentinel_public_sheet_load_forwards_values",
+      "tests/test_sentinel_async_load.py::test_sentinel_public_wrapper_load_values_false_still_raises",
+      "tests/test_sentinel_async_load.py::test_sentinel_book_async_annotation_makes_injected_book_lazy",
+      "tests/test_sentinel_async_load.py::test_sentinel_optional_spellings_of_the_book_annotation",
+      "tests/test_sentinel_async_load.py::test_sentinel_metadata_only_load_leaves_a_new_sheet_usable",
+      "tests/test_sentinel_async_load.py::test_sentinel_metadata_only_load_asks_the_host_to_skip_values",
+      "tests/test_sentinel_async_load.py::test_sentinel_async_book_load_value_states",
+      "tests/test_sentinel_async_load.py::test_sentinel_book_load_with_a_sheet_list_loads_only_those_sheets",
+      "tests/test_sentinel_async_load.py::test_sentinel_book_load_with_a_sheet_list_asks_the_host_for_only_those_sheets",
+      "tests/test_sentinel_async_load.py::test_sentinel_book_load_with_an_unknown_sheet_name_raises",
+      "tests/test_sentinel_async_load.py::test_sentinel_a_selective_load_keeps_what_other_sheets_already_had"
+    ],
+    "pass_to_pass": [
+      "tests/test_sentinel_async_load.py::test_sentinel_eager_book_value_read_works",
+      "tests/test_sentinel_async_load.py::test_sentinel_regular_book_load_defaults_to_full",
+      "tests/test_sentinel_async_load.py::test_sentinel_plain_book_annotation_stays_regular",
+      "tests/test_custom_scripts_call.py::test_args_passed_positionally",
+      "tests/test_custom_scripts_call.py::test_default_values_used_when_arg_omitted",
+      "tests/test_custom_scripts_call.py::test_no_args_backward_compat",
+      "tests/test_custom_scripts_call.py::test_var_positional_consumes_remaining",
+      "tests/test_custom_scripts_call.py::test_missing_required_arg",
+      "tests/test_custom_scripts_call.py::test_extra_args",
+      "tests/test_custom_scripts_call.py::test_keyword_only_rejected",
+      "tests/test_custom_scripts_call.py::test_var_keyword_rejected",
+      "tests/test_custom_scripts_call.py::test_book_annotation_defaults_to_sync",
+      "tests/test_custom_scripts_call.py::test_lazy_true_is_deprecated_alias",
+      "tests/test_custom_scripts_call.py::test_lazy_false_is_deprecated_alias",
+      "tests/test_custom_scripts_call.py::test_lazy_non_boolean_rejected",
+      "tests/test_custom_scripts_call.py::test_book_async_annotation_sets_lazy_true",
+      "tests/test_custom_scripts_call.py::test_book_async_agrees_with_lazy_true",
+      "tests/test_custom_scripts_call.py::test_book_async_conflicts_with_lazy_false",
+      "tests/test_custom_scripts_call.py::test_book_async_return_annotation_does_not_enable_async",
+      "tests/test_custom_scripts_call.py::test_book_async_unrelated_param_does_not_enable_async",
+      "tests/test_custom_scripts_call.py::test_multiple_book_params_rejected",
+      "tests/test_custom_scripts_call.py::test_book_async_annotated_book_is_injected",
+      "tests/test_sentinel_async_load.py::test_sentinel_regular_book_sheet_load_defaults_to_full"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "pytest",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

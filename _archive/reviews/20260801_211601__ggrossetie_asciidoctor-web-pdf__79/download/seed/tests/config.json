@@ -1,0 +1,35 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "npx mocha --reporter json test/pdf_test.js"
+    ],
+    "selected_test_files_to_run": [
+      "test/pdf_test.js"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "PDF converter should generate a PDF outline even if the TOC is absent from the output",
+      "PDF converter should generate a PDF outline even if the TOC is not enabled",
+      "PDF converter should honor toclevels 1 when generating a PDF outline",
+      "PDF converter should honor toclevels 3 when generating a PDF outline"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "mocha",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

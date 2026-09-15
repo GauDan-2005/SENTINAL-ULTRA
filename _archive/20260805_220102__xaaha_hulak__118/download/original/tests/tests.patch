@@ -1,0 +1,558 @@
+diff --git a/pkg/tui/dropdown_test.go b/pkg/tui/dropdown_test.go
+index f40d218..9e8c159 100644
+--- a/pkg/tui/dropdown_test.go
++++ b/pkg/tui/dropdown_test.go
+@@ -158,6 +158,31 @@ func TestDropdownSelectOnSpace(t *testing.T) {
+ 	}
+ }
+ 
++func TestDropdownExpandMethod(t *testing.T) {
++	dd := NewDropdown("role", testOptions, 1)
++
++	dd.Expand()
++	if !dd.Expanded() {
++		t.Fatal("expected Expand to open dropdown")
++	}
++	if dd.Cursor() != 1 {
++		t.Fatalf("expected cursor to match selected option, got %d", dd.Cursor())
++	}
++}
++
++func TestDropdownSelectMethod(t *testing.T) {
++	dd := NewDropdown("role", testOptions, 0)
++	dd.Expand()
++
++	dd.Select(2)
++	if dd.Expanded() {
++		t.Fatal("expected Select to collapse dropdown")
++	}
++	if dd.Selected != 2 || dd.Value() != "MODERATOR" {
++		t.Fatalf("Selected = %d, Value = %q; want 2, MODERATOR", dd.Selected, dd.Value())
++	}
++}
++
+ func TestDropdownEscCollapsesWithoutChanging(t *testing.T) {
+ 	dd := NewDropdown("role", testOptions, 0)
+ 	dd.Focus()
+diff --git a/pkg/tui/gqlexplorer/formitem_test.go b/pkg/tui/gqlexplorer/formitem_test.go
+index 407df24..dcd38b9 100644
+--- a/pkg/tui/gqlexplorer/formitem_test.go
++++ b/pkg/tui/gqlexplorer/formitem_test.go
+@@ -7,6 +7,7 @@ import (
+ 	tea "github.com/charmbracelet/bubbletea"
+ 
+ 	"github.com/xaaha/hulak/pkg/features/graphql"
++	"github.com/xaaha/hulak/pkg/tui"
+ 	"github.com/xaaha/hulak/pkg/utils"
+ )
+ 
+@@ -1433,6 +1434,148 @@ func TestEscExitsTextInputEditing(t *testing.T) {
+ 	}
+ }
+ 
++func TestDetailFormMouseClickFocusesTextInputAndEnablesArg(t *testing.T) {
++	op := &UnifiedOperation{
++		Name: "Test", Type: TypeQuery, Endpoint: "ep",
++		Arguments: []graphql.Argument{{Name: "q", Type: "String"}},
++	}
++	df := buildDetailForm(op, nil, nil, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected non-nil detail form")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	view, _ := df.ViewMarked(op, prefix, z.Mark)
++	_ = tui.ScanMouseZones(view)
++
++	x, y := waitForMouseZone(t, df.itemZoneID(prefix, 0))
++	ok := df.HandleMouse(prefix, tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	if !ok {
++		t.Fatal("expected text input click to be handled")
++	}
++	if df.cursor != 0 {
++		t.Fatalf("expected cursor on clicked item, got %d", df.cursor)
++	}
++	if !df.items[0].input.Model.Focused() {
++		t.Fatal("expected text input to enter editing on click")
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected arg to be enabled on click")
++	}
++}
++
++func TestDetailFormMouseClickTogglesExpandableField(t *testing.T) {
++	ep := "ep"
++	objectTypes := map[string]graphql.ObjectType{
++		ScopedTypeKey(ep, "Country"): {
++			Name: "Country",
++			Fields: []graphql.ObjectField{
++				{Name: "code", Type: "ID!"},
++				{Name: "language", Type: "Language"},
++			},
++		},
++		ScopedTypeKey(ep, "Language"): {
++			Name:   "Language",
++			Fields: []graphql.ObjectField{{Name: "name", Type: "String"}},
++		},
++	}
++	op := &UnifiedOperation{Name: "country", ReturnType: "Country", Endpoint: ep}
++	df := buildDetailForm(op, nil, nil, objectTypes, nil, nil)
++	if df == nil {
++		t.Fatal("expected non-nil detail form")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	view, _ := df.ViewMarked(op, prefix, z.Mark)
++	_ = tui.ScanMouseZones(view)
++
++	x, y := waitForMouseZone(t, df.itemZoneID(prefix, 1))
++	ok := df.HandleMouse(prefix, tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	if !ok {
++		t.Fatal("expected expandable field click to be handled")
++	}
++	if df.cursor != 1 {
++		t.Fatalf("expected cursor on clicked expandable field, got %d", df.cursor)
++	}
++	if !df.items[1].toggle.Value {
++		t.Fatal("expected expandable field to toggle on")
++	}
++	if df.Len() != 3 {
++		t.Fatalf("expected child field to be inserted after click, got %d items", df.Len())
++	}
++}
++
++func TestDetailFormMouseClickExpandsAndSelectsDropdown(t *testing.T) {
++	ep := "ep"
++	enums := map[string]graphql.EnumType{
++		ScopedTypeKey(ep, "Status"): {
++			Name:   "Status",
++			Values: []graphql.EnumValue{{Name: "OPEN"}, {Name: "CLOSED"}, {Name: "PAUSED"}},
++		},
++	}
++	op := &UnifiedOperation{
++		Name: "Test", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "status", Type: "Status"}},
++	}
++	df := buildDetailForm(op, nil, enums, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected non-nil detail form")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	view, _ := df.ViewMarked(op, prefix, z.Mark)
++	_ = tui.ScanMouseZones(view)
++
++	x, y := waitForMouseZone(t, df.itemZoneID(prefix, 0))
++	ok := df.HandleMouse(prefix, tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	if !ok {
++		t.Fatal("expected dropdown click to be handled")
++	}
++	if !df.items[0].dropdown.Expanded() {
++		t.Fatal("expected first click to expand dropdown")
++	}
++
++	view, _ = df.ViewMarked(op, prefix, z.Mark)
++	_ = tui.ScanMouseZones(view)
++	x, y = waitForMouseZoneMinHeight(t, df.itemZoneID(prefix, 0), 2)
++	ok = df.HandleMouse(prefix, tea.MouseMsg{
++		X:      x,
++		Y:      y + 2,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	if !ok {
++		t.Fatal("expected expanded dropdown option click to be handled")
++	}
++	if df.items[0].dropdown.Expanded() {
++		t.Fatal("expected option click to collapse dropdown")
++	}
++	if got := df.items[0].dropdown.Value(); got != "PAUSED" {
++		t.Fatalf("expected clicked option to be selected, got %q", got)
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected dropdown arg to be enabled on click")
++	}
++}
++
+ func TestCheckboxPrefixInView(t *testing.T) {
+ 	fi := newArgFormItem(graphql.Argument{Name: "q", Type: "String"}, nil, "ep")
+ 	v := fi.View()
+diff --git a/pkg/tui/gqlexplorer/model_test.go b/pkg/tui/gqlexplorer/model_test.go
+index 694aff5..a4b36b9 100644
+--- a/pkg/tui/gqlexplorer/model_test.go
++++ b/pkg/tui/gqlexplorer/model_test.go
+@@ -4,6 +4,7 @@ import (
+ 	"sort"
+ 	"strings"
+ 	"testing"
++	"time"
+ 
+ 	tea "github.com/charmbracelet/bubbletea"
+ 	"github.com/charmbracelet/lipgloss"
+@@ -13,6 +14,24 @@ import (
+ 	"github.com/xaaha/hulak/pkg/utils"
+ )
+ 
++func waitForMouseZone(t *testing.T, id string) (int, int) {
++	return waitForMouseZoneMinHeight(t, id, 0)
++}
++
++func waitForMouseZoneMinHeight(t *testing.T, id string, minHeight int) (int, int) {
++	t.Helper()
++	deadline := time.Now().Add(250 * time.Millisecond)
++	for time.Now().Before(deadline) {
++		startX, startY, _, endY, ok := tui.ZoneBounds(id)
++		if ok && endY-startY >= minHeight {
++			return startX, startY
++		}
++		time.Sleep(time.Millisecond)
++	}
++	t.Fatalf("zone %q was not registered", id)
++	return 0, 0
++}
++
+ func sampleOps() []UnifiedOperation {
+ 	return []UnifiedOperation{
+ 		{Name: "getUser", Type: TypeQuery, Description: "fetch user", Endpoint: "http://api/gql"},
+@@ -145,6 +164,141 @@ func TestNavigateCtrlP(t *testing.T) {
+ 	}
+ }
+ 
++func TestMouseClickSelectsOperationAndMovesCursor(t *testing.T) {
++	m := NewModel(sampleOps(), nil, nil, nil, nil, nil)
++	result, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
++	model := result.(*Model)
++	model.cursor = len(model.filtered) - 1
++	model.syncViewport()
++
++	_ = model.View()
++	x, y := waitForMouseZone(t, model.operationZoneID(1))
++
++	result, _ = model.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model = result.(*Model)
++
++	if model.cursor != 1 {
++		t.Fatalf("expected cursor at clicked operation, got %d", model.cursor)
++	}
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected left panel to be focused after operation click")
++	}
++	if model.focus.Typing() {
++		t.Fatal("expected typing mode off after clicking operation row")
++	}
++}
++
++func TestMouseClickTogglesEndpointAndMovesEndpointCursor(t *testing.T) {
++	m := NewModel(multiEndpointOps(), nil, nil, nil, nil, nil)
++	result, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
++	model := result.(*Model)
++	model.search.Model.SetValue("e:")
++	model.endpointCursor = 0
++	model.applyFilterAndReset()
++
++	eps := model.filteredEndpoints()
++	if len(eps) < 2 {
++		t.Fatal("expected at least two endpoints")
++	}
++	clicked := eps[1]
++
++	_ = model.View()
++	x, y := waitForMouseZone(t, model.endpointZoneID(1))
++
++	result, _ = model.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model = result.(*Model)
++
++	if model.endpointCursor != 1 {
++		t.Fatalf("expected endpoint cursor at clicked row, got %d", model.endpointCursor)
++	}
++	if model.activeEndpoints[clicked] {
++		t.Fatalf("expected clicked endpoint %q to be toggled off", clicked)
++	}
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected left panel to be focused after endpoint click")
++	}
++	if model.focus.Typing() {
++		t.Fatal("expected typing mode off after clicking endpoint row")
++	}
++}
++
++func TestMouseClickDetailFormItemFocusesDetailPanel(t *testing.T) {
++	ep := "ep"
++	op := UnifiedOperation{
++		Name: "Search", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "q", Type: "String"}},
++	}
++	m := NewModel([]UnifiedOperation{op}, nil, nil, nil, nil, nil)
++	result, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
++	model := result.(*Model)
++
++	_ = model.View()
++	x, y := waitForMouseZone(t, model.detailForm.itemZoneID(model.detailMousePrefix(), 0))
++
++	result, _ = model.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model = result.(*Model)
++
++	if !model.focus.IsFocused(model.detailPanel) {
++		t.Fatal("expected detail panel to be focused after clicking detail item")
++	}
++	if model.detailForm.cursor != 0 {
++		t.Fatalf("expected detail cursor on clicked item, got %d", model.detailForm.cursor)
++	}
++	if !model.detailForm.items[0].input.Model.Focused() {
++		t.Fatal("expected clicked text input to enter editing")
++	}
++}
++
++func TestMouseClickSearchInputFocusesLeftPanelAndTyping(t *testing.T) {
++	ep := "ep"
++	op := UnifiedOperation{
++		Name: "Search", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "q", Type: "String"}},
++	}
++	m := NewModel([]UnifiedOperation{op}, nil, nil, nil, nil, nil)
++	result, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
++	model := result.(*Model)
++
++	model.focus.FocusByNumber(model.detailPanel.Number)
++	model.syncSearchFocus()
++
++	_ = model.View()
++	x, y := waitForMouseZone(t, model.searchZoneID())
++
++	result, _ = model.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model = result.(*Model)
++
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected search click to focus left panel")
++	}
++	if !model.focus.Typing() {
++		t.Fatal("expected search click to enable typing mode")
++	}
++	if !model.search.Model.Focused() {
++		t.Fatal("expected search input to be focused after click")
++	}
++}
++
+ func TestTabTogglesFocus(t *testing.T) {
+ 	m := NewModel(sampleOps(), nil, nil, nil, nil, nil)
+ 
+diff --git a/pkg/tui/mouse_test.go b/pkg/tui/mouse_test.go
+new file mode 100644
+index 0000000..65a9790
+--- /dev/null
++++ b/pkg/tui/mouse_test.go
+@@ -0,0 +1,118 @@
++package tui
++
++import (
++	"strings"
++	"testing"
++	"time"
++
++	tea "github.com/charmbracelet/bubbletea"
++)
++
++func waitForZoneBounds(t *testing.T, id string) (int, int, int, int) {
++	t.Helper()
++	deadline := time.Now().Add(250 * time.Millisecond)
++	for time.Now().Before(deadline) {
++		startX, startY, endX, endY, ok := ZoneBounds(id)
++		if ok {
++			return startX, startY, endX, endY
++		}
++		time.Sleep(time.Millisecond)
++	}
++	t.Fatalf("zone %q was not registered", id)
++	return 0, 0, 0, 0
++}
++
++func TestNewMouseZonePrefixesAreUnique(t *testing.T) {
++	first := NewMouseZone()
++	second := NewMouseZone()
++
++	id1 := first.ID("action")
++	id2 := second.ID("action")
++	if id1 == id2 {
++		t.Fatalf("expected unique IDs, got %q", id1)
++	}
++}
++
++func TestMouseZoneIDJoinsParts(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("button", "save")
++
++	if !strings.Contains(id, "button:save") {
++		t.Fatalf("expected joined suffix in ID, got %q", id)
++	}
++}
++
++func TestScanMouseZonesRegistersMarkedRegionWithoutChangingVisibleText(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("row")
++	view := z.Mark(id, "hello")
++
++	scanned := ScanMouseZones(view)
++	if scanned != "hello" {
++		t.Fatalf("expected scan to preserve visible output, got %q", scanned)
++	}
++
++	startX, startY, endX, endY := waitForZoneBounds(t, id)
++	if startX != 0 || startY != 0 {
++		t.Fatalf("expected zone to start at origin, got (%d,%d)", startX, startY)
++	}
++	if endX != 4 || endY != 0 {
++		t.Fatalf("expected zone to cover 5 cells on one line, got (%d,%d)", endX, endY)
++	}
++}
++
++func TestHitAndZonePos(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("row")
++	_ = ScanMouseZones("prefix " + z.Mark(id, "hello"))
++
++	startX, startY, _, _ := waitForZoneBounds(t, id)
++	msg := tea.MouseMsg{
++		X:      startX + 2,
++		Y:      startY,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	}
++
++	if !Hit(id, msg) {
++		t.Fatal("expected hit inside zone bounds")
++	}
++	x, y := ZonePos(id, msg)
++	if x != 2 || y != 0 {
++		t.Fatalf("expected relative position (2,0), got (%d,%d)", x, y)
++	}
++}
++
++func TestHitReturnsFalseOutsideZone(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("row")
++	_ = ScanMouseZones(z.Mark(id, "hello"))
++	_, _, endX, endY := waitForZoneBounds(t, id)
++
++	msg := tea.MouseMsg{
++		X:      endX + 1,
++		Y:      endY,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	}
++
++	if Hit(id, msg) {
++		t.Fatal("expected no hit outside zone bounds")
++	}
++	x, y := ZonePos(id, msg)
++	if x != -1 || y != -1 {
++		t.Fatalf("expected relative position (-1,-1) outside bounds, got (%d,%d)", x, y)
++	}
++}
++
++func TestIsLeftClick(t *testing.T) {
++	if !IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease}) {
++		t.Fatal("expected left-button release to be recognized as click")
++	}
++	if IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}) {
++		t.Fatal("did not expect press to be recognized as click")
++	}
++	if IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionRelease}) {
++		t.Fatal("did not expect right-button release to be recognized as click")
++	}
++}
+diff --git a/pkg/tui/selector_test.go b/pkg/tui/selector_test.go
+index ec5abce..4a873be 100644
+--- a/pkg/tui/selector_test.go
++++ b/pkg/tui/selector_test.go
+@@ -257,6 +257,53 @@ func TestSelectorFilterThenNavigateThenSelect(t *testing.T) {
+ 	}
+ }
+ 
++func TestSelectorMouseClickSelectsItem(t *testing.T) {
++	m := NewSelector([]string{"item1", "item2", "item3"}, "Test: ")
++	m.Cursor = 2
++	m.syncViewport()
++
++	_ = m.View()
++	x, y, _, _ := waitForZoneBounds(t, m.itemZoneID(1))
++
++	newModel, cmd := m.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model := newModel.(*SelectorModel)
++
++	if model.Cursor != 1 {
++		t.Fatalf("expected cursor at clicked item, got %d", model.Cursor)
++	}
++	if model.Selected != "item2" {
++		t.Fatalf("expected clicked item to be selected, got %q", model.Selected)
++	}
++	if cmd == nil {
++		t.Fatal("expected quit command after mouse selection")
++	}
++}
++
++func TestSelectorMouseClickSearchFocusesInput(t *testing.T) {
++	m := NewSelector([]string{"item1", "item2"}, "Test: ")
++	m.TextInput.Model.Blur()
++
++	_ = m.View()
++	x, y, _, _ := waitForZoneBounds(t, m.searchZoneID())
++
++	newModel, _ := m.Update(tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	})
++	model := newModel.(*SelectorModel)
++
++	if !model.TextInput.Model.Focused() {
++		t.Fatal("expected search click to focus input")
++	}
++}
++
+ func TestSelectorViewContainsHelp(t *testing.T) {
+ 	m := NewSelector([]string{"item1"}, "Test: ")
+ 	view := m.View()

@@ -64,8 +64,8 @@ note "answers file: $FILE"
 
 TOTAL_MIN_LO="$(fact total_submission_min 180)"
 TOTAL_MIN_HI="$(fact total_submission_max 240)"
-REV_LO="$(fact revision_min 60)"
-REV_HI="$(fact revision_max 120)"
+REV_LO="$(fact revision_min 0)"
+REV_HI="$(fact revision_max 370)"
 
 OUT="$(mktempdir)/out"
 python3 - "$FILE" "$TOTAL_MIN_LO" "$TOTAL_MIN_HI" "$REV_LO" "$REV_HI" > "$OUT" <<'PY' || true
@@ -107,8 +107,19 @@ END = re.compile(r'[.!?:;\)\]"”]\s*$')
 CONT = re.compile(r'(?:,|\b(?:and|or|the|a|an|to|of|in|that|which|with|for|from|but|is|was|'
                   r'were|are|it|this|as|by|on|at|not|no)\b)\s*$', re.I)
 
+FENCE = re.compile(r'^\s*(?:```|~~~)')
+
 wrapped = []
+in_fence = False
 for i, l in enumerate(lines):
+    if FENCE.match(l):
+        in_fence = not in_fence
+        continue                      # the fence marker itself
+    if in_fence:
+        continue                      # Section 5 exempts code examples from the no-wrap rule,
+                                      # and a fenced block is one. Without this every measured
+                                      # table pasted as a fenced block reads as five wrapped
+                                      # paragraphs (measured on deepfabric 297).
     if not l.strip() or l.startswith(("    ", "\t")):
         continue                      # blank line or an indented code example
     if STRUCT.match(l) or END.search(l):
@@ -256,7 +267,7 @@ elif rev_lo <= t_rev <= rev_hi:
     emit("PASS", "answers.revision-time", "%d minutes of revisions, inside %d-%d" % (t_rev, rev_lo, rev_hi))
 else:
     emit("WARN", "answers.revision-time",
-         "%d minutes of revisions is outside the %d-%d band. The accepted bundle shipped 195"
+         "%d minutes of revisions is outside the %d-%d band. The eight accepted submissions run 0 to 370"
          % (t_rev, rev_lo, rev_hi))
 
 if stated is not None and t_rev not in (None, 0) and stated >= 0:

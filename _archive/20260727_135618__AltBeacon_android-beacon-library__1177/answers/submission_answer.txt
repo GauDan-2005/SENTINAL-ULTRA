@@ -1,0 +1,364 @@
+Submitter Answers - Fixable
+Task: 20260727_135618__AltBeacon_android-beacon-library__1177
+
+What is your analysis of the Sentinel task? (both occurrences)
+Fixable
+[Internal] Validity: Fixable
+
+Select where the task had issues (check all that apply):
+- [x] Instructions
+- [x] Tests
+- [x] Oracle Solution
+- [x] Environment/Dockerfile
+
+What issues did you find with the task?
+- [x] Every requirement in the instructions is not properly tested
+- [x] All test requirements are not properly specified in the instructions
+- [ ] The instructions appear LLM generated
+- [x] The instructions are overly-prescriptive
+- [ ] The task leaks solution information
+- [x] The oracle does not implement the solution following the instructions
+- [x] Less than 10 fail-to-pass tests in the test suite
+
+
+Issue details:
+
+1) [Less than 10 fail-to-pass tests] - tests/config.json listed 3 ids.
+
+    "fail_to_pass": [
+      "org.altbeacon.beacon.SettingsTest::setSettingsTest",
+      "org.altbeacon.beacon.SettingsTest::configureCustomDistanceCalculatorTest",
+      "org.altbeacon.beacon.SettingsJavaTest::setSettingsTest"
+    ]
+
+The floor is 10 and the static check rejects anything outside 10 to 20. So this one fails the build before any other check gets to run.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Rewrote both test files. That first pass took the count to 19, and later rounds took it to 20 where it stands now. Every one of those tests maps to something the instruction actually says.
+
+2) [Every requirement in the instructions is not properly tested] - the whole suite held two real assertions. SettingsJavaTest.setSettingsTest had zero. It builds a Settings, calls a few methods and passes so long as nothing throws.
+
+    beaconManager.adjustSettings(settings);
+    //beaconManager.getActiveSettings().setDebug(false);
+    beaconManager.getActiveSettings().getScanPeriods().getBackgroundScanPeriodMillis();
+    Settings.Defaults.INSTANCE.getScanPeriods().getBackgroundScanPeriodMillis();
+
+Four more functions in SettingsTest.kt never got an @Test annotation, so they never ran at all. Lines 123, 143, 163 and 173 of the old tests.patch declare configureScheduledJobStrategyTest, configureJobServiceStrategyTest, configureBackgroundServiceStrategyTest and configureIntentScanStrategyTest as plain functions. That leaves most of the instruction ungraded. Nothing touched the 14 optional fields, the ScanPeriods defaults, the builder, the Defaults object, the split between adjustSettings and replaceSettings, revertSettings, strategy equality or the snapshot copy behaviour of getActiveSettings. A stub that hardcoded one url would have passed.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both files rewritten from scratch. 16 Kotlin tests and 3 Java ones, each tied to a sentence in the instruction. The four dead functions came back as real tests. pass_to_pass went from empty to the 210 tests that already existed and allow_extra_failures went to false, so the old static configuration surface is guarded now too.
+
+3) [All test requirements are not properly specified in the instructions] - SettingsTest.kt carried no @Config annotation, so Robolectric ran it at the module target of SDK 34. The base lib/build.gradle pins org.robolectric:robolectric:4.9 and that version does not support SDK 34. To pass, an agent had to edit lib/build.gradle to robolectric 4.11.1. Not any newer version either, because 4.11.1 is the only one the Dockerfile warms into the offline cache at lines 50 to 71. Nothing in the instruction mentions dependency versions, so there was no way to work that out. All 28 test classes that already exist in the repo use @Config(sdk = 28).
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Put @Config(sdk = 28) on both new test files, same as every other test in the repo. The dependency bump is optional now rather than a hidden requirement. The oracle still carries it because it belongs to the PR and it does no harm.
+
+4) [The instructions are overly-prescriptive] - two lines told the agent how to build things rather than what to build. "a Kotlin data class is the intended shape" names the language construct. "you must not modify the test files under lib/src/test" is verifier mechanics, which the platform's instruction check treats as a finding. The builder list also repeated setScanStrategy twice.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The do not modify line is gone and the harness enforces it now, since tests/test.sh restores lib/src/test before applying tests.patch. Duplicate setter removed. Two more passes followed the platform's instruction reports. The list of internal fields adjustSettings writes turned into the post condition behind it, that any affected property read back off BeaconManager or Beacon gives the value just applied. The www.google.com literal is gone. So is the ModelSpecificDistanceCalculatorFactory class name and the note about it using the active url. The word singleton went from the Defaults sentence. Then the Java example reading Settings.Defaults.INSTANCE went, because it gave away that Defaults has to be a Kotlin object declaration. Naming the existing ModelSpecificDistanceCalculator went too, replaced by a requirement that the default factory preserves the distance calculation the library already performs. The data class hint uses the checker's own wording now. The bare package path for DistanceCalculatorFactory became a placement tied to the DistanceCalculator it returns. Every name the graded tests call is still there.
+
+5) [The oracle does not implement the solution following the instructions] - replaceSettings was byte for byte identical to adjustSettings.
+
+    public void replaceSettings(Settings settingsDelta) {
+        applySettingsChange(AppliedSettings.Companion.fromDeltaSettings(this.settings, settingsDelta));
+    }
+    public void adjustSettings(Settings settingsDelta) {
+        applySettingsChange(AppliedSettings.Companion.fromDeltaSettings(this.settings, settingsDelta));
+    }
+
+The instruction says replaceSettings has to reset every unset field to the library default. The oracle merged onto the current values instead, so the one behaviour that tells the two methods apart could not be tested at all. There is a second bug in the same block.
+
+    setBackgroundBetweenScanPeriod(sp.getBackgroundScanPeriodMillis());
+
+That is the background scan period being fed into the background between scan period. A faithful test of the four periods would have failed a correct agent.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Two one line changes inside solution/golden.patch. replaceSettings merges the delta onto AppliedSettings.Companion.withDefaultValues() now. The between scan period reads getBackgroundBetweenScanPeriodMillis(). No PR behaviour was removed and the patch still applies cleanly at the base commit.
+
+6) [Tests could be defeated by the agent, and the trial scored as an infra error] - this one does not map to a checkbox but it is the worst thing I found. tests.patch adds lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt as a new file. Ask an agent to build a Settings class in org.altbeacon.beacon and there is a good chance it writes its own test with that name in that package. Then git apply refuses.
+
+    error: lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt: already exists in working directory
+    ERROR: failed to apply tests/tests.patch
+
+The trial gets recorded as an infrastructure error instead of being scored on merit, so the difficulty verdict stops meaning much. A clean oracle run never shows it.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? tests/test.sh restores the whole base test tree immediately before applying tests.patch, so anything the agent left under lib/src/test is discarded and can neither collide with the new files nor influence grading.
+My first attempt at this was wrong, and the version that shipped in earlier rounds did nothing at all. It used git checkout and git clean, guarded by a check for .git. That passes every local scenario I could build. On the platform the guard fails, because the verify time workspace is not a git repository, so the restore gets skipped exactly when it is needed. Another task I submitted spent three rounds on three different git based restores before that came out, and the per trial analyses on a third task say the cause outright. The restore now carries the base tree as a gzipped tarball, base64 encoded inside test.sh itself. tests/ accepts only four filenames so the payload cannot have its own file, and test.sh is read from /tests, so it is there whenever the verifier runs at all. The tree is 32 files and 292 KB, which comes to 33 KB of base64 and takes test.sh from 19 KB to 53 KB. I pulled the payload back out of the finished test.sh, decoded it and diffed it against the base tree to confirm it round trips byte for byte. Then I tested it against an agent that writes its own SettingsTest.kt, an agent that commits that file and deletes an existing test class, a workspace with no .git, and a workspace with no git binary at all.
+
+7) [Environment settings in task.toml] - the Dockerfile builds and needs no change. The limits around it did. [environment] os was missing and so was [metadata] difficulty_explanation. [agent] timeout_sec sat at 1800 out of a 7200 ceiling, on a feature that adds a 351 line Settings.kt plus 174 lines of BeaconManager, with both frontier models at 0 of 3. [verifier] timeout_sec sat at 300, which is thin now that the verifier runs the whole suite.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Added os and difficulty_explanation. Raised the agent timeout to 7200 and the verifier timeout to 1800. Every value stays inside the documented limits, gpus is still 0, and network_mode is present and correct in all three blocks.
+
+
+8) [The oracle does not implement the solution following the instructions] - solution/solve.sh was not safe to run twice. It tried a forward apply, then a three way apply, and if both failed it reverse applied the patch and reported success.
+
+    else
+      git apply -p1 -R --whitespace=nowarn /solution/golden.patch
+    fi
+
+I reproduced what that does. Running solve.sh a second time in the same tree removes Settings.kt, takes adjustSettings back out of BeaconManager and still exits 0, so the verifier then grades an unsolved tree. It is also why a genuinely bad patch would look fine instead of failing loudly.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? solve.sh is forward only now. It first checks whether the patch already fits in reverse, and if it does it says so and exits 0 without touching anything. Otherwise it applies forward, then three way, and if neither works it prints an error and exits 1. I ran it three times in a row against the same container. The solution survives and the verifier still gives reward 1 with 230 of 230.
+
+9) [The oracle does not implement the solution following the instructions] - the instruction names the field regionStatePersistenceEnabled, but Settings.Defaults spelled the matching default regionStatePeristenceEnabled, missing the second s.
+
+    const val regionStatePeristenceEnabled = true
+
+So the default the instruction asks for was not actually there under that name. Nothing caught it because the defaults test skipped that one field.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Renamed the constant and its three references inside golden.patch, then added assertTrue(Settings.Defaults.regionStatePersistenceEnabled) to defaultsHoldTheLibraryDefaultForEachField so the name is pinned from now on.
+
+10) [Every requirement in the instructions is not properly tested] - five fields the instruction lists had no default assertion and no apply or read back assertion. beaconSimulator and rssiFilterImplClass were only checked for being null on a fresh Settings. scanPeriods, distanceCalculatorFactory and regionStatePersistenceEnabled were missing from the defaults test. The snapshot test only checked one direction, that a later live change does not move an already handed out snapshot, and never the direction the instruction also states, that reshaping a snapshot must not reach the live configuration.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? defaultsHoldTheLibraryDefaultForEachField now covers all fourteen fields, including the four scan period values, an empty beacon list from the default simulator, the running average rssi filter class, and the default factory reporting about one metre when the measured rssi equals the reference power. activeSettingsHandsOutAnIndependentSnapshot now copies a snapshot, changes two fields on the copy and asserts the live configuration and BeaconManager.getRegionExitPeriod() are both unmoved. One new test, theRemainingFieldsAreAppliedAndReadableBack, applies a custom beacon simulator and reads it back off BeaconManager, then applies useTrackingCache, maxTrackingAgeMillis, longScanForcingEnabled and rssiFilterImplClass and reads all four off the resolved snapshot, then calls revertSettings and checks every one of them is back at the default. I proved that test carries weight by stubbing out the simulator push through in a throwaway copy. Reward drops to 0 and that test is the one that reports missing.
+
+11) [All test requirements are not properly specified in the instructions] - activeSettingsHandsOutAnIndependentSnapshot adjusts a snapshot and then checks the live configuration did not move.
+
+    val edited = beaconManager.activeSettings.copy(debug = true, regionExitPeriodMillis = 99000)
+
+The instruction said a change made to a snapshot must not reach the live configuration, but it never said a caller could adjust a snapshot at all, so copy was a requirement the test asserted and the instruction did not state.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The snapshot sentence in the instruction now says that adjusting a snapshot with copy, naming just the fields to change, must not reach the live configuration either. The test is unchanged and the requirement behind it is stated now.
+
+12) [Environment settings in task.toml] - [environment] build_timeout_sec sat at 900 out of a documented ceiling of 1800.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Raised to 1800. This bundle has the heaviest build I have submitted. It downloads the Android command line tools and platform 34 from dl.google.com and then warms roughly 2 GB of Gradle and Robolectric cache so the verifier can run offline. A cold build with no cache takes 347 seconds here on a fast machine that already had the base image, and the Gradle work inside it is only 52 seconds at the declared 4 cpus, so almost all of that time is download. 900 seconds was the same budget the lightest bundle in my set gets.
+
+13) [Oracle patch did not match the source PR file list] - this one does not map to a checkbox. PR 1177 changes 14 files outside the tests and solution/golden.patch only covered 13. The one it dropped was the CHANGELOG entry that announces the Settings API.
+
+    ### 2.21.0-beta1 / 2024-09-01
+    - Add new Settings API
+
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Added the hunk back at the top of golden.patch. It applies cleanly at the base commit and the patch now touches exactly the same 14 files the PR does. No test depends on it.
+
+14) [The oracle does not implement the solution following the instructions] - the biggest one, and the reason the quality report sent the task back. applySettingsChange ends like this.
+
+    // TODO: apply all other settings
+    //settings.getLongScanForcingEnabled()
+    //settings.getRssiFilterImplClass()
+    //settings.getScanStrategy()
+
+So longScanForcingEnabled and rssiFilterImplClass were carried on the snapshot and reached nothing. useTrackingCache and maxTrackingAgeMillis were not even in the comment and are also never applied, even though BeaconManager.setUseTrackingCache and setMaxTrackingAge have existed for years. And JobServiceScanStrategy stores immediateJobId, periodicJobId and jobPersistenceEnabled while its configure method ignores all three, so a caller could set job ids that configured no job. The instruction promises every applied field is observable, so four of its fourteen fields were named there and applied nowhere.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I finished that TODO instead of narrowing the instruction around it. applySettingsChange now calls BeaconManager.setRssiFilterImplClass, BeaconManager.setUseTrackingCache and setMaxTrackingAge. longScanForcingEnabled had no static holder anywhere, so BeaconManager gained one and BeaconService now reads it next to the manifest value it already reads. JobServiceScanStrategy.configure calls ScanJob.setOverrideImmediateScanJobId and setOverridePeriodicScanJobId with the ids it holds, and ScanJob gained a persistence flag that ScanJobScheduler reads where it used to hardcode setPersisted(true). The TODO comment is gone. theRemainingFieldsAreAppliedAndReadableBack now reads all four back off RangeState, RangedBeacon and BeaconManager rather than only off the snapshot, and checks revertSettings puts them back. everyScanStrategyCanBeAppliedAndReadBack asserts the job ids and the persistence flag actually land. Details of what this adds to the PR are in the PR additions answer below.
+
+15) [The oracle does not implement the solution following the instructions] - the instruction says two strategies of the same kind configured the same way compare equal. ForegroundServiceScanStrategy.equals ignored the notification it was constructed with, so two strategies configured with different notifications compared equal.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? equals and compareTo now include the notification. I checked this could not break the graded tests first. clone passes the same notification reference through, so reading a strategy back off activeSettings still compares equal to the one that was applied. scanStrategiesCompareEqualOnlyToAMatchingStrategy now covers all three cases, same notification and same id equal, same notification and different id unequal, different notification and same id unequal.
+
+16) [All test requirements are not properly specified in the instructions] - the distance tests pinned a literal. assertEquals(1.0, ..., 0.1) at rssi -59 and txPower -59 is a number read off the library's model file, and the instruction only ever says the default factory has to preserve the calculation the library already performs today.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? All three assertions now build a ModelSpecificDistanceCalculator on the same context and url and compare against what it returns, to within 0.0001. That is the requirement the instruction actually states, and it holds whatever the model file says.
+
+17) [Tests could be defeated by the agent] - this one does not map to a checkbox. The grader recorded raw_exit_code and never looked at it, so reward came purely from parsing the result xml. The test command also ended in || true and then a python parser, so the runner's exit status was the parser's and could never be anything but 0.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The command captures gradle's status and exits with it, and the grader computes success as no missing required tests and no unexpected failures and raw_exit_code == 0. I measured gradle's bare exit on a fully green tree first, because gating on a runner that exits nonzero on success would break the oracle. It is 0 with all 230 tests running. The gate sits inside the success expression rather than as an early infrastructure_error exit, so an agent whose code does not compile is still an ordinary grading failure and not an invalid trial.
+
+19) [Environment/Dockerfile] - the verifier runs Gradle offline, and the caches it needs sat under the JVM's user.home rather than at a fixed path. Nothing pinned GRADLE_USER_HOME, so Gradle derived its home from user.home, which follows the uid the container runs as and not the HOME variable. If it resolved anywhere other than the path warmed at build time, the wrapper could not find the Gradle distribution and tried to download it.
+
+    Exception in thread "main" java.net.UnknownHostException: services.gradle.org
+
+With no network at verify time that kills the run before a single test executes, identically every time. I proved it by moving GRADLE_USER_HOME to an empty directory and running offline. Exit 1, that exception, no test xml. The three other bundles I have submitted all pass their oracle checks and the accepted one pins its cache the same way, with DENO_DIR set to an absolute path, so this bundle was the outlier.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? GRADLE_USER_HOME is pinned to /opt/gradle-home before any Gradle invocation, so the build warms the caches there and the verifier reads them from there whatever user.home says. Oracle still 230 of 230 and the image is the same size. Worth saying plainly that I have not proved this is what the platform was hitting, only that it was a way for the verifier to die on every run that I could remove.
+
+18) [Environment/Dockerfile] - the image build restored lib/build.gradle with git checkout after warming the bumped dependency set, under set -e. That makes the build depend on /app being a git repository that git will operate on. If it ever failed, the image would ship with build.gradle already bumped, golden.patch would not apply, and the oracle would fail on every run.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The build copies lib/build.gradle to /tmp before the sed and copies it back afterwards. No git, same result, and the build no longer has an environmental assumption I cannot test from outside the platform.
+
+20) [The oracle does not implement the solution following the instructions] - the quality report marked the oracle down against the instruction and named two things the instruction promised that the oracle does not do. Both are real and I checked each one in the image before touching anything.
+First, applying settings writes every managed field onto the old static configuration, so a value a caller had set directly through a static setter beforehand gets replaced. My own wording from the previous round made that a contradiction, because it promised the existing static configuration methods and everything they drive would be unchanged.
+Second, changing the scan strategy while consumers are bound finishes after the call returns, through a Handler.postDelayed that unbinds and rebinds them. The instruction said applying settings happens as one transaction, with no room for that.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both in the instruction, not the oracle. The postDelayed rebind is upstream PR 1177's own code, which I confirmed against the PR diff, so extending the oracle there would be rewriting PR behaviour rather than completing it. The transaction sentence now says the delta is resolved and applied as one change so no caller sees half of it, and that the unbind and rebind for a strategy change with bound consumers completes after the call returns. The backward compatibility sentence now says the static methods must all still work and drive unchanged behaviour for callers who never touch the new API, and that where the two overlap the new API wins and replaces a value set directly beforehand. I then walked every unimplemented item against the new wording by hand, which is the step I skipped last time and why that narrowing failed.
+
+21) [Every requirement in the instructions is not properly tested] - two coverage gaps in the same report. The instruction says a scan strategy has to take effect rather than merely be recorded, and the tests only proved that for the job service strategy. The other three were read back off the snapshot and nothing checked they had changed how the library scans. And manifestCheckingDisabled is named as a configurable field but nothing asserted it reaches the surface that owns it.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? everyScanStrategyCanBeAppliedAndReadBack now asserts the scheduler state each strategy leaves behind. The foreground one turns scheduled scan jobs off and registers its notification and id, the job service one turns them on and sets both job ids and the persistence flag, and the background and intent ones turn them off. theRemainingFieldsAreAppliedAndReadableBack applies manifestCheckingDisabled and reads it back off BeaconManager.getManifestCheckingDisabled, and the revert block checks it returns to the default. All of it went inside tests that already existed, since fail_to_pass is at the ceiling of 20.
+
+22) [All test requirements are not properly specified in the instructions] - two assertions were stricter than the instruction. One required BeaconManager.getBeaconSimulator() to be null after a revert when the instruction only says the default is a simulator that supplies no beacons. The other read the tracking cache and the maximum tracking age off RangeState and RangedBeacon, which the instruction did not point at.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The simulator assertion now accepts either no simulator or an empty one, which is what the instruction actually says. And the instruction now names the configuration each field is written through to, including the ranging classes that hold the tracking cache and the maximum tracking age, so those readbacks rest on something stated. That also answers both judges on self containedness, where the only complaint was that the existing configuration surface had to be discovered from the code.
+
+23) [The instructions are overly-prescriptive] - not over prescription this time, the opposite. One judge called the instruction a wall of three unbroken paragraphs and listed points left implicit, including how an unset field is represented and what applying settings as one transaction actually means.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Three short headed sections instead of one block of prose. A field the caller did not mention is stated to be absent and to read back as null. The transaction sentence says concretely what is guaranteed and what is not. The Defaults holder keeps its design latitude on purpose, since one of the two judges called that latitude out as a good thing.
+
+24) [The oracle does not implement the solution following the instructions] - the quality report marked the oracle down against the instruction again and raised four things. I reproduced each one in the patched source before touching anything. All four came in with PR 1177 and none of them was introduced here, so the fix for all four sits in the instruction and none of it in the oracle.
+The scan strategies are declared as a plain open interface, not a sealed one, while the instruction called them a closed set. I diffed every line golden.patch adds to Settings.kt against the PR. The only differences are a misspelling I fixed and one import, so the open interface is upstream's choice. Sealing it would restrict a public API instead of adding to it, and that is not an additive edit, so the word closed is gone from the instruction.
+Five of the fourteen entries in Settings.Defaults are plain vals and not const vals, so Java has to reach them through Defaults.INSTANCE. The instruction promised the defaults read the same way from Kotlin and Java, which was only true of the nine const ones. Worth noting the report's own example was wrong here, since distanceModelUpdateUrl is one of the const ones and does read as Settings.Defaults.distanceModelUpdateUrl from Java. I narrowed the promise and left the object alone, because annotating it would make the patch diverge from the PR for a judge's benefit.
+Switching to a non-foreground strategy leaves the foreground service notification in place. The instruction now says applying a strategy puts the library into the scheduling mode that strategy describes, which is what the four configure methods actually do and what the tests assert.
+The patch changes Identifier.parse so a null argument returns null. That hunk is byte for byte the PR's, and no graded test touches it, but my own backward compatibility sentence had promised parsing behaviour would be unchanged. Parsing is out of that sentence now.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Four narrowings in instruction.md, nothing in solution/golden.patch.
+
+25) [Every requirement in the instructions is not properly tested] - this was the headline reason on the report. The instruction said applying settings is transactional and described what happens when the scan strategy changes while consumers are bound, and no test ever bound a consumer. Nothing anywhere in the suite did.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I tested the claim instead of deleting it. everyScanStrategyCanBeAppliedAndReadBack now binds a recording consumer, changes the strategy underneath it, and asserts the consumer is still bound afterwards, that it was reconnected, and that the new strategy's job id is the one in force. bindInternal, unbindInternal and isAnyConsumerBound are all public at the base commit so this adds no new name for an agent to guess. I checked it is not a tautology by stubbing the rebind branch out of the oracle, and the test then fails with an IllegalStateException from setEnableScheduledScanJobs. That is the naive implementation the report described. A class level @After releases the consumer even when an assertion above it fails, because the manager is a process singleton and a consumer left bound leaks into the next test class. The transaction sentence is reworded down to the part that is observable and asserted, that the delta is resolved before anything is written. The atomicity claim nothing can see is gone.
+
+26) [The instructions are overly-prescriptive] - the opposite again. One judge called the file three long paragraphs and named three points left implicit, the scanPeriods default type, what copy does to a snapshot, and whether the builder's five setters are a floor or the whole list.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? I measured my two bundles that are not being sent back over clarity before rewriting. The accepted one keeps its longest paragraph to 717 characters and the other to 791. Mine had a 2724 character paragraph and a 2466 character one. It is now a fourteen row field table, two short bullet lists and short paragraphs, with nothing over 828 characters, and the three ambiguities are answered in place. The accepted bundle uses headings and bullet lists too and still reads as a real ticket, so the structure itself was never the problem.
+
+27) [All test requirements are not properly specified in the instructions] - I found this one myself while rehearsing the check locally, and it is the most serious thing in this round. Two graded assertions read BeaconManager.getLongScanForcingEnabled() and ScanJob.getJobPersistenceEnabled(). Neither exists at the base commit and neither was named anywhere in the instruction. I created both when I completed the PR's own TODO in an earlier round, and then graded them without ever telling the agent they were deliverables.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both are named in the instruction now, as readers the library does not have yet and needs. The oracle knows those names because the patch creates them, and no agent could have guessed them, so every agent would have failed to compile the graded test file while the oracle passed. That is an instruction that does not say enough for the task to be solvable, and on a report it would have looked like the task simply being hard.
+
+28) [The oracle does not implement the solution following the instructions] - the report came back with the oracle marked down again, and this time the verdict was to remove the task. Two things were named. The patch drops the block that lazily created a default distance calculator the first time a scan started, in the beacon service, the scan job and the intent coordinator, and only puts a calculator in place when settings are applied. So a caller who never applies any settings ends up with none. And the instruction called rssiFilterImplClass the Class of an rssi filter while the patch types it Class<RunningAverageRssiFilter>, which is narrower. I checked both against PR 1177 before touching anything. The deleted block appears three times in the PR's own diff and the narrow type appears three times as well, so both are upstream's and neither was introduced here.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? In the instruction, not in the patch. Reverting either one would be putting back behaviour the PR deliberately removed, which is not an edit I am allowed to make. The backward compatibility sentence used to promise that everything the existing static methods drive stays unchanged. That was never true. It now says the existing methods all keep working, names installing the default distance calculator as the one piece of behaviour that moves, and says everything else stays as it is. The field table gives the exact type. Verified in the patched source that a legacy caller really does end up without a calculator, since applySettingsChange is the only place one is installed and Beacon.getDistanceCalculator has no fallback of its own.
+
+29) [The oracle does not implement the solution following the instructions] - found by me, not in the report. The instruction said two strategies of the same kind configured the same way compare equal. For the foreground strategy that is false. Its equals compares the notification with ==, Android's Notification does not override equals, so two notifications built the same way are still two different objects and the strategies are not equal. I edited this same sentence in the round before and I went the wrong way with it. There was an assertion that disagreed with the sentence, so I deleted the assertion. It was the sentence that needed changing.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The sentence now says strategies of different kinds never compare equal, that two of the same kind match on the values they were built from, and that for the foreground strategy the notification counts by identity. The assertion I removed last round is back, comparing two separately built notifications, and a stub that makes equals ignore the notification now fails scanStrategiesCompareEqualOnlyToAMatchingStrategy with reward 0.
+
+30) [The instructions are overly-prescriptive] - the optional instruction check scored the file 0.30 with one high finding, and one of the judges said the same thing more mildly. For a strategy change while consumers are bound, the instruction spelled out the steps. Unbind them, put the new strategy in place, bind them back. That describes the way to build it instead of what it has to do. The same sentence drew a coverage complaint from the other direction, that the test only checked the consumer was still bound and counted connections, so an implementation that never unbinds could pass.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both at once, by moving the sentence to the outcome and pointing the test at that outcome. It now says a consumer bound before the call has to be bound again by the time it returns, connected afresh so it receives the service connection callback a second time, and that the mode it started under has to be off instead of still running beside the new one. The test asserts the second connection and now also asserts the old scanning mode is gone. Stubbing the rebind fails everyScanStrategyCanBeAppliedAndReadBack with reward 0, so a test now backs the sentence.
+
+31) [Every requirement in the instructions is not properly tested] - the report named two requirements the instruction states and nothing graded. Long scan forcing had to be consulted by the scanning code and not just stored, and the tests only read the value back off the manager. And a caller who never applies settings was supposed to end up with no default distance calculator, while every test in the class calls revertSettings first, which applies settings and installs one. Both of those sentences are ones I added in earlier rounds to make the instruction honest, so making it truthful is what created the gap.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both are tested now, inside tests that already existed, so fail_to_pass stays at the ceiling of 20. For long scan forcing, theRemainingFieldsAreAppliedAndReadableBack builds the beacon service and checks the scanner it drives really has long scan forcing switched on. There is no public reader for that state, so the test reaches it by reflection over three names that all exist at the base commit and that the patch never touches. That is runtime state and not source text, so it does not grade the shape of anyone's code. The test manifest declares the service with no metadata, so the only way that flag can come on is the new reader, so the check genuinely discriminates. It also asserts the flag is off before anything asks for it, and that closes the obvious cheat of an implementation that simply switches it on always. For the calculator, configuredDistanceCalculatorFactoryInstallsItsOwnCalculator clears it, drives the intent coordinator the way a caller who never touches the new API would, and checks nothing put one back. Three stubs prove all of it bites. Removing the consult fails the first test with reward 0. Switching long scan forcing on unconditionally fails it too. Putting the deleted lazy install back fails the second with reward 0.
+
+32) [The oracle does not implement the solution following the instructions] - the instruction was still promising more than PR 1177 delivers, and this is the sixth round in a row that has been the finding. Two of them were live. The backward compatibility paragraph said one piece of behaviour moves and that it is the only one, and that everything else the existing methods drive stays as it is. None of that holds, in three separate places. Setting debug to false used to install an empty logger and now installs an info logger. Identifier.parse used to throw on a null argument and now returns null. Region.matchesBeacon gained a parser check that can return false where it used to return true. Separately the strategy sentence said a bound consumer is bound again by the time the call returns, with no qualification, while the library defers that work when it cannot release the old mode straight away.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Not by another narrowing. Five rounds of narrowing one reported sentence at a time is what produced the sentence this round had to fix, because each rewrite reached for a stronger word to sound precise. The unbounded claims are gone instead. That paragraph no longer says anything about everything else, or the only one, or exactly the way they do today. It states the two things that are actually required and that the regression list already guards, which are that the static methods this API manages still work and that the new API wins where the two overlap. The timing sentence keeps the outcome unconditional, since that is what the graded assertion checks, and puts a condition on the timing alone. Nothing in solution/golden.patch was touched, because every one of these behaviours is the PR's own.
+
+Additional findings outside the listed categories:
+
+33) [Instruction accuracy] - two smaller things a judge called ambiguous, both checkable against the patch. The field table gave the default scan strategy only for Android 8 and above and never said what it is below that. And the sentence placing the distance calculator factory beside the calculator it returns read as a contradiction of the opening line, which puts the API in one package.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The table now gives both defaults, which the patch sets in the same initialiser. The factory sentence now says beside the calculator it returns instead of with the rest of this API, so the two sentences no longer look like they disagree.
+
+34) [All test requirements are not properly specified in the instructions] - the reviewer found the one that mattered and it had been there since the first pass. The graded Kotlin file reads fields straight off beaconManager.activeSettings and uses them as ordinary values, assertTrue on debug and toLong on regionExitPeriodMillis. The oracle returns a separate snapshot type whose fields are not optional, so that compiles for the oracle. The instruction never said the snapshot was a different type. It said Settings is all optional, which is right, and then only that every field on the snapshot is filled in. An agent that returns a filled in Settings from getActiveSettings, which is what the instruction described, gets a type error instead of a failing assertion. Seven of the eight difficulty trials died in compileDebugUnitTestKotlin with 24 errors of the form inferred type is Boolean? where Boolean was required. Every one of those trials recorded all 230 graded ids as missing, the 210 regression ids included, because the suite never ran at all. So the difficulty tier was measuring a compile target nobody could hit, not the feature.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The instruction now states the contract. The snapshot is its own type, it carries the same fields under the same names as the field table, and reading one hands back a resolved value the caller can use straight away, not an optional to unwrap. It does not name the type, because no graded test names it either, so an agent is free to call it whatever suits. One detail is worth stating precisely, because getting it wrong would have traded this defect for another. The oracle leaves exactly one of the fourteen fields optional, the rssi filter class, and its graded assertion goes through assertEquals which accepts a nullable, and that is why the field never appeared among the 24 errors. So the instruction says that field may stay optional and the rest may not, which is what the oracle actually does.
+
+35) [Every requirement in the instructions is not properly tested] - two coverage holes, each one letting a wrong build through. The field table gives the background service strategy as the default below Android 8 and nothing exercised it, because both graded classes pin sdk 28, so an implementation handing back the job service strategy on every platform passed everything. And job persistence was applied as false at both call sites and asserted false at both, so a reader that always answers false passed as well.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both are tested now and both are proved by a stub. Job persistence is applied as true at one call site and false at the other, so a reader that always answers either one fails. The below Android 8 default needed a test running under an sdk where that branch is actually taken, which needed the matching Robolectric platform jar in the offline cache, since the verifier runs with no network. The image warms the jars for the levels the tests use, so 24 joins 28 and 34 there. That addition is not on the allowed environment fix list, so I am flagging it rather than leaving it to be found. It is baking a test dependency into the image, which is what the tasking guide asks for given the verifier is airgapped. The build proves that rather than assuming it, because the Dockerfile runs the same warm up offline before it finishes. The graded count did not move. Two push through tests that were checking the same kind of thing were merged into one, which freed the slot the new test needed, so fail_to_pass is still 20 rather than the 21 the static check rejects.
+
+Additional findings outside the listed categories:
+
+36) [Packaging] - the reviewer could not get git to treat the shipped repo as a repository. The zip does carry the refs directory entries, and an extract on this machine gives a working repo, so the finding did not reproduce here as written. It is right in substance anyway and the cause is mine. The seed ships refs/heads/main as a real 41 byte file. The scrub I run before zipping ends in a git gc, which packs that ref away and leaves refs/heads an empty directory, and an empty directory does not survive every tool that unpacks a zip. So the bundle had come to depend on empty directory entries being preserved.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The loose ref is written back after the gc, so the shipped shape matches the seed again and nothing depends on empty directories. It is computed into a variable first, because redirecting into the same file being read truncates it and leaves the word HEAD in the ref. The rezip step checks the file is 41 bytes and that HEAD still resolves to the base commit before it will build the zip.
+
+37) [Packaging] - found while checking the above, and not something the reviewer could have seen. A gradle cache had reappeared at environment/repo/.gradle in the working copy, dated after the previous zip was built, which is why that zip was clean and this one would not have been. It is in gitignore, so nothing in git status ever mentions it. A single build cache in the image caps the packaging score outright.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Removed from the working copy, and the rezip step now deletes it and then refuses to build the zip if any build cache is still present. It was confirmed untracked at the base commit first, so nothing tracked was deleted. The same cache had also appeared in the untouched reference copy, dated twelve days after the download, and the original download contains no such directory, so removing it there restores that copy to what the platform actually sent.
+
+--- Phase 2 (completed after the evals pass) ---
+
+Files Changed:
+1. instruction.md
+   Changed: dropped "a Kotlin data class is the intended shape". Dropped the "do not modify the test files" line. Removed the duplicated setScanStrategy from the builder list. Removed the unbind and rebind sentence and the "knows how to configure the manager" phrase, both internal mechanism that no test can reach. Two later passes against the platform's instruction reports replaced the list of internal fields adjustSettings writes with the post condition, removed the www.google.com literal, removed both distance calculator class names, dropped the word singleton and the Settings.Defaults.INSTANCE example from the Defaults sentence, reworded the Kotlin construction hint, and turned the bare package path for DistanceCalculatorFactory into a placement tied to the DistanceCalculator it returns.
+   Why: over-prescription, and keeping instruction and tests in lockstep.
+   Revision round 3: the snapshot sentence now says that adjusting a snapshot with copy, naming just the fields to change, must not reach the live configuration either.
+   Revision round 4: split into three headed sections. States that an unset field is absent and reads back as null. Says concretely what applying settings as one transaction guarantees, and that a strategy change with bound consumers finishes its rebind after the call returns. Enumerates the existing configuration each field is written through to. Replaces the blanket backward compatibility promise with the ownership rule, that the static methods keep working for callers who do not use the new API and that the new API wins where the two overlap.
+   Why: the graded snapshot test does exactly that and the instruction had never said a snapshot could be adjusted at all.
+   Revision round 5: restructured into a field table, two bullet lists and short paragraphs, longest paragraph down from 2724 characters to 828. Named getLongScanForcingEnabled and getJobPersistenceEnabled as deliverables.
+   Revision round 6: four promises the PR does not keep were narrowed. The backward compatibility sentence no longer claims everything the existing methods drive is unchanged, and names installing the default distance calculator as the one behaviour that moves. rssiFilterImplClass carries its exact type. Strategy equality says the foreground notification counts by identity. The strategy change while consumers are bound is stated as an outcome instead of an unbind and rebind procedure.
+   Why: every one of those four was the instruction promising more than PR 1177 delivers, which is what the report kept reading as the oracle falling short.
+   Revision round 7: removed the unbounded claims from the backward compatibility paragraph, put a condition on the rebind timing claim, gave the scan strategy default below Android 8, reworded the factory placement sentence, and stated the observable for long scan forcing.
+   Why: the paragraph claimed a completeness it could not have, and the timing claim was untrue whenever the old mode cannot be released straight away.
+   Revision round 8: stated the resolved snapshot contract, which is the defect that made seven of eight difficulty trials fail to compile. Added the scan strategy default below Android 8 to the field table wording already present, and stated the observable for it.
+   Why: the graded file only ever compiled against a snapshot whose fields are not optional and the instruction never asked for one.
+
+2. environment/problem_statement.md
+   Changed: re-copied from instruction.md after every instruction edit. Current md5 160b85c4e5af.
+   Why: the static check requires the two to be identical.
+
+3. tests/tests.patch
+   Changed: revision round 4 added the scheduler state each of the four scan strategies leaves behind, the manifestCheckingDisabled push through, and relaxed the beacon simulator assertion to accept either no simulator or an empty one. Earlier rounds added push through assertions for the four fields the oracle now applies, the job ids and persistence flag the scan strategy now configures, and foreground strategy equality across three notification cases, and replaced the pinned 1.0 distance figure with a comparison against the library's own ModelSpecificDistanceCalculator. All of it went inside tests that already existed, since fail_to_pass is at the ceiling of 20. Previously regenerated against the clean base commit twice, once in the first pass and again in revision round 2. SettingsTest.kt went from 6 functions with 2 assertions to 16 tests. SettingsJavaTest.java went from 1 test with no assertions to 3 tests. Both carry @Config(sdk = 28). Regenerated twice more to stay in step with the instruction as those passes trimmed it. Neither distance calculator class name appears in the tests now. theDefaultFactoryPreservesTheLibraryDistanceCalculation asserts the calculation instead of the type, checking that the library reports about one metre when the measured rssi equals the reference power, which is the same figure ModelSpecificDistanceCalculatorTest has always asserted. defaultsAreReadableFromJava reads the default values off the resolved snapshot rather than Settings.Defaults.INSTANCE, so no test pins Defaults to a Kotlin object declaration.
+   Why: coverage, dead untriggered tests, the hidden Robolectric requirement, and keeping every assertion derivable from the trimmed instruction.
+   Revision round 5: everyScanStrategyCanBeAppliedAndReadBack binds a recording consumer and checks it is still bound and reconnected after the strategy changes underneath it.
+   Revision round 6: that test also asserts the scanning mode it started under is gone, and the equality test compares two separately built notifications. Regenerated against the clean base commit again, so the hunk offsets are machine written. No new test function, since fail_to_pass is at the ceiling of 20.
+   Why: the report said an implementation that never unbinds could pass, and the equality assertion is the one I wrongly removed a round earlier.
+   Revision round 7: theRemainingFieldsAreAppliedAndReadableBack now checks the scanner the beacon service drives really has long scan forcing on, and that it is off before anything asks for it. configuredDistanceCalculatorFactoryInstallsItsOwnCalculator now checks that a caller who never applies settings gets no calculator installed. Regenerated against the clean base commit. No new test function.
+   Why: both were requirements the instruction stated and nothing graded, and that is what the report named.
+   Revision round 8: job persistence is applied as true at one call site and false at the other. Two push through tests were merged into one to free a graded slot, and the slot went to a test of the default scan strategy below Android 8, which runs under sdk 24 where that branch is taken. Regenerated against the clean base commit.
+   Why: both holes let a wrong build pass, and the graded count had to stay at 20.
+
+4. tests/config.json
+   Changed: the test command captures gradle's exit status and exits with it, instead of ending in || true and a python parser whose status was always 0. fail_to_pass 3 to 19, then to 20 in revision round 2. pass_to_pass 0 to 210. allow_extra_failures true to false. The test command clears lib/build/test-results/testDebugUnitTest before running and drops the --tests filters so the whole suite runs. execution.timeout_sec 1800 to 1500 so the inner timeout fires before the outer one.
+   Why: the count floor, no regression guard, and a test result the build left behind in the image that the verifier could read.
+   Revision round 8: two graded ids swapped for two others, with the count held at 20. distanceModelUpdateUrlIsPushedToTheManager and scanPeriodsArePushedToTheManager came out, the merged scanPeriodsAndModelUrlArePushedToTheManager and the new theDefaultScanStrategyBelowAndroid8IsTheBackgroundService went in. fail_to_pass is 20 and pass_to_pass is 210, both counted off the file as it stands.
+   Why: the below Android 8 test needs its own test method, and a 21st graded id is rejected by the static check, so a merge had to free the slot first.
+
+5. tests/test.sh
+   Changed: restores the base test tree immediately before the tests.patch block. The first version of this used git checkout and git clean guarded by a check for .git. It is now a gzipped tarball of lib/src/test, base64 encoded into a quoted heredoc inside test.sh, decoded and unpacked over a deleted lib/src/test. A failed decode or unpack is reported as an infrastructure error rather than a grading failure. Also dropped git apply --3way from the tests.patch block, since the restore guarantees a pristine tree and --3way is the one git path that needs a recognised repository.
+   Why: an agent writing its own SettingsTest.kt made the patch fail to apply and scored the trial as an infra error. The git based version of the fix does nothing on the platform because the verify time workspace is not a git repository. test.sh is read from /tests, so a payload inside it is present whenever the verifier runs. It also closes a test gaming route over the 210 pass to pass ids, which live in files tests.patch does not touch.
+   Also changed: the grader computes success as no missing required tests and no unexpected failures and raw_exit_code == 0, so a nonzero test command exit can no longer be rewarded.
+
+5b. environment/Dockerfile
+   Changed: GRADLE_USER_HOME pinned to /opt/gradle-home so the offline caches sit at a fixed path instead of following the JVM's user.home. The dependency warming step also copies lib/build.gradle to /tmp before the sed and copies it back afterwards, where it used to restore it with git checkout under set -e.
+   Why: that was the last build time dependency on /app being a git repository git will operate on. If it failed, the image would ship with build.gradle already bumped and the oracle would fail every run. Cold build after the change is 307 seconds, exit 0.
+   Revision round 8: the throwaway warm up test that prefetches Robolectric's platform jars now names sdk 24 alongside 28 and 34, so the jar for the below Android 8 branch is in the offline cache.
+   Why: the new test of the default strategy below Android 8 has to run under an sdk where that branch is taken, and the verifier has no network. This is the one change outside the usual editable set and it is a judgement call, so it is called out in Comments for Reviewer rather than left to be found. The build proves it rather than assuming it, because the same warm up runs again offline before the build finishes.
+
+6. solution/golden.patch
+   Changed: replaceSettings merges onto withDefaultValues() instead of the current settings. setBackgroundBetweenScanPeriod reads getBackgroundBetweenScanPeriodMillis(). Settings.Defaults.regionStatePeristenceEnabled renamed to regionStatePersistenceEnabled with its three references. The PR's CHANGELOG.md hunk added back. This round finished the PR's own TODO: applySettingsChange now calls BeaconManager.setRssiFilterImplClass, BeaconManager.setUseTrackingCache and setMaxTrackingAge, BeaconManager gained a longScanForcingEnabled holder that BeaconService reads, JobServiceScanStrategy.configure applies its job ids and a persistence flag that ScanJobScheduler reads, and ForegroundServiceScanStrategy equality includes the notification.
+   Why: the oracle did not implement what the instruction states, and its file list was one file short of the PR's. Regenerated against the base commit rather than hand edited, so the hunk offsets are machine produced.
+
+6b. solution/solve.sh
+   Changed: forward only, idempotent, and no longer dependent on /app being a git repository. It probes whether the patch already fits in reverse, with git apply and then with patch, and exits 0 doing nothing if it does. Otherwise it applies forward with git apply, falls back to patch, and exits 1 with an error if neither works. The reverse apply fallback is gone and so is git apply --3way.
+   Why: running the shipped script twice removed the solution and still reported success. Separately, --3way is the one git path that requires a recognised repository and it fails with "'--3way' outside a repository" whenever git declines the workspace, and that is a failure nobody outside the platform can reproduce.
+
+7. task.toml
+   Changed: added [environment] os and [metadata] difficulty_explanation. [agent] timeout_sec 1800 to 7200. [verifier] timeout_sec 300 to 1800. [environment] build_timeout_sec 900 to 1800.
+   Why: missing fields and headroom. The build downloads the Android SDK and warms about 2 GB of Gradle and Robolectric cache so the verifier can run offline, and 900 seconds was the same budget a bundle with no downloads at all would get.
+
+8. environment/repo
+   Changed: git metadata only. Expired the reflog, ran gc, removed .git/logs, ORIG_HEAD and FETCH_HEAD. Restored the executable bit on gradlew, which the delivered zip had dropped and which left the tree dirty. solution/solve.sh and tests/test.sh went from mode 644 to 755.
+   Why: git hygiene and a clean working tree. No tracked source file was touched.
+   Revision round 8: the loose ref .git/refs/heads/main is written back after the gc, so it ships as the same 41 byte file the seed had rather than as an empty directory. A gradle cache that had reappeared at environment/repo/.gradle was removed, after checking it is untracked at the base commit.
+   Why: the gc packs the ref away, and an empty directory does not survive every tool that unpacks a zip, which is what the reviewer ran into. The gradle cache is in gitignore so nothing in git status mentions it, and one build cache in the image caps the packaging score.
+
+PR additions:
+The PR scope was expanded, additively. Everything PR 1177 does is still there and nothing was removed, replaced or reduced.
+The corrections came first, which the guidelines allow when the oracle does not implement the instruction. replaceSettings was identical to adjustSettings and now resets unset fields to the library default. setBackgroundBetweenScanPeriod was being handed the background scan period and now reads the background between scan period. Settings.Defaults.regionStatePeristenceEnabled was misspelled and is renamed. I also put the PR's CHANGELOG.md hunk back, which the shipped patch had dropped.
+The addition is the TODO the PR left behind. PR 1177 ends applySettingsChange with a comment reading TODO: apply all other settings, listing longScanForcingEnabled, rssiFilterImplClass and scanStrategy, and JobServiceScanStrategy.configure ignores the three values it is constructed with. So four named fields were carried on the snapshot and reached nothing, and a scan strategy could be given job ids that configured no job. I finished that TODO. applySettingsChange now calls the existing setters, BeaconManager.setRssiFilterImplClass, BeaconManager.setUseTrackingCache and setMaxTrackingAge. longScanForcingEnabled had no static holder at all, so BeaconManager gained one and BeaconService reads it alongside the manifest value it already reads. JobServiceScanStrategy.configure now calls ScanJob.setOverrideImmediateScanJobId and setOverridePeriodicScanJobId with the ids it was given, and ScanJob gained a persistence flag that ScanJobScheduler reads where it used to hardcode setPersisted(true).
+That last one is the only place the file list grows. golden.patch now touches 15 files where the PR touches 14, and the extra file is lib/src/main/java/org/altbeacon/beacon/service/ScanJobScheduler.java, changed in three places, each of them one argument. Every other change lives in files the PR already touches.
+I checked AltBeacon master before doing any of this. Upstream still has not finished that TODO ten months after the PR merged, so this is genuinely an addition rather than a later commit I could copy. I did it because the alternative was narrowing the instruction until it promised a configuration API where setting four of its own fields does nothing, and that is a worse task.
+
+Post-fix confirmation (each re-verified against the current files on 2026-08-14, not carried over):
+[x] Every requirement in the instructions is properly tested
+[x] All test requirements are properly specified in the instructions
+[x] The instructions do not sound like an LLM generated them
+[x] The instructions are not overly-prescriptive
+[x] The task does not leak solution information
+[x] The oracle implements the solution following the instructions
+[x] The PR was not modified in any way beyond what is allowed by the guidelines
+[x] More than 10 fail-to-pass tests (counted: 20)
+
+All eight are now true without qualification. The gap the earlier report found between what the instruction promises and what the oracle does is closed instead of argued, so every field the instruction names is applied and asserted. Box 7 is worth reading with the PR additions answer, since the scope was expanded additively and that answer says exactly how far.
+
+Send to reviewer: Yes. Every evaluation check passed on the last upload and the task reached a reviewer, so the oracle question that kept this box unchecked for six rounds is settled and I am not carrying it forward. All four of the reviewer's findings are fixed and each one is backed by a stub that makes the bundle fail without the fix. Against an extract of the zip I am uploading, airgapped with no network at the declared 4 cpus and 8 GB, the oracle gives 230 of 230 with a zero exit on three consecutive cycles, the NOP gives reward 0 with a nonzero exit and no infrastructure error, an agent that overwrites the graded file in a workspace with no git still gives 230 of 230, and seven separate stubs each drop the reward to 0 and name the test that caught them. The extracted tree is a git repository again with the loose ref the seed shipped. One thing I want a reviewer to look at rather than discover, and it is the only change outside the usual editable set. The image now warms the Robolectric platform jar for sdk 24 as well as 28 and 34, because the new test of the below Android 8 default has to run under an sdk where that branch is taken and the verifier has no network. That is baking a test dependency into the image rather than a fix from the allowed environment list, so it is a judgement call and I would rather it were checked.
+
+What makes this task difficult?
+The merge rules are the hard part. Three methods apply settings and no two behave the same. adjustSettings leaves every field the caller did not mention at its current value. replaceSettings drops the unmentioned ones back to the library default. revertSettings resets the lot. Treat them alike and almost nothing passes. The Settings type also has 14 fields that all have to be optional, so the code needs some way to tell "not set" apart from "set to false" or "set to zero". Then the settings this API takes over have to land on the old static configuration surface on BeaconManager and Beacon without disturbing the 210 tests already using it, which means finding the existing setter for each one rather than inventing a new path. And it all has to work from Java, which rules out Kotlin default arguments and forces a builder plus a defaults object. Both frontier models went 0 of 3.
+
+Senior engineer estimate: 40+ minutes
+
+Comments for Reviewer:
+This is revision round 8, and it answers a human reviewer rather than the automated panel, so I have written it as replies to your four points.
+The snapshot one was right and it was the important one. The graded Kotlin file only ever compiled against a snapshot whose fields are not optional, and the instruction never asked for that. I counted the damage before fixing it. Twenty four sites read a snapshot field where Kotlin needs a plain Boolean, which is exactly the 24 errors you saw, thirteen more need a plain Int, four need a non null scan periods receiver and one needs a non null simulator. The instruction now says the snapshot is its own type, that it carries the same fields under the same names as the table, and that reading one hands back a value rather than an optional. It does not name the type, because no graded test names it either, so an agent can call it whatever it likes. One detail I want to flag because my first attempt got it wrong. The oracle leaves one of the fourteen fields optional, the rssi filter class, and its assertion goes through assertEquals which takes a nullable, which is why it never showed up in your error list. My first wording said every field was non optional, which would have been a promise the oracle does not keep either way. It now says that field may stay optional and the rest may not.
+Job persistence was applied as false at both sites and asserted false at both. It is applied as true at one and false at the other now, so a reader stuck on either value fails.
+The below Android 8 default took the most work and I want to be open about the cost. It cannot be tested at sdk 28, and a test at a lower sdk needs its own test method, which would have made 21 graded ids where the static check rejects anything over 20. So two push through tests that were checking the same kind of thing are merged into one, and the freed slot holds a test that runs under sdk 24 and checks the default there. The count is still 20. The Robolectric platform jar for that level was not in the offline cache, exactly as you warned, so the image warms 24 alongside 28 and 34. The Dockerfile proves that rather than assuming it, because it runs the same warm up again offline before the build finishes, and that build passes. Stubbing the below 8 branch to hand back the job strategy now fails the new test.
+On the refs directory. I could not reproduce it as written, because the zip does carry the refs entries and an extract here gives a working repository, so I want to be straight about that rather than quietly agree. You are right about the cause though, and it is mine. The seed ships refs/heads/main as a real 41 byte file, and the git scrub I run before zipping ends in a gc, which packs that ref away and leaves the directory empty. An empty directory does not survive every tool that unpacks a zip, so the bundle had come to depend on that surviving. The loose ref is written back after the gc now, so the shape matches the seed and nothing depends on empty directories. The rezip step refuses to build unless that file is 41 bytes and the base commit still resolves.
+One thing you could not have seen. A gradle cache had reappeared inside the repo, dated after the previous zip was built, which is why that zip was clean and this one would not have been. It is in gitignore so nothing in git status mentions it. It is gone, the rezip step now refuses to build the zip while any build cache is present, and I checked it was untracked at the base commit before deleting anything.
+Fresh numbers against the zip I am uploading, airgapped at the declared 4 cpus and 8 GB. Oracle 230 of 230 on three consecutive solve and verify cycles, with runs two and three reporting the patch already applied. NOP reward 0 with a nonzero exit and no infrastructure error. An agent that overwrites the graded file in a workspace with no git still gives 230 of 230. Seven stubs each drop the reward to 0 and name their test, covering the long scan forcing consult, switching it on unconditionally, the deleted lazy calculator, strategy equality by notification, the missing rebind, the below Android 8 default and the job persistence reader. Every staged pre upload check passes and the extracted tree is a git repository.
+Thank you for the harness note. That part was expensive to get right and it is useful to know it holds up.
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+90 minutes
+
+How long did it take you to complete the initial task rewrite only?
+100 minutes
+
+How long did it take you to complete the additional questions on the form?
+15 minutes
+
+Total submission time excluding revisions: 205 minutes
+
+How long did it take you to complete all revisions?
+350 minutes

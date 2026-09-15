@@ -65,7 +65,7 @@ read out of the patch (`sed -n 's|^+++ b/||p'`), not written as a fixed director
 following the note would have declared note 9 closed and reopened it a round later.
 
 **4. A number that appears only in the answer and nowhere in the evidence.** Note 5 said the
-instruction "scores fourteen" on a leakage count where five accepted bundles score zero. The
+instruction "scores fourteen" on a leakage count where the accepted bundles score zero. The
 instruction is 11 lines long, no unit is stated that produces 14, and the figure is in no measurement
 anywhere. This is LEDGER **L53** on the reviewer side. The finding was strong and the invented
 precision was the weakest thing in it.

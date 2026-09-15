@@ -14,7 +14,7 @@ Sentinel Ultra submission and review steps
 4.  **If Fixable, rewrite** the instruction, tests, and/or oracle.
     4b. **Prepare your upload:** zip only the contents of the `task/` folder — not the folder itself, and not `runs/`. The zip should unpack directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, and `tests/`.
 5.  **Run evals** via the platform button; iterate until checks pass.
-6.  **Submit** — check *Send to reviewer* and submit.
+6.  **Submit** — submit the task. When the post-submission evals pass, it's sent to the reviewer queue automatically; if they don't pass, it comes back to you to fix and resubmit. There's no box to check.
 
 📹[Sentinel Ultra Submission Flow Walkthrough](https://www.loom.com/share/52a317cb90674f8eb18b9bd208d7b01a)
 
@@ -246,11 +246,11 @@ After your bundle runs, three read-only summaries are populated:
 
 You can also **Download difficulty check results** for the full logs, useful for debugging specific failures. Run the checks as many times as you need; each run produces fresh feedback.
 
-**Send to Reviewer**
+**Submitting to the reviewer**
 
-Check **Send to reviewer** to send the task to the reviewer once difficulty and quality checks are passing. If checks are failing when this is checked, the task will always result in revision — if you are intentionally sending it with failing checks, leave detailed comments for the reviewer explaining why.
+There is **no "Send to reviewer" checkbox** — it has been removed from the submission form. When you submit, the post-submission evals run automatically: if they **pass**, your submission is sent straight to the reviewer queue; if they **don't pass**, it comes back to you to fix and resubmit. You no longer check any box, and the old `AlwaysNoPass` message no longer appears.
 
-*Note: In-app checks have a 5-minute runtime limit. If your task needs longer agent runs to fully evaluate, iterate with the box unchecked first.*
+*Note: The in-app eval button has a 5-minute runtime limit. If your task needs longer agent runs to fully evaluate, run and iterate with those checks until they pass before you submit.*
 
 **What to Do When Checks Fail**
 
@@ -258,8 +258,8 @@ The goal is to revise and re-run until there are no failures before sending to t
 
 1.  Review the summaries and download the full logs to understand the failure.
 2.  Revise your task (instruction, tests, solution, or Dockerfile as needed — within editing rules).
-3.  Re-upload and re-run with Send to reviewer unchecked.
-4.  Repeat until checks pass, then check Send to reviewer and submit.
+3.  Re-upload and re-run the evals.
+4.  Repeat until the checks pass — a passing submission is sent to the reviewer automatically.
 
 #### Quality Check — the agentic rubric-panel judge <a id="quality-check-agentic-judge"></a>
 
@@ -340,7 +340,7 @@ The other eight axes appear in the Quality Check report and in what your reviewe
 
 1.  Download the report and read the per-axis justifications — they cite the exact files, line ranges, and quoted instruction text behind each score.
 2.  Fix the cited defect. For coverage gaps, add or strengthen assertions; for faithfulness defects, either move the requirement into the instruction or relax the assertion.
-3.  Keep instruction, tests, and oracle in lockstep (per the existing editing rules), re-upload, and re-run with Send to reviewer unchecked until the check passes.
+3.  Keep instruction, tests, and oracle in lockstep (per the existing editing rules), re-upload, and re-run the evals until the check passes.
 
 ## Step-by-Step Reviewer Form Questions <a id="step-by-step-reviewer-form-questions"></a>
 

@@ -279,6 +279,34 @@ touch — and run the verifier again. If reward is anything other than `0.0`, th
 fail-open. This takes about a minute and is worth doing on any task whose `test.sh` parses
 stdout instead of returning the runner's own status.
 
+### The grader half runs on the host, no container needed (aws-lambda-web-adapter 183 review, 2026-08-18)
+
+The stock `test.sh` embeds grade.py between `<<'GRADE_PY_EOF'` and `GRADE_PY_EOF`, and grade.py is
+pure Python over three files: the config, a stdout log, a stderr log. So the whole fail-open class
+can be measured without building anything:
+
+```bash
+awk "/<<'GRADE_PY_EOF'/{f=1;next} /^GRADE_PY_EOF$/{f=0} f" tests/test.sh > /tmp/grade.py
+python3 - <<'PY'   # fabricate the all-ok log from the config's own required list
+import json
+g=json.load(open('tests/config.json'))['grading']
+open('/tmp/fake.log','w').write("\n".join(f"test {i} ... ok" for i in g['fail_to_pass']+g['pass_to_pass'])+"\n")
+PY
+for rc in 0 1 124; do
+  python3 /tmp/grade.py --config tests/config.json --stdout /tmp/fake.log --stderr /dev/null \
+    --raw-exit-code $rc --output /tmp/o.json --report /tmp/r.json --reward /tmp/reward.txt
+  echo "exit $rc -> reward $(cat /tmp/reward.txt)"
+done
+```
+
+A gated grader prints `1, 0, 0`. A fail-open one prints `1, 1, 1` and the previous reviewer of the
+aws-lambda-web-adapter 183 bundle had proven exactly that with a container; the host run reproduces
+the gate fix (or its absence) in seconds. Two companion probes on the same rig: append a `FAILED`
+line for a required id alongside its `ok` line (a grader that aggregates statuses as a set still
+scores 0; a last-write-wins grader scores 1), and drop a suite-completed sentinel id from the log
+(a truncation guard catches it). Container time is then only needed for the rows that genuinely
+need the image: the NOP, the oracle protocol, and anything that compiles.
+
 ## The gate also lets a command enforce a requirement no test id can
 
 Source: `20260723_030109__cryspen_libcrux__1165`, 2026-08-02, measured in the task image.
@@ -319,3 +347,52 @@ different feature set, it compiles for another target, a lint or a format holds)
 command in `execution.commands` rather than leaving it untested.** It only works if the gate and
 the `set -e` are both in place, so wire those first, and confirm on the oracle that the added
 command exits 0 on a green tree before trusting it.
+
+## The `allow_extra_failures` flag can be load-bearing, measured 2026-08-18
+
+Added from the gnmyt/MySpeed 1536 peer review. The flag reads like housekeeping about tests outside
+the graded set, and on a runner that reports a **file-level** result it is part of this defect.
+
+`success = not missing_required and not unexpected`, and the grader only builds `unexpected` when
+`allow_extra_failures` is false. So with the flag true, success collapses to whether the graded names
+were seen and nothing else can pull the reward down.
+
+Measured in the bundle's own image, node 22 with `--test-reporter=tap`, golden applied plus one
+appended line:
+
+```
+setTimeout(() => { throw new Error("late boom"); }, 50);
+
+allow_extra_failures true    reward 1.0   success true   raw_exit_code 1   18 of 18
+allow_extra_failures false   reward 0.0                  raw_exit_code 1   18 of 18
+```
+
+The flag alone closes that case, because node reports the test file itself as failed when something
+throws inside it and that failure then counts. So on this shape there are **two** independent fixes
+and one of them is a single word.
+
+Two conditions before recommending it. **Verify the remedy does not break the oracle**, since a
+remedy that fails a correct tree is worse than the defect: here the clean oracle still scored 1.0 at
+18 of 18 and the untouched base tree still scored 0.0. And LEDGER **L13** still governs when the flag
+may be set at all, which is only when the shipped `config.json` already carries it and the run
+executes exactly the graded set. Both held here.
+
+It is not a substitute for the exit-code gate. The gate covers the cases where nothing is reported as
+failed at all, which is most of them. LEDGER **L108**.
+
+### The flag does not close the forge route either (asciidoctor-web-pdf 79 review, 2026-08-19)
+
+L108 showed `allow_extra_failures: false` pulls a **file-level** failure into `unexpected` and so
+closes the late-throw route. The asciidoctor-web-pdf 79 peer review measured the same bundle shape
+against the forge route and the flag does nothing there: the forged report contains only passes, so
+`unexpected` is empty by construction. Host probe, no container, mocha parser this time rather than
+jest: stdout poisoned with one brace-bearing line ahead of mocha's own failing JSON, a forged
+all-pass report on stderr naming the 27 required ids from `tests/config.json`:
+
+```
+reward.txt = 1    success True   27 of 27   raw_exit_code 1   (grade exit 0)
+```
+
+So on a mocha or jest bundle with the stderr fallback, the exit-code gate plus dropping the fallback
+is still the only fix that closes the class. The flag is a second fix for the file-level-failure
+route only, and the two routes are independent.

@@ -1,0 +1,483 @@
+diff --git a/inc_internal/ziti_ctrl.h b/inc_internal/ziti_ctrl.h
+index aaff87b..332c826 100644
+--- a/inc_internal/ziti_ctrl.h
++++ b/inc_internal/ziti_ctrl.h
+@@ -40,11 +40,16 @@ typedef void(*routers_cb)(ziti_service_routers *srv_routers, const ziti_error *,
+ typedef struct ziti_controller_s {
+     uv_loop_t *loop;
+     tlsuv_http_t *client;
+-    char *url;
++
++    const char *url;
++    model_map endpoints;
++
++    unsigned int active_reqs;
+ 
+     // tuning options
+     unsigned int page_size;
+ 
++    bool is_ha;
+     ziti_version version;
+     ctrl_version_cb version_cb;
+     void *version_cb_ctx;
+@@ -57,7 +62,7 @@ typedef struct ziti_controller_s {
+     void *redirect_ctx;
+ } ziti_controller;
+ 
+-int ziti_ctrl_init(uv_loop_t *loop, ziti_controller *ctrl, const char *url, tls_context *tls);
++int ziti_ctrl_init(uv_loop_t *loop, ziti_controller *ctrl, model_list *urls, tls_context *tls);
+ 
+ int ziti_ctrl_set_token(ziti_controller *ctrl, const char *access_token);
+ 
+diff --git a/inc_internal/zt_internal.h b/inc_internal/zt_internal.h
+index c0604f8..339c4c8 100644
+--- a/inc_internal/zt_internal.h
++++ b/inc_internal/zt_internal.h
+@@ -258,7 +258,6 @@ struct ziti_ctx {
+     ziti_config config;
+     ziti_options opts;
+     ziti_controller ctrl;
+-    model_list controllers;
+     uint32_t id;
+ 
+     model_map ctrl_details;
+diff --git a/library/config.c b/library/config.c
+index 66fe125..54b8bfd 100644
+--- a/library/config.c
++++ b/library/config.c
+@@ -63,10 +63,15 @@ int ziti_load_config(ziti_config *cfg, const char* cfgstr) {
+         return rc;
+     }
+ 
+-    if (model_list_size(&cfg->controllers) && cfg->controller_url == NULL) {
++    if (model_list_size(&cfg->controllers) == 0 && cfg->controller_url == NULL) {
+         return ZITI_INVALID_CONFIG;
+     }
+ 
++    if (model_list_size(&cfg->controllers) == 0) {
++        model_list_append(&cfg->controllers, cfg->controller_url);
++        cfg->controller_url = NULL;
++    }
++
+     if (cfg->id.key == NULL) {
+         return ZITI_INVALID_CONFIG;
+     }
+diff --git a/library/ziti.c b/library/ziti.c
+index 50c7f9f..c0400f8 100644
+--- a/library/ziti.c
++++ b/library/ziti.c
+@@ -59,8 +59,6 @@ int code_to_error(const char *code);
+ 
+ static void update_ctrl_status(ziti_context ztx, int code, const char *msg);
+ 
+-static void version_cb(const ziti_version *v, const ziti_error *err, void *ctx);
+-
+ static void edge_routers_cb(ziti_edge_router_array ers, const ziti_error *err, void *ctx);
+ 
+ static void ziti_init_async(ziti_context ztx, void *data);
+@@ -119,7 +117,7 @@ static size_t parse_ref(const char *val, const char **res) {
+ }
+ 
+ ziti_controller* ztx_get_controller(ziti_context ztx) {
+-    return model_list_head(&ztx->controllers);
++    return &ztx->ctrl;
+ }
+ 
+ static int parse_getopt(const char *q, const char *opt, char *out, size_t maxout) {
+@@ -434,6 +432,7 @@ static void ziti_stop_internal(ziti_context ztx, void *data) {
+             it = model_map_it_remove(it);
+         }
+ 
++        ztx->auth_method->stop(ztx->auth_method);
+         ziti_send_event(ztx, &ev);
+         free_ziti_service_array(&ev.event.service.removed);
+ 
+@@ -456,7 +455,6 @@ static void ziti_start_internal(ziti_context ztx, void *init_req) {
+         ztx->logout = false;
+         uv_prepare_start(ztx->prepper, ztx_prepare);
+         ztx->start = uv_now(ztx->loop);
+-        ziti_ctrl_get_version(ztx_get_controller(ztx), version_cb, ztx);
+         ziti_set_unauthenticated(ztx);
+ 
+         ziti_re_auth(ztx);
+@@ -486,21 +484,10 @@ static void ziti_init_async(ziti_context ztx, void *data) {
+     ZTX_LOG(INFO, "Loading ziti context with controller[%s]", ztx_controller(ztx));
+ 
+     const char *url;
+-    MODEL_LIST_FOREACH(url, ztx->config.controllers) {
+-        NEWP(ctrl, ziti_controller);
+-        int rc = ziti_ctrl_init(loop, ctrl, url, ztx->tlsCtx);
+-        if (rc != ZITI_OK) {
+-            ZTX_LOG(WARN, "failed to init controller with url[%s]: %s", url, ziti_errorstr(rc));
+-            free(ctrl);
+-            continue;
+-        }
+-
+-        model_list_append(&ztx->controllers, ctrl);
+-    }
+-
+-    if (model_list_size(&ztx->controllers) == 0) {
++    int rc = ziti_ctrl_init(loop, &ztx->ctrl, &ztx->config.controllers, ztx->tlsCtx);
++    if (rc != 0) {
+         ZITI_LOG(ERROR, "no valid controllers found");
+-        ev.event.ctx.ctrl_status = ZITI_INVALID_CONFIG;
++        ev.event.ctx.ctrl_status = rc;
+         ziti_send_event(ztx, &ev);
+         return;
+     }
+@@ -584,9 +571,6 @@ void ziti_get_transfer_rates(ziti_context ztx, double *up, double *down) {
+ static void free_ztx(uv_handle_t *h) {
+     ziti_context ztx = h->data;
+ 
+-//    ziti_ctrl_close(ztx_get_controller(ztx));
+-//    ztx->tlsCtx->free_ctx(ztx->tlsCtx);
+-
+     model_map_clear(&ztx->ctrl_details, (_free_f) free_ziti_controller_detail_ptr);
+     ziti_auth_query_free(ztx->auth_queries);
+     ziti_posture_checks_free(ztx->posture_checks);
+@@ -598,14 +582,7 @@ static void free_ztx(uv_handle_t *h) {
+     FREE(ztx->last_update);
+     FREE(ztx->session_token);
+ 
+-    model_list_iter it = model_list_iterator(&ztx->controllers);
+-    while(it != NULL) {
+-        ziti_controller *ctrl = model_list_it_element(it);
+-        ziti_ctrl_close(ctrl);
+-        free(ctrl);
+-        it = model_list_it_remove(it);
+-    }
+-
++    ziti_ctrl_close(ztx_get_controller(ztx));
+     ztx->tlsCtx->free_ctx(ztx->tlsCtx);
+     free_ziti_config(&ztx->config);
+ 
+@@ -1452,17 +1429,6 @@ static void update_ctrl_status(ziti_context ztx, int errCode, const char *errMsg
+     }
+ }
+ 
+-static void version_cb(const ziti_version *v, const ziti_error *err, void *ctx) {
+-    ziti_context ztx = ctx;
+-    if (err != NULL) {
+-        ZTX_LOG(ERROR, "failed to get controller version from %s %s(%s)",
+-                ztx_controller(ztx), err->code, err->message);
+-    } else {
+-        ZTX_LOG(INFO, "connected to controller %s version %s(%s %s)",
+-                ztx_controller(ztx), v->version, v->revision, v->build_date);
+-    }
+-}
+-
+ bool ziti_is_session_valid(ziti_context ztx, ziti_session *session, const char *service_id, ziti_session_type type) {
+     if (session == NULL) return false;
+ 
+@@ -1607,7 +1573,10 @@ void ziti_queue_work(ziti_context ztx, ztx_work_f w, void *data) {
+ }
+ 
+ int ziti_context_init(ziti_context *ztx, const ziti_config *config) {
+-    if (config == NULL || config->controller_url == NULL) {
++    if (config == NULL ||
++            (config->controller_url == NULL &&
++             model_list_size(&config->controllers) == 0)
++            ) {
+         ZITI_LOG(ERROR, "config or controller/tls has to be set");
+         return ZITI_INVALID_CONFIG;
+     }
+@@ -1727,31 +1696,31 @@ static void version_pre_auth_cb(const ziti_version *version, const ziti_error *e
+         t->data = ztx;
+         uv_timer_start(t, pre_auth_retry, 5 * 1000, 0);
+     } else {
+-        bool ha = ziti_has_capability(version, ziti_ctrl_cap_HA_CONTROLLER);
+-        ziti_auth_method_t *current = ztx->auth_method;
+-
+-        if (current) {
+-            if (ha && current->kind == HA) {
+-                return;
+-            }
++        bool ha = ziti_has_capability(version, ziti_ctrl_caps.HA_CONTROLLER);
++        ZTX_LOG(INFO, "connected to %s controller %s version %s(%s %s)",
++                ha ? "HA" : "Legacy",
++                ztx_controller(ztx), version->version, version->revision, version->build_date);
+ 
+-            if (!ha && current->kind == LEGACY) {
+-                return;
+-            }
++        enum AuthenticationMethod m = ha ? HA : LEGACY;
+ 
++        if (ztx->auth_method && ztx->auth_method->kind != m) {
+             ZITI_LOG(INFO, "current auth method does not match controller, switching to %s method",
+                      ha ? "HA" : "LEGACY");
+-            current->stop(current);
+-            current->free(current);
++            ztx->auth_method->stop(ztx->auth_method);
++            ztx->auth_method->free(ztx->auth_method);
+             ztx->auth_method = NULL;
+         }
+ 
+-        if (ha) {
+-            ztx->auth_method = new_ha_auth(ztx->loop, &ztx->config.controllers, ztx->tlsCtx);
+-        } else {
+-            ztx->auth_method = new_legacy_auth(ztx_get_controller(ztx));
++        if (!ztx->auth_method) {
++            if (ha) {
++                ztx->auth_method = new_ha_auth(ztx->loop, &ztx->config.controllers, ztx->tlsCtx);
++            } else {
++                ztx->auth_method = new_legacy_auth(ztx_get_controller(ztx));
++            }
++            ztx->auth_method->start(ztx->auth_method, ztx_auth_state_cb, ztx);
++        } else if (ztx->auth_state  == ZitiAuthStateUnauthenticated) {
++            ztx->auth_method->force_refresh(ztx->auth_method);
+         }
+-        ztx->auth_method->start(ztx->auth_method, ztx_auth_state_cb, ztx);
+     }
+ }
+ 
+diff --git a/library/ziti_ctrl.c b/library/ziti_ctrl.c
+index 0007324..c811d18 100644
+--- a/library/ziti_ctrl.c
++++ b/library/ziti_ctrl.c
+@@ -19,6 +19,7 @@
+ #include "zt_internal.h"
+ #include <ziti_ctrl.h>
+ #include <tlsuv/http.h>
++#include <assert.h>
+ 
+ 
+ #define DEFAULT_PAGE_SIZE 25
+@@ -92,7 +93,8 @@ XX(COULD_NOT_VALIDATE, ZITI_NOT_AUTHORIZED)
+     return ZITI_WTF;
+ }
+ 
+-#define CTRL_LOG(lvl, fmt, ...) ZITI_LOG(lvl, "ctrl[%s] " fmt, ctrl->client->host, ##__VA_ARGS__)
++#define CTRL_LOG(lvl, fmt, ...) ZITI_LOG(lvl, "ctrl[%s:%s] " fmt, \
++ctrl->client->host, ctrl->client->port, ##__VA_ARGS__)
+ 
+ #define MAKE_RESP(ctrl, cb, parser, ctx) prepare_resp(ctrl, (ctrl_resp_cb_t)(cb), (body_parse_fn)(parser), ctx)
+ 
+@@ -138,9 +140,12 @@ static void ctrl_default_cb(void *s, const ziti_error *e, struct ctrl_resp *resp
+ 
+ static void ctrl_body_cb(tlsuv_http_req_t *req, char *b, ssize_t len);
+ 
++static const char* ctrl_next_ep(ziti_controller *ctrl, const char *current);
++
+ static tlsuv_http_req_t *
+ start_request(tlsuv_http_t *http, const char *method, const char *path, tlsuv_http_resp_cb cb, struct ctrl_resp *resp) {
+     ziti_controller *ctrl = resp->ctrl;
++    ctrl->active_reqs++;
+     uv_gettimeofday(&resp->start);
+     CTRL_LOG(VERBOSE, "starting %s[%s]", method, path);
+     return tlsuv_http_req(http, method, path, cb, resp);
+@@ -159,6 +164,10 @@ static const char *find_header(tlsuv_http_resp_t *r, const char *name) {
+ static void ctrl_resp_cb(tlsuv_http_resp_t *r, void *data) {
+     struct ctrl_resp *resp = data;
+     ziti_controller *ctrl = resp->ctrl;
++
++    assert(ctrl->active_reqs > 0);
++    ctrl->active_reqs--;
++
+     resp->status = r->code;
+     if (r->code < 0) {
+         int e = ZITI_CONTROLLER_UNAVAILABLE;
+@@ -170,7 +179,17 @@ static void ctrl_resp_cb(tlsuv_http_resp_t *r, void *data) {
+             e = ZITI_DISABLED;
+             code = ziti_errorstr(ZITI_DISABLED);
+         } else {
+-            CTRL_LOG(ERROR, "request failed: %d(%s)", r->code, uv_strerror(r->code));
++            CTRL_LOG(WARN, "request failed: %d(%s)", r->code, uv_strerror(r->code));
++
++            if (ctrl->active_reqs == 0) {
++                CTRL_LOG(INFO, "attempting to switch endpoint");
++                const char *next_ep = ctrl_next_ep(ctrl, ctrl->url);
++                if (next_ep != NULL) {
++                    ctrl->url = next_ep;
++                    tlsuv_http_set_url(ctrl->client, next_ep);
++                    CTRL_LOG(INFO, "using endpoint[%s]", ctrl->url);
++                }
++            }
+         }
+ 
+         ziti_error err = {
+@@ -233,21 +252,39 @@ static void ctrl_default_cb(void *s, const ziti_error *e, struct ctrl_resp *resp
+ static void internal_ctrl_list_cb(ziti_controller_detail_array arr, const ziti_error *err, void *ctx) {
+     ziti_controller *ctrl = ctx;
+     ziti_controller_detail *d;
+-    FOR (d, arr) {
+-        CTRL_LOG(INFO, "%s", d->id);
++    if (err) {
++        CTRL_LOG(WARN, "failed to get list of HA controllers: %s", err->message);
++    }
++    else {
++        model_map old = ctrl->endpoints;
++        ctrl->endpoints = (model_map){0};
++        FOR (d, arr) {
++            api_address *addr = NULL;
++            MODEL_LIST_FOREACH(addr, d->apis.edge) {
++                CTRL_LOG(VERBOSE, "%s/%s", addr->version, addr->url);
++                if (addr && strcmp(addr->version, "v1") == 0) {
++                    break;
++                }
++                addr = NULL;
++            }
+ 
+-        api_address *addr;
+-        MODEL_LIST_FOREACH(addr, d->apis.edge) {
+-            CTRL_LOG(INFO, "%s/%s", addr->version, addr->url);
++            if (addr != NULL) {
++                if (strcmp(addr->url, ctrl->url) == 0) {
++                    ctrl->url = addr->url;
++                }
++                model_map_set(&ctrl->endpoints, addr->url, d);
++            }
+         }
+-
++        model_map_clear(&old, (void (*)(void *)) free_ziti_controller_detail_ptr);
+     }
++
++    free(arr);
+ }
+ 
+ static void internal_version_cb(ziti_version *v, ziti_error *e, struct ctrl_resp *resp) {
+     ziti_controller *ctrl = resp->ctrl;
+     if (e) {
+-        CTRL_LOG(ERROR, "%s(%s)", e->code, e->message);
++        CTRL_LOG(WARN, "%s(%s)", e->code, e->message);
+     }
+ 
+     if (v) {
+@@ -265,6 +302,8 @@ static void internal_version_cb(ziti_version *v, ziti_error *e, struct ctrl_resp
+             CTRL_LOG(WARN, "controller did not provide expected(v1) API version path");
+         }
+ 
++        ctrl->is_ha = ziti_has_capability(&ctrl->version, ziti_ctrl_caps.HA_CONTROLLER);
++
+         // data was moved to ctrl.version
+         free(v);
+         v = &ctrl->version;
+@@ -431,15 +470,65 @@ static void ctrl_body_cb(tlsuv_http_req_t *req, char *b, ssize_t len) {
+     }
+ }
+ 
+-int ziti_ctrl_init(uv_loop_t *loop, ziti_controller *ctrl, const char *url, tls_context *tls) {
++// pick next random endpoint
++static const char* ctrl_next_ep(ziti_controller *ctrl, const char *current) {
++    ziti_controller_detail *curr = current ?
++            model_map_get(&ctrl->endpoints, current) : NULL;
++
++    if (curr) {
++        curr->is_online = false;
++    }
++
++    model_list online = {0};
++
++    const char *url;
++    ziti_controller_detail *d;
++    MODEL_MAP_FOREACH(url, d, &ctrl->endpoints) {
++        if (d == NULL || d->is_online) {
++            model_list_append(&online, (void*)url);
++        }
++    }
++    const char *next = NULL;
++    if (model_list_size(&online) > 0) {
++        int rand = (int) (uv_now(ctrl->loop) % model_list_size(&online));
++        model_list_iter it = model_list_iterator(&online);
++        for (int i = 0; i < rand; i++) {
++            it = model_list_it_next(it);
++        }
++        next = model_list_it_element(it);
++    } else {
++        CTRL_LOG(WARN, "no controllers are online");
++        // no controller is online just try random one
++        int rand = (int) (uv_now(ctrl->loop) % model_map_size(&ctrl->endpoints));
++        model_map_iter it = model_map_iterator(&ctrl->endpoints);
++        for (int i = 0; i < rand; i++) {
++            it = model_map_it_next(it);
++        }
++        next = model_map_it_key(it);
++    }
++    model_list_clear(&online, NULL);
++    return next;
++}
++
++int ziti_ctrl_init(uv_loop_t *loop, ziti_controller *ctrl, model_list *urls, tls_context *tls) {
+     *ctrl = (ziti_controller){0};
++    if (model_list_size(urls) == 0) {
++        ZITI_LOG(ERROR, "no ziti controller endpoints");
++        return ZITI_INVALID_CONFIG;
++    }
+     ctrl->page_size = DEFAULT_PAGE_SIZE;
+     ctrl->loop = loop;
+-    ctrl->url = strdup(url);
+     memset(&ctrl->version, 0, sizeof(ctrl->version));
+     ctrl->client = calloc(1, sizeof(tlsuv_http_t));
+ 
+-    if (tlsuv_http_init(loop, ctrl->client, url) != 0) {
++    const char *ep;
++    MODEL_LIST_FOREACH(ep, *urls) {
++        model_map_set(&ctrl->endpoints, ep, NULL);
++    }
++
++    ctrl->url = ctrl_next_ep(ctrl, NULL);
++    CTRL_LOG(INFO, "using %s", ctrl->url);
++    if (tlsuv_http_init(loop, ctrl->client, ep) != 0) {
+         return ZITI_INVALID_CONFIG;
+     }
+ 
+@@ -498,8 +587,8 @@ int ziti_ctrl_cancel(ziti_controller *ctrl) {
+ 
+ int ziti_ctrl_close(ziti_controller *ctrl) {
+     free_ziti_version(&ctrl->version);
++    model_map_clear(&ctrl->endpoints, (void (*)(void *)) free_ziti_controller_detail_ptr);
+     FREE(ctrl->instance_id);
+-    FREE(ctrl->url);
+     if (ctrl->client) {
+         tlsuv_http_close(ctrl->client, on_http_close);
+     }
+@@ -563,7 +652,9 @@ void ziti_ctrl_login(
+     tlsuv_http_req_header(req, "Content-Type", "application/json");
+     tlsuv_http_req_data(req, body, body_len, free_body_cb);
+ 
+-    ziti_ctrl_list_controllers(ctrl, internal_ctrl_list_cb, ctrl);
++    if (ctrl->is_ha) {
++        ziti_ctrl_list_controllers(ctrl, internal_ctrl_list_cb, ctrl);
++    }
+ }
+ 
+ static bool verify_api_session(ziti_controller *ctrl, ctrl_resp_cb_t cb, void *ctx) {
+@@ -641,6 +732,9 @@ void ziti_ctrl_current_edge_routers(ziti_controller *ctrl, void (*cb)(ziti_edge_
+     resp->paging = true;
+     resp->base_path = "/current-identity/edge-routers";
+     ctrl_paging_req(resp);
++
++    // piggy back controller list request
++    ziti_ctrl_list_controllers(ctrl, internal_ctrl_list_cb, ctrl);
+ }
+ 
+ void
+diff --git a/library/ziti_enroll.c b/library/ziti_enroll.c
+index cc9e97f..0eb33fc 100644
+--- a/library/ziti_enroll.c
++++ b/library/ziti_enroll.c
+@@ -111,7 +111,10 @@ int ziti_enroll(ziti_enroll_opts *opts, uv_loop_t *loop, ziti_enroll_cb enroll_c
+ 
+     NEWP(ctrl, ziti_controller);
+     ecfg->ctrl = ctrl;
+-    TRY(ziti, ziti_ctrl_init(loop, ctrl, ecfg->zej->controller, ecfg->tls));
++    model_list endpoints = {0};
++    model_list_append(&endpoints, ecfg->zej->controller);
++    TRY(ziti, ziti_ctrl_init(loop, ctrl, &endpoints, ecfg->tls));
++    model_list_clear(&endpoints, NULL);
+ 
+     NEWP(enroll_req, struct ziti_enroll_req);
+     enroll_req->enroll_cb = enroll_cb;
+@@ -203,7 +206,12 @@ static void well_known_certs_cb(char *base64_encoded_pkcs7, const ziti_error *er
+     enroll_req2->external_enroll_ctx = enroll_req->ecfg->external_enroll_ctx;
+     enroll_req2->loop = enroll_req->loop;
+     enroll_req2->controller = calloc(1, sizeof(ziti_controller));
+-    TRY(ziti, ziti_ctrl_init(enroll_req2->loop, enroll_req2->controller, enroll_req->ecfg->zej->controller, tls));
++
++    model_list endpoints = {0};
++    model_list_append(&endpoints, enroll_req->ecfg->zej->controller);
++    TRY(ziti, ziti_ctrl_init(enroll_req2->loop, enroll_req2->controller, &endpoints, tls));
++    model_list_clear(&endpoints, NULL);
++
+     tlsuv_http_set_path_prefix(enroll_req2->controller->client, "/edge/client/v1");
+     enroll_req2->ecfg = enroll_req->ecfg;
+ 

@@ -1,0 +1,83 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cmake --build build --target integ-tests all_tests",
+      "if ./build/tests/integ/integ-tests \"invalid_controller\"; then echo \"ZITI_TEST invalid_controller PASSED\"; else echo \"ZITI_TEST invalid_controller FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_init_rejects_empty_endpoints\"; then echo \"ZITI_TEST sentinel_ctrl_init_rejects_empty_endpoints PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_init_rejects_empty_endpoints FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_init_populates_endpoint_map\"; then echo \"ZITI_TEST sentinel_ctrl_init_populates_endpoint_map PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_init_populates_endpoint_map FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_init_dedupes_repeated_endpoints\"; then echo \"ZITI_TEST sentinel_ctrl_init_dedupes_repeated_endpoints PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_init_dedupes_repeated_endpoints FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_close_frees_endpoints\"; then echo \"ZITI_TEST sentinel_ctrl_close_frees_endpoints PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_close_frees_endpoints FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_active_reqs_settles_to_zero\"; then echo \"ZITI_TEST sentinel_ctrl_active_reqs_settles_to_zero PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_active_reqs_settles_to_zero FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_failover_switches_endpoint\"; then echo \"ZITI_TEST sentinel_ctrl_failover_switches_endpoint PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_failover_switches_endpoint FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_version_follows_the_endpoint_in_use\"; then echo \"ZITI_TEST sentinel_ctrl_version_follows_the_endpoint_in_use PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_version_follows_the_endpoint_in_use FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_single_endpoint_stays_selected\"; then echo \"ZITI_TEST sentinel_ctrl_single_endpoint_stays_selected PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_single_endpoint_stays_selected FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_config_migrates_legacy_ztapi\"; then echo \"ZITI_TEST sentinel_config_migrates_legacy_ztapi PASSED\"; else echo \"ZITI_TEST sentinel_config_migrates_legacy_ztapi FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_config_keeps_controllers_list\"; then echo \"ZITI_TEST sentinel_config_keeps_controllers_list PASSED\"; else echo \"ZITI_TEST sentinel_config_keeps_controllers_list FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_config_rejects_no_controller\"; then echo \"ZITI_TEST sentinel_config_rejects_no_controller PASSED\"; else echo \"ZITI_TEST sentinel_config_rejects_no_controller FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ztx_init_accepts_controllers_only\"; then echo \"ZITI_TEST sentinel_ztx_init_accepts_controllers_only PASSED\"; else echo \"ZITI_TEST sentinel_ztx_init_accepts_controllers_only FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_learns_peers_from_controller\"; then echo \"ZITI_TEST sentinel_ctrl_learns_peers_from_controller PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_learns_peers_from_controller FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_skips_peer_refresh_without_ha\"; then echo \"ZITI_TEST sentinel_ctrl_skips_peer_refresh_without_ha PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_skips_peer_refresh_without_ha FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_prefers_peer_reported_online\"; then echo \"ZITI_TEST sentinel_ctrl_prefers_peer_reported_online PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_prefers_peer_reported_online FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_failover_visits_distinct_endpoints\"; then echo \"ZITI_TEST sentinel_ctrl_failover_visits_distinct_endpoints PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_failover_visits_distinct_endpoints FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_no_switch_while_a_request_is_in_flight\"; then echo \"ZITI_TEST sentinel_ctrl_no_switch_while_a_request_is_in_flight PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_no_switch_while_a_request_is_in_flight FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_refresh_replaces_dropped_endpoint\"; then echo \"ZITI_TEST sentinel_ctrl_refresh_replaces_dropped_endpoint PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_refresh_replaces_dropped_endpoint FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"sentinel_ctrl_redirect_rekeys_endpoint_set\"; then echo \"ZITI_TEST sentinel_ctrl_redirect_rekeys_endpoint_set PASSED\"; else echo \"ZITI_TEST sentinel_ctrl_redirect_rekeys_endpoint_set FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"version\"; then echo \"ZITI_TEST version PASSED\"; else echo \"ZITI_TEST version FAILED\"; fi",
+      "if ./build/tests/all_tests \"parse model_list\"; then echo \"ZITI_TEST parse_model_list PASSED\"; else echo \"ZITI_TEST parse_model_list FAILED\"; fi",
+      "if ./build/tests/all_tests \"lists model\"; then echo \"ZITI_TEST lists_model PASSED\"; else echo \"ZITI_TEST lists_model FAILED\"; fi",
+      "if ./build/tests/all_tests \"model map test\"; then echo \"ZITI_TEST model_map_test PASSED\"; else echo \"ZITI_TEST model_map_test FAILED\"; fi",
+      "if ./build/tests/all_tests \"parse enum array\"; then echo \"ZITI_TEST parse_enum_array PASSED\"; else echo \"ZITI_TEST parse_enum_array FAILED\"; fi",
+      "if ./build/tests/all_tests \"parse enum list\"; then echo \"ZITI_TEST parse_enum_list PASSED\"; else echo \"ZITI_TEST parse_enum_list FAILED\"; fi"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "invalid_controller",
+      "sentinel_ctrl_init_rejects_empty_endpoints",
+      "sentinel_ctrl_init_populates_endpoint_map",
+      "sentinel_ctrl_init_dedupes_repeated_endpoints",
+      "sentinel_ctrl_close_frees_endpoints",
+      "sentinel_ctrl_active_reqs_settles_to_zero",
+      "sentinel_ctrl_failover_switches_endpoint",
+      "sentinel_ctrl_version_follows_the_endpoint_in_use",
+      "sentinel_ctrl_single_endpoint_stays_selected",
+      "sentinel_config_migrates_legacy_ztapi",
+      "sentinel_config_keeps_controllers_list",
+      "sentinel_config_rejects_no_controller",
+      "sentinel_ztx_init_accepts_controllers_only",
+      "sentinel_ctrl_learns_peers_from_controller",
+      "sentinel_ctrl_skips_peer_refresh_without_ha",
+      "sentinel_ctrl_prefers_peer_reported_online",
+      "sentinel_ctrl_failover_visits_distinct_endpoints",
+      "sentinel_ctrl_no_switch_while_a_request_is_in_flight",
+      "sentinel_ctrl_refresh_replaces_dropped_endpoint",
+      "sentinel_ctrl_redirect_rekeys_endpoint_set"
+    ],
+    "pass_to_pass": [
+      "version",
+      "parse_model_list",
+      "lists_model",
+      "model_map_test",
+      "parse_enum_array",
+      "parse_enum_list"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^ZITI_TEST (?P<name>\\S+) PASSED",
+      "fail_regex": "^ZITI_TEST (?P<name>\\S+) FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

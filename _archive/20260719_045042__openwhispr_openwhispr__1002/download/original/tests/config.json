@@ -1,0 +1,46 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "node --test --test-reporter=tap --test-reporter-destination=stdout test/helpers/secretKeys.test.js test/helpers/snippetsDatabase.test.js"
+    ],
+    "selected_test_files_to_run": [
+      "test/helpers/secretKeys.test.js",
+      "test/helpers/snippetsDatabase.test.js"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "manifest entries are unique and complete",
+      "every BYOK key round-trips through the generated accessors",
+      "openrouter is a first-class secret",
+      "preload BYOK_KEY_BRIDGES mirror the manifest exactly",
+      "manifest contains exactly eight providers",
+      "manifest ordering: openai first, tinfoil last, openrouter seventh",
+      "BYOK env vars are included in the EnvironmentManager secret set",
+      "save methods return a success object",
+      "BYOK get/save method names are unique across the manifest",
+      "non-BYOK accessors are still present on EnvironmentManager",
+      "openrouter key is isolated from other providers",
+      "each BYOK entry has exactly the five required fields and no others from base/env/get/save/storeKey"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^\\s*ok\\s+\\d+\\s+-\\s+(?P<name>.+?)\\s*$",
+      "fail_regex": "^\\s*not ok\\s+\\d+\\s+-\\s+(?P<name>.+?)\\s*$"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

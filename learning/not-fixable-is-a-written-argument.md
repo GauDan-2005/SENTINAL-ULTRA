@@ -65,6 +65,20 @@ adding. The evidence that answered it here is in
 [raising-difficulty-on-a-wrapper-task.md](raising-difficulty-on-a-wrapper-task.md) and is not
 repeated in this note.
 
+## Name which of the two Unfixable kinds it is
+
+Added 2026-08-14 from `docs/reviewer-rubric.md`. The rubric splits the verdict this note argues into
+two buckets and asks for them to be tagged apart. `:28` is **Unfixable - Structure**, where the only
+fix is changing or reducing the source PR scope, or an environment issue ECs are not allowed to
+touch. `:29` is **Unfixable - Difficulty**, where the task cannot be recalibrated without leaving the
+PR scope. `:31` gives the reason it matters: lumping them as "invalid" is what sends ECs into 3 or
+more unpaid revision loops on tasks that were never fixable.
+
+The submitter form still offers one Invalid option and two checkbox groups, so the tag has nowhere
+to go except the prose. libcrux 1165 was a Difficulty case and its seven blocks say so in substance
+without ever using the word. Say it in the first block instead, in one sentence, and the reviewer
+does not have to infer it.
+
 ## The checkbox left blank on purpose
 
 Environment Issues was unticked, with a parenthetical saying so and why

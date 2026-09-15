@@ -1,0 +1,59 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test --test integ_tests | sed -E 's/^test ([A-Za-z0-9_]+) \\.\\.\\. (ok|FAILED|ignored)$/test integ_tests::\\1 ... \\2/'"
+    ],
+    "selected_test_files_to_run": [
+      "tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/Makefile",
+      "tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/bootstrap",
+      "tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/cert.pem",
+      "tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/key.pem",
+      "tests/e2e_tests/fixtures/go-httpbin-tls-zip/template.yaml",
+      "tests/e2e_tests/fixtures/go-httpbin-zip/README.md",
+      "tests/e2e_tests/fixtures/go-httpbin-zip/template.yaml",
+      "tests/e2e_tests/fixtures/go-httpbin/.gitignore",
+      "tests/e2e_tests/fixtures/go-httpbin/template.yaml",
+      "tests/e2e_tests/main.rs",
+      "tests/integ_tests/main.rs"
+    ],
+    "env": {
+      "CARGO_NET_OFFLINE": "true",
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "integ_tests::test_adapter_options_from_env",
+      "integ_tests::test_http_readiness_check",
+      "integ_tests::test_http_basic_request",
+      "integ_tests::test_http_headers",
+      "integ_tests::test_http_path_encoding",
+      "integ_tests::test_http_query_params",
+      "integ_tests::test_http_post_put_delete",
+      "integ_tests::test_http_compress",
+      "integ_tests::test_http_compress_disallowed_type",
+      "integ_tests::test_http_compress_already_compressed",
+      "integ_tests::test_tls_defaults_when_unset",
+      "integ_tests::test_enable_tls_bad_value_defaults_false",
+      "integ_tests::test_tls_cert_file_sets_ssl_env"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^test (?P<name>integ_tests::[A-Za-z0-9_]+) \\.\\.\\. ok$",
+      "fail_regex": "^test (?P<name>integ_tests::[A-Za-z0-9_]+) \\.\\.\\. FAILED$"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

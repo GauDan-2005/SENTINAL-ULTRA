@@ -1,11 +1,12 @@
 ---
 id: empty-git-refs
 status: locally-verified
-last_verified: 2026-08-07
+last_verified: 2026-08-16
 verified_by:
   - 20260728_153118__jqno_equalsverifier__1166
   - 20260805_080500__hyperledger-firefly_firefly__1123
-evidence: "`rm -rf .git/refs` in the built image reproduces `fatal: not a git repository` exactly, with HEAD, objects and packed-refs all intact. A peer reviewer counted agents hitting that string 134 times on this bundle"
+  - 20260805_220102__xaaha_hulak__118
+evidence: "`rm -rf .git/refs` in the built image reproduces `fatal: not a git repository` exactly, with HEAD, objects and packed-refs all intact. A peer reviewer counted agents hitting that string 134 times on this bundle. hulak 118, accepted 2026-08-16, is the measured refinement: on a task whose graded command is `go test` rather than `go build`, all four .git states score reward 1.0, so the oracle-fatal half is conditional on the command list and the cost there is the agent's"
 applies_to:
   languages: [any]
   runners: [git, docker]

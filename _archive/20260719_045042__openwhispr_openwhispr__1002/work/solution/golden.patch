@@ -1,0 +1,2761 @@
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 00000000..25dcf167
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,20 @@
++name: Tests
++
++on:
++  pull_request:
++
++jobs:
++  tests:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version-file: .nvmrc
++      - name: Install dependencies
++        run: npm ci --ignore-scripts
++      - name: Run tests
++        run: npm test
++        env:
++          # keeps require("electron") from throwing when postinstall was skipped
++          ELECTRON_OVERRIDE_DIST_PATH: /tmp
+diff --git a/docs/network-allowlist.md b/docs/network-allowlist.md
+index f8b4a006..6db82a8d 100644
+--- a/docs/network-allowlist.md
++++ b/docs/network-allowlist.md
+@@ -63,6 +63,7 @@ provider. Skip any provider not in use.
+ | `api.groq.com`                                                                   | HTTPS      | 443  | Groq API key configured.                                                                                                                                                                                                                                                                                                                                 |
+ | `atc.tinfoil.sh`, `*.tinfoil.sh`                                                 | WSS, HTTPS | 443  | Tinfoil API key configured. `atc.tinfoil.sh` serves the enclave attestation bundle (verified locally against an embedded sigstore root). Inference and realtime transcription connect to an enclave host assigned dynamically at runtime (e.g. `inference.tinfoil.sh`, `router.infN.tinfoil.sh`), so allowlist `*.tinfoil.sh` rather than pinning hosts. |
+ | `api.mistral.ai`                                                                 | HTTPS      | 443  | Mistral API key configured.                                                                                                                                                                                                                                                                                                                              |
++| `openrouter.ai`                                                                  | HTTPS      | 443  | OpenRouter selected as a reasoning provider (`/api/v1/models` is fetched even without a key).                                                                                                                                                                                                                                            |
+ 
+ ## Notes
+ 
+diff --git a/package.json b/package.json
+index 08835aaa..324cc416 100644
+--- a/package.json
++++ b/package.json
+@@ -70,6 +70,7 @@
+     "format": "npm run format:js",
+     "format:check": "eslint . && cd src && eslint . && prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+     "lint": "eslint . && cd src && eslint .",
++    "test": "node --test \"test/helpers/*.test.js\"",
+     "typecheck": "cd src && tsc --noEmit",
+     "quality-check": "npm run format:check && npm run typecheck",
+     "i18n:check": "node scripts/check-i18n.js",
+diff --git a/preload.js b/preload.js
+index 54acdf20..09ea89d7 100644
+--- a/preload.js
++++ b/preload.js
+@@ -1,5 +1,25 @@
+ const { contextBridge, ipcRenderer, webUtils } = require("electron");
+ 
++// BYOK API-key bridges, built once instead of hand-listed per key. Sandboxed
++// preloads can't require local modules, so the {base, get, save} tuples are
++// inlined here; keep them in sync with the BYOK_API_KEYS manifest in
++// src/config/secretKeys.js (the main process derives its plumbing from that).
++const BYOK_KEY_BRIDGES = [
++  { base: "openai", get: "getOpenAIKey", save: "saveOpenAIKey" },
++  { base: "anthropic", get: "getAnthropicKey", save: "saveAnthropicKey" },
++  { base: "gemini", get: "getGeminiKey", save: "saveGeminiKey" },
++  { base: "groq", get: "getGroqKey", save: "saveGroqKey" },
++  { base: "xai", get: "getXaiKey", save: "saveXaiKey" },
++  { base: "mistral", get: "getMistralKey", save: "saveMistralKey" },
++  { base: "openrouter", get: "getOpenrouterKey", save: "saveOpenrouterKey" },
++  { base: "tinfoil", get: "getTinfoilKey", save: "saveTinfoilKey" },
++];
++const secretKeyApi = {};
++for (const k of BYOK_KEY_BRIDGES) {
++  secretKeyApi[k.get] = () => ipcRenderer.invoke(`get-${k.base}-key`);
++  secretKeyApi[k.save] = (key) => ipcRenderer.invoke(`save-${k.base}-key`, key);
++}
++
+ /**
+  * Helper to register an IPC listener and return a cleanup function.
+  * Ensures renderer code can easily remove listeners to avoid leaks.
+@@ -191,9 +211,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
+     return () => ipcRenderer.removeListener("transcription-updated", listener);
+   },
+ 
+-  // Environment variables
+-  getOpenAIKey: () => ipcRenderer.invoke("get-openai-key"),
+-  saveOpenAIKey: (key) => ipcRenderer.invoke("save-openai-key", key),
++  // BYOK API keys (get/save for every provider in the secretKeys manifest)
++  ...secretKeyApi,
+ 
+   // Clipboard functions
+   checkAccessibilityPermission: (silent) =>
+@@ -348,29 +367,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
+   modelCancelDownload: (modelId) => ipcRenderer.invoke("model-cancel-download", modelId),
+   onModelDownloadProgress: registerListener("model-download-progress"),
+ 
+-  // Anthropic API
+-  getAnthropicKey: () => ipcRenderer.invoke("get-anthropic-key"),
+-  saveAnthropicKey: (key) => ipcRenderer.invoke("save-anthropic-key", key),
+   getUiLanguage: () => ipcRenderer.invoke("get-ui-language"),
+   saveUiLanguage: (language) => ipcRenderer.invoke("save-ui-language", language),
+   setUiLanguage: (language) => ipcRenderer.invoke("set-ui-language", language),
+ 
+-  // Gemini API
+-  getGeminiKey: () => ipcRenderer.invoke("get-gemini-key"),
+-  saveGeminiKey: (key) => ipcRenderer.invoke("save-gemini-key", key),
+-
+-  // Groq API
+-  getGroqKey: () => ipcRenderer.invoke("get-groq-key"),
+-  saveGroqKey: (key) => ipcRenderer.invoke("save-groq-key", key),
+-
+-  // xAI API
+-  getXaiKey: () => ipcRenderer.invoke("get-xai-key"),
+-  saveXaiKey: (key) => ipcRenderer.invoke("save-xai-key", key),
++  // xAI / Mistral transcription proxies (keys handled by the manifest bridge)
+   proxyXaiTranscription: (data) => ipcRenderer.invoke("proxy-xai-transcription", data),
+-
+-  // Mistral API
+-  getMistralKey: () => ipcRenderer.invoke("get-mistral-key"),
+-  saveMistralKey: (key) => ipcRenderer.invoke("save-mistral-key", key),
+   proxyMistralTranscription: (data) => ipcRenderer.invoke("proxy-mistral-transcription", data),
+ 
+   // Corti API
+@@ -379,8 +381,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
+   getCortiClientSecret: () => ipcRenderer.invoke("get-corti-client-secret"),
+   saveCortiClientSecret: (key) => ipcRenderer.invoke("save-corti-client-secret", key),
+   proxyCortiTranscription: (data) => ipcRenderer.invoke("proxy-corti-transcription", data),
+-  getTinfoilKey: () => ipcRenderer.invoke("get-tinfoil-key"),
+-  saveTinfoilKey: (key) => ipcRenderer.invoke("save-tinfoil-key", key),
+   getTinfoilChatModels: () => ipcRenderer.invoke("get-tinfoil-chat-models"),
+ 
+   // Custom endpoint API keys
+diff --git a/src/assets/icons/providers/openrouter.svg b/src/assets/icons/providers/openrouter.svg
+new file mode 100644
+index 00000000..e6cca2a8
+--- /dev/null
++++ b/src/assets/icons/providers/openrouter.svg
+@@ -0,0 +1 @@
++<svg fill="currentColor" fill-rule="evenodd" height="1em" style="flex:none;line-height:1" viewBox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><title>OpenRouter</title><path d="M16.804 1.957l7.22 4.105v.087L16.73 10.21l.017-2.117-.821-.03c-1.059-.028-1.611.002-2.268.11-1.064.175-2.038.577-3.147 1.352L8.345 11.03c-.284.195-.495.336-.68.455l-.515.322-.397.234.385.23.53.338c.476.314 1.17.796 2.701 1.866 1.11.775 2.083 1.177 3.147 1.352l.3.045c.694.091 1.375.094 2.825.033l.022-2.159 7.22 4.105v.087L16.589 22l.014-1.862-.635.022c-1.386.042-2.137.002-3.138-.162-1.694-.28-3.26-.926-4.881-2.059l-2.158-1.5a21.997 21.997 0 00-.755-.498l-.467-.28a55.927 55.927 0 00-.76-.43C2.908 14.73.563 14.116 0 14.116V9.888l.14.004c.564-.007 2.91-.622 3.809-1.124l1.016-.58.438-.274c.428-.28 1.072-.726 2.686-1.853 1.621-1.133 3.186-1.78 4.881-2.059 1.152-.19 1.974-.213 3.814-.138l.02-1.907z"></path></svg>
+\ No newline at end of file
+diff --git a/src/components/OpenAICompatiblePanel.tsx b/src/components/OpenAICompatiblePanel.tsx
+index a2eb0dae..ab89b7a5 100644
+--- a/src/components/OpenAICompatiblePanel.tsx
++++ b/src/components/OpenAICompatiblePanel.tsx
+@@ -4,8 +4,10 @@ import { Button } from "./ui/button";
+ import { Input } from "./ui/input";
+ import ApiKeyInput from "./ui/ApiKeyInput";
+ import ModelCardList from "./ui/ModelCardList";
++import SearchableModelList, { MODEL_SEARCH_THRESHOLD } from "./ui/SearchableModelList";
+ import { buildApiUrl, normalizeBaseUrl } from "../config/constants";
+ import { isSecureEndpoint } from "../utils/urlUtils";
++import { GetApiKeyLink } from "./ui/GetApiKeyLink";
+ 
+ interface ModelOption {
+   value: string;
+@@ -24,6 +26,11 @@ interface OpenAICompatiblePanelProps {
+   defaultBaseUrl?: string;
+   baseUrlPlaceholder?: string;
+   helpExamples?: ReactNode;
++  // Hide the endpoint editor when the URL is fixed by the caller (e.g. OpenRouter).
++  lockedBaseUrl?: boolean;
++  // Providers whose /models is public but whose inference needs a key.
++  apiKeyRequired?: boolean;
++  getKeyUrl?: string;
+ }
+ 
+ export default function OpenAICompatiblePanel({
+@@ -36,6 +43,9 @@ export default function OpenAICompatiblePanel({
+   defaultBaseUrl,
+   baseUrlPlaceholder = "https://api.openai.com/v1",
+   helpExamples,
++  lockedBaseUrl = false,
++  apiKeyRequired = false,
++  getKeyUrl,
+ }: OpenAICompatiblePanelProps) {
+   const { t } = useTranslation();
+   const [draftBase, setDraftBase] = useState(baseUrl);
+@@ -92,10 +102,11 @@ export default function OpenAICompatiblePanel({
+ 
+       pendingBaseRef.current = normalized;
+ 
++      // Keep the previous list visible while refreshing so the searchable list
++      // (and its query state) isn't unmounted mid-fetch.
+       if (isMountedRef.current) {
+         setModelsLoading(true);
+         setModelsError(null);
+-        setModelOptions([]);
+       }
+ 
+       const trimmedKey = apiKey?.trim();
+@@ -141,27 +152,30 @@ export default function OpenAICompatiblePanel({
+             ? payload.models
+             : [];
+ 
++        // Coerce fields defensively: non-conformant endpoints may return
++        // numeric ids or object descriptions, which would crash the render.
+         const mapped = (rawModels as Array<Record<string, unknown>>)
+           .map((item) => {
+-            const value = (item?.id || item?.name) as string | undefined;
+-            if (!value) return null;
++            const rawValue = item?.id ?? item?.name;
++            if (rawValue === undefined || rawValue === null || rawValue === "") return null;
++            const value = String(rawValue);
+             const ownedBy = typeof item?.owned_by === "string" ? item.owned_by : undefined;
+-            return {
+-              value,
+-              label: (item?.id || item?.name || value) as string,
+-              description:
+-                (item?.description as string) ||
+-                (ownedBy ? t("reasoning.custom.ownerLabel", { owner: ownedBy }) : undefined),
+-              ownedBy,
+-            } as ModelOption;
++            const description =
++              typeof item?.description === "string" && item.description
++                ? item.description
++                : ownedBy
++                  ? t("reasoning.custom.ownerLabel", { owner: ownedBy })
++                  : undefined;
++            return { value, label: value, description, ownedBy } as ModelOption;
+           })
+           .filter(Boolean) as ModelOption[];
+ 
+         if (isMountedRef.current && latestBaseRef.current === normalized) {
+           setModelOptions(mapped);
+-          if (model && mapped.length > 0 && !mapped.some((m) => m.value === model)) {
+-            setModel("");
+-          }
++          // `/models` is a discovery aid, not an allowlist — keep the user's
++          // chosen id even if it's absent (it may still be valid, or belong to
++          // a provider they're switching away from). Invalid ids surface a
++          // clear API error at request time instead of being silently wiped.
+           setModelsError(null);
+           lastLoadedBaseRef.current = normalized;
+         }
+@@ -185,7 +199,7 @@ export default function OpenAICompatiblePanel({
+         }
+       }
+     },
+-    [baseUrl, apiKey, model, setModel, t]
++    [baseUrl, apiKey, t]
+   );
+ 
+   useEffect(() => {
+@@ -239,32 +253,42 @@ export default function OpenAICompatiblePanel({
+ 
+   return (
+     <>
+-      <div className="space-y-2">
+-        <h4 className="font-medium text-foreground">{t("reasoning.custom.endpointTitle")}</h4>
+-        <Input
+-          value={draftBase}
+-          onChange={(event) => setDraftBase(event.target.value)}
+-          onBlur={handleBlur}
+-          placeholder={baseUrlPlaceholder}
+-          className="text-sm"
+-        />
+-        {helpExamples ?? (
+-          <p className="text-xs text-muted-foreground">
+-            {t("reasoning.custom.endpointExamples")}{" "}
+-            <code className="text-primary">https://openrouter.ai/api/v1</code> (OpenRouter),{" "}
+-            <code className="text-primary">https://api.together.xyz/v1</code> (Together).
+-          </p>
+-        )}
+-      </div>
++      {!lockedBaseUrl && (
++        <div className="space-y-2">
++          <h4 className="font-medium text-foreground">{t("reasoning.custom.endpointTitle")}</h4>
++          <Input
++            value={draftBase}
++            onChange={(event) => setDraftBase(event.target.value)}
++            onBlur={handleBlur}
++            placeholder={baseUrlPlaceholder}
++            className="text-sm"
++          />
++          {helpExamples ?? (
++            <p className="text-xs text-muted-foreground">
++              {t("reasoning.custom.endpointExamples")}{" "}
++              <code className="text-primary">https://openrouter.ai/api/v1</code> (OpenRouter),{" "}
++              <code className="text-primary">https://api.together.xyz/v1</code> (Together).
++            </p>
++          )}
++        </div>
++      )}
+ 
+       <div className="space-y-2 pt-3">
+-        <h4 className="font-medium text-foreground">{t("reasoning.custom.apiKeyOptional")}</h4>
++        <div className="flex items-baseline justify-between">
++          <h4 className="font-medium text-foreground">
++            {t(apiKeyRequired ? "common.apiKey" : "reasoning.custom.apiKeyOptional")}
++          </h4>
++          {getKeyUrl && <GetApiKeyLink url={getKeyUrl} />}
++        </div>
+         <ApiKeyInput
+           apiKey={apiKey}
+           setApiKey={setApiKey}
+           label=""
+-          helpText={t("reasoning.custom.apiKeyHelp")}
++          helpText={apiKeyRequired ? "" : t("reasoning.custom.apiKeyHelp")}
+         />
++        {apiKeyRequired && !apiKey?.trim() && (
++          <p className="text-xs text-warning">{t("reasoning.custom.keyRequiredHint")}</p>
++        )}
+       </div>
+ 
+       <div className="space-y-2 pt-3">
+@@ -315,9 +339,25 @@ export default function OpenAICompatiblePanel({
+             {!modelsLoading && !modelsError && modelOptions.length === 0 && (
+               <p className="text-xs text-warning">{t("reasoning.custom.noModels")}</p>
+             )}
++            {!modelsLoading && displayedModels.length > 0 && !model && (
++              <p className="text-xs text-warning">{t("reasoning.custom.selectModelHint")}</p>
++            )}
+           </>
+         )}
+-        <ModelCardList models={displayedModels} selectedModel={model} onModelSelect={setModel} />
++        {displayedModels.length > MODEL_SEARCH_THRESHOLD ? (
++          <SearchableModelList
++            models={displayedModels}
++            selectedModel={model}
++            onModelSelect={setModel}
++          />
++        ) : (
++          <ModelCardList
++            models={displayedModels}
++            selectedModel={model}
++            onModelSelect={setModel}
++            truncateDescription
++          />
++        )}
+       </div>
+     </>
+   );
+diff --git a/src/components/ReasoningModelSelector.tsx b/src/components/ReasoningModelSelector.tsx
+index 54161c99..5df7dfce 100644
+--- a/src/components/ReasoningModelSelector.tsx
++++ b/src/components/ReasoningModelSelector.tsx
+@@ -20,8 +20,8 @@ import { REASONING_PROVIDERS, toReasoningModel } from "../models/ModelRegistry";
+ import { useTinfoilModels } from "../hooks/useTinfoilModels";
+ import { pickDefaultTinfoilModel } from "../models/tinfoilModels";
+ import { modelRegistry } from "../models/ModelRegistry";
+-import { getProviderIcon, isMonochromeProvider } from "../utils/providerIcons";
+-import { createExternalLinkHandler } from "../utils/externalLinks";
++import { getRemoteProviderIcon } from "../utils/providerIcons";
++import { GetApiKeyLink } from "./ui/GetApiKeyLink";
+ import { getCachedPlatform } from "../utils/platform";
+ import { useSettingsStore } from "../stores/settingsStore";
+ 
+@@ -35,7 +35,18 @@ type CloudModelOption = {
+   invertInDark?: boolean;
+ };
+ 
+-const CLOUD_PROVIDER_IDS = ["openai", "anthropic", "gemini", "groq", "tinfoil", "custom"];
++const OPENROUTER_TAB = "openrouter";
++const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
++
++const CLOUD_PROVIDER_IDS = [
++  "openai",
++  "anthropic",
++  "gemini",
++  "groq",
++  OPENROUTER_TAB,
++  "tinfoil",
++  "custom",
++];
+ 
+ interface ReasoningModelSelectorProps {
+   reasoningModel: string;
+@@ -322,6 +333,8 @@ export default function ReasoningModelSelector({
+   const setGeminiApiKey = useSettingsStore((s) => s.setGeminiApiKey);
+   const groqApiKey = useSettingsStore((s) => s.groqApiKey);
+   const setGroqApiKey = useSettingsStore((s) => s.setGroqApiKey);
++  const openrouterApiKey = useSettingsStore((s) => s.openrouterApiKey);
++  const setOpenrouterApiKey = useSettingsStore((s) => s.setOpenrouterApiKey);
+   const tinfoilApiKey = useSettingsStore((s) => s.tinfoilApiKey);
+   const setTinfoilApiKey = useSettingsStore((s) => s.setTinfoilApiKey);
+   const [selectedMode, setSelectedMode] = useState<"cloud" | "local">(mode || "cloud");
+@@ -340,7 +353,9 @@ export default function ReasoningModelSelector({
+     name:
+       id === "custom"
+         ? t("reasoning.custom.providerName")
+-        : REASONING_PROVIDERS[id as keyof typeof REASONING_PROVIDERS]?.name || id,
++        : id === OPENROUTER_TAB
++          ? "OpenRouter"
++          : REASONING_PROVIDERS[id as keyof typeof REASONING_PROVIDERS]?.name || id,
+   }));
+ 
+   const localProviders = useMemo<LocalProvider[]>(() => {
+@@ -361,23 +376,22 @@ export default function ReasoningModelSelector({
+   }, []);
+ 
+   const openaiModelOptions = useMemo<CloudModelOption[]>(() => {
+-    const iconUrl = getProviderIcon("openai");
++    const { icon, invertInDark } = getRemoteProviderIcon("openai");
+     return REASONING_PROVIDERS.openai.models.map((model) => ({
+       ...model,
+       description: model.descriptionKey
+         ? t(model.descriptionKey, { defaultValue: model.description })
+         : model.description,
+-      icon: iconUrl,
+-      invertInDark: true,
++      icon,
++      invertInDark,
+     }));
+   }, [t]);
+ 
+   const selectedCloudModels = useMemo<CloudModelOption[]>(() => {
+     if (selectedCloudProvider === "openai") return openaiModelOptions;
+-    if (selectedCloudProvider === "custom") return [];
++    if (selectedCloudProvider === "custom" || selectedCloudProvider === OPENROUTER_TAB) return [];
+ 
+-    const iconUrl = getProviderIcon(selectedCloudProvider);
+-    const invertInDark = isMonochromeProvider(selectedCloudProvider);
++    const { icon: iconUrl, invertInDark } = getRemoteProviderIcon(selectedCloudProvider);
+ 
+     const models =
+       selectedCloudProvider === "tinfoil"
+@@ -432,7 +446,12 @@ export default function ReasoningModelSelector({
+   }, [loadDownloadedModels]);
+ 
+   const selectDefaultModelForProvider = (provider: string) => {
+-    if (provider === "custom") return;
++    // Custom/OpenRouter fetch their model list dynamically — clear instead of
++    // presetting so another provider's model id can't persist under this one.
++    if (provider === "custom" || provider === OPENROUTER_TAB) {
++      setReasoningModel("");
++      return;
++    }
+ 
+     if (provider === "tinfoil") {
+       const defaultModel = pickDefaultTinfoilModel(tinfoilModels);
+@@ -532,8 +551,22 @@ export default function ReasoningModelSelector({
+           />
+ 
+           <div>
+-            {selectedCloudProvider === "custom" ? (
++            {selectedCloudProvider === OPENROUTER_TAB ? (
++              <OpenAICompatiblePanel
++                key={OPENROUTER_TAB}
++                baseUrl={API_ENDPOINTS.OPENROUTER_BASE}
++                setBaseUrl={() => {}}
++                apiKey={openrouterApiKey}
++                setApiKey={setOpenrouterApiKey}
++                model={reasoningModel}
++                setModel={setReasoningModel}
++                lockedBaseUrl
++                apiKeyRequired
++                getKeyUrl={OPENROUTER_KEYS_URL}
++              />
++            ) : selectedCloudProvider === "custom" ? (
+               <OpenAICompatiblePanel
++                key="custom"
+                 baseUrl={cloudReasoningBaseUrl}
+                 setBaseUrl={setCloudReasoningBaseUrl}
+                 apiKey={customReasoningApiKey}
+@@ -548,15 +581,7 @@ export default function ReasoningModelSelector({
+                   <div className="space-y-2">
+                     <div className="flex items-baseline justify-between">
+                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
+-                      <a
+-                        href="https://platform.openai.com/api-keys"
+-                        target="_blank"
+-                        rel="noopener noreferrer"
+-                        onClick={createExternalLinkHandler("https://platform.openai.com/api-keys")}
+-                        className="text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors"
+-                      >
+-                        {t("reasoning.getApiKey")}
+-                      </a>
++                      <GetApiKeyLink url="https://platform.openai.com/api-keys" />
+                     </div>
+                     <ApiKeyInput
+                       apiKey={openaiApiKey}
+@@ -571,17 +596,7 @@ export default function ReasoningModelSelector({
+                   <div className="space-y-2">
+                     <div className="flex items-baseline justify-between">
+                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
+-                      <a
+-                        href="https://console.anthropic.com/settings/keys"
+-                        target="_blank"
+-                        rel="noopener noreferrer"
+-                        onClick={createExternalLinkHandler(
+-                          "https://console.anthropic.com/settings/keys"
+-                        )}
+-                        className="text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors"
+-                      >
+-                        {t("reasoning.getApiKey")}
+-                      </a>
++                      <GetApiKeyLink url="https://console.anthropic.com/settings/keys" />
+                     </div>
+                     <ApiKeyInput
+                       apiKey={anthropicApiKey}
+@@ -596,17 +611,7 @@ export default function ReasoningModelSelector({
+                   <div className="space-y-2">
+                     <div className="flex items-baseline justify-between">
+                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
+-                      <a
+-                        href="https://aistudio.google.com/app/api-keys"
+-                        target="_blank"
+-                        rel="noopener noreferrer"
+-                        onClick={createExternalLinkHandler(
+-                          "https://aistudio.google.com/app/api-keys"
+-                        )}
+-                        className="text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors"
+-                      >
+-                        {t("reasoning.getApiKey")}
+-                      </a>
++                      <GetApiKeyLink url="https://aistudio.google.com/app/api-keys" />
+                     </div>
+                     <ApiKeyInput
+                       apiKey={geminiApiKey}
+@@ -621,15 +626,7 @@ export default function ReasoningModelSelector({
+                   <div className="space-y-2">
+                     <div className="flex items-baseline justify-between">
+                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
+-                      <a
+-                        href="https://console.groq.com/keys"
+-                        target="_blank"
+-                        rel="noopener noreferrer"
+-                        onClick={createExternalLinkHandler("https://console.groq.com/keys")}
+-                        className="text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors"
+-                      >
+-                        {t("reasoning.getApiKey")}
+-                      </a>
++                      <GetApiKeyLink url="https://console.groq.com/keys" />
+                     </div>
+                     <ApiKeyInput
+                       apiKey={groqApiKey}
+@@ -644,17 +641,7 @@ export default function ReasoningModelSelector({
+                   <div className="space-y-2">
+                     <div className="flex items-baseline justify-between">
+                       <h4 className="font-medium text-foreground">{t("common.apiKey")}</h4>
+-                      <a
+-                        href="https://tinfoil.sh/inference?utm_source=referral&utm_campaign=openwhispr"
+-                        target="_blank"
+-                        rel="noopener noreferrer"
+-                        onClick={createExternalLinkHandler(
+-                          "https://tinfoil.sh/inference?utm_source=referral&utm_campaign=openwhispr"
+-                        )}
+-                        className="text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors"
+-                      >
+-                        {t("reasoning.getApiKey")}
+-                      </a>
++                      <GetApiKeyLink url="https://tinfoil.sh/inference?utm_source=referral&utm_campaign=openwhispr" />
+                     </div>
+                     <ApiKeyInput
+                       apiKey={tinfoilApiKey}
+diff --git a/src/components/TranscriptionModelPicker.tsx b/src/components/TranscriptionModelPicker.tsx
+index b55c2ab8..c85d08c5 100644
+--- a/src/components/TranscriptionModelPicker.tsx
++++ b/src/components/TranscriptionModelPicker.tsx
+@@ -25,9 +25,9 @@ import {
+   type ModelPickerStyles,
+ } from "../utils/modelPickerStyles";
+ import { useSettingsStore } from "../stores/settingsStore";
+-import { getProviderIcon, isMonochromeProvider } from "../utils/providerIcons";
++import { getRemoteProviderIcon } from "../utils/providerIcons";
+ import { API_ENDPOINTS, normalizeBaseUrl } from "../config/constants";
+-import { createExternalLinkHandler } from "../utils/externalLinks";
++import { GetApiKeyLink } from "./ui/GetApiKeyLink";
+ import { getCachedPlatform } from "../utils/platform";
+ import type { CudaWhisperStatus } from "../types/electron";
+ import logger from "../utils/logger";
+@@ -738,14 +738,15 @@ export default function TranscriptionModelPicker({
+ 
+   const cloudModelOptions = useMemo(() => {
+     if (!currentCloudProvider) return [];
++    const { icon, invertInDark } = getRemoteProviderIcon(selectedCloudProvider);
+     return currentCloudProvider.models.map((m) => ({
+       value: m.id,
+       label: m.name,
+       description: m.descriptionKey
+         ? t(m.descriptionKey, { defaultValue: m.description })
+         : m.description,
+-      icon: getProviderIcon(selectedCloudProvider),
+-      invertInDark: isMonochromeProvider(selectedCloudProvider),
++      icon,
++      invertInDark,
+     }));
+   }, [currentCloudProvider, selectedCloudProvider, t]);
+ 
+@@ -976,13 +977,11 @@ export default function TranscriptionModelPicker({
+                         {field.labelKey ? t(field.labelKey) : t("common.apiKey")}
+                       </label>
+                       {index === 0 && (
+-                        <button
+-                          type="button"
+-                          onClick={createExternalLinkHandler(providerCredentials.consoleUrl)}
++                        <GetApiKeyLink
++                          url={providerCredentials.consoleUrl}
++                          labelKey="transcription.getKey"
+                           className="text-xs text-primary/70 hover:text-primary transition-colors cursor-pointer"
+-                        >
+-                          {t("transcription.getKey")}
+-                        </button>
++                        />
+                       )}
+                     </div>
+                     {field.input === "secret" ? (
+diff --git a/src/components/chat/useChatStreaming.ts b/src/components/chat/useChatStreaming.ts
+index 9484114c..b52feae4 100644
+--- a/src/components/chat/useChatStreaming.ts
++++ b/src/components/chat/useChatStreaming.ts
+@@ -106,6 +106,7 @@ export function useChatStreaming({
+         "anthropic",
+         "gemini",
+         "tinfoil",
++        "openrouter",
+       ].includes(settings.chatAgentProvider);
+       const localModelCanUseTool =
+         isLocalProvider && estimateModelSizeB(settings.chatAgentModel) >= LOCAL_TOOL_MIN_PARAMS_B;
+diff --git a/src/components/settings/InferenceConfigEditor.tsx b/src/components/settings/InferenceConfigEditor.tsx
+index c658f9b9..27f0dce9 100644
+--- a/src/components/settings/InferenceConfigEditor.tsx
++++ b/src/components/settings/InferenceConfigEditor.tsx
+@@ -25,7 +25,11 @@ import {
+ function isProviderValidForMode(provider: string, mode: InferenceMode): boolean {
+   switch (mode) {
+     case "providers":
+-      return modelRegistry.getCloudProviders().some((p) => p.id === provider);
++      return (
++        provider === "custom" ||
++        provider === "openrouter" ||
++        modelRegistry.getCloudProviders().some((p) => p.id === provider)
++      );
+     case "local":
+       return modelRegistry.getAllProviders().some((p) => p.id === provider);
+     case "enterprise":
+@@ -152,7 +156,9 @@ export default function InferenceConfigEditor({ scope, onModeChange }: Inference
+   const showThinkingToggle =
+     config.mode === "self-hosted" ||
+     (config.mode === "providers" &&
+-      (config.provider === "custom" || !!getCloudModel(config.model)?.supportsThinking)) ||
++      (config.provider === "custom" ||
++        config.provider === "openrouter" ||
++        !!getCloudModel(config.model)?.supportsThinking)) ||
+     (config.mode === "local" && !!getLocalModel(config.model)?.supportsThinking);
+ 
+   return (
+diff --git a/src/components/ui/GetApiKeyLink.tsx b/src/components/ui/GetApiKeyLink.tsx
+new file mode 100644
+index 00000000..26a013e7
+--- /dev/null
++++ b/src/components/ui/GetApiKeyLink.tsx
+@@ -0,0 +1,26 @@
++import { useTranslation } from "react-i18next";
++import { createExternalLinkHandler, withUtm } from "../../utils/externalLinks";
++
++export function GetApiKeyLink({
++  url,
++  labelKey = "reasoning.getApiKey",
++  className = "text-xs text-link underline decoration-link/30 hover:decoration-link/60 cursor-pointer transition-colors",
++}: {
++  url: string;
++  labelKey?: string;
++  className?: string;
++}) {
++  const { t } = useTranslation();
++  const href = withUtm(url, "api_key");
++  return (
++    <a
++      href={href}
++      target="_blank"
++      rel="noopener noreferrer"
++      onClick={createExternalLinkHandler(href)}
++      className={className}
++    >
++      {t(labelKey)}
++    </a>
++  );
++}
+diff --git a/src/components/ui/LanguageSelector.tsx b/src/components/ui/LanguageSelector.tsx
+index 485a5526..658d40ea 100644
+--- a/src/components/ui/LanguageSelector.tsx
++++ b/src/components/ui/LanguageSelector.tsx
+@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
+ import { createPortal } from "react-dom";
+ import { ChevronDown, Search, X, Check } from "lucide-react";
+ import registry from "../../config/languageRegistry.json";
++import { LIST_SEARCH_THRESHOLD } from "../../config/constants";
+ 
+ export interface LanguageOption {
+   value: string;
+@@ -23,8 +24,6 @@ interface LanguageSelectorProps {
+   className?: string;
+ }
+ 
+-const SEARCH_THRESHOLD = 12;
+-
+ export default function LanguageSelector({
+   value,
+   onChange,
+@@ -33,7 +32,7 @@ export default function LanguageSelector({
+ }: LanguageSelectorProps) {
+   const { t } = useTranslation();
+   const items = options ?? REGISTRY_OPTIONS;
+-  const showSearch = items.length > SEARCH_THRESHOLD;
++  const showSearch = items.length > LIST_SEARCH_THRESHOLD;
+   const [isOpen, setIsOpen] = useState(false);
+   const [searchQuery, setSearchQuery] = useState("");
+   const [highlightedIndex, setHighlightedIndex] = useState(0);
+diff --git a/src/components/ui/ModelCardList.tsx b/src/components/ui/ModelCardList.tsx
+index eaa40503..6051461e 100644
+--- a/src/components/ui/ModelCardList.tsx
++++ b/src/components/ui/ModelCardList.tsx
+@@ -1,8 +1,9 @@
+ import { Globe, Download, Trash2, X, ExternalLink } from "lucide-react";
+ import { useTranslation } from "react-i18next";
+ import { Button } from "./button";
++import { cn } from "../lib/utils";
+ import type { ColorScheme } from "../../utils/modelPickerStyles";
+-import { createExternalLinkHandler } from "../../utils/externalLinks";
++import { createExternalLinkHandler, withUtm } from "../../utils/externalLinks";
+ 
+ export interface ModelCardOption {
+   value: string;
+@@ -17,19 +18,6 @@ export interface ModelCardOption {
+   recommended?: boolean;
+ }
+ 
+-interface ModelCardListProps {
+-  models: ModelCardOption[];
+-  selectedModel: string;
+-  onModelSelect: (modelId: string) => void;
+-  colorScheme?: ColorScheme;
+-  className?: string;
+-  // Local model actions (optional - when provided, enables local model UI)
+-  onDownload?: (modelId: string) => void;
+-  onDelete?: (modelId: string) => void;
+-  onCancelDownload?: () => void;
+-  isCancelling?: boolean;
+-}
+-
+ const COLOR_CONFIG: Record<
+   ColorScheme,
+   {
+@@ -51,183 +39,236 @@ const COLOR_CONFIG: Record<
+   },
+ };
+ 
+-export default function ModelCardList({
+-  models,
+-  selectedModel,
+-  onModelSelect,
++interface ModelCardProps {
++  model: ModelCardOption;
++  isSelected: boolean;
++  onSelect: (modelId: string) => void;
++  colorScheme?: ColorScheme;
++  // Long-form descriptions (e.g. OpenRouter) fill the row and ellipsize
++  // instead of sitting flush-right like short metadata.
++  truncateDescription?: boolean;
++  // Local model actions (optional - when provided, enables local model UI)
++  onDownload?: (modelId: string) => void;
++  onDelete?: (modelId: string) => void;
++  onCancelDownload?: () => void;
++  isCancelling?: boolean;
++}
++
++export function ModelCard({
++  model,
++  isSelected,
++  onSelect,
+   colorScheme = "purple",
+-  className = "",
++  truncateDescription = false,
+   onDownload,
+   onDelete,
+   onCancelDownload,
+   isCancelling = false,
+-}: ModelCardListProps) {
++}: ModelCardProps) {
+   const { t } = useTranslation();
+   const styles = COLOR_CONFIG[colorScheme];
+   const isLocalMode = Boolean(onDownload);
++  const isDownloaded = model.isDownloaded;
++  const isDownloading = model.isDownloading;
++  const specHref = model.specUrl ? withUtm(model.specUrl, "model_spec") : undefined;
+ 
+-  if (models.length === 0) {
+-    return (
+-      <p className="text-sm text-muted-foreground py-2">
+-        {isLocalMode ? "No models available for this provider" : "No models available"}
+-      </p>
+-    );
+-  }
++  const handleCardClick = () => {
++    if (isLocalMode) {
++      if (isDownloaded && !isSelected) {
++        onSelect(model.value);
++      }
++    } else {
++      onSelect(model.value);
++    }
++  };
++
++  const getStatusDotClass = () => {
++    if (!isLocalMode) {
++      return isSelected
++        ? "bg-primary shadow-[0_0_6px_oklch(0.62_0.22_260/0.6)]"
++        : "bg-muted-foreground/30";
++    }
++    if (isDownloaded) {
++      return isSelected
++        ? "bg-primary shadow-[0_0_6px_oklch(0.62_0.22_260/0.6)]"
++        : "bg-success shadow-[0_0_4px_rgba(34,197,94,0.5)]";
++    }
++    if (isDownloading) {
++      return "bg-amber-500 shadow-[0_0_4px_rgba(245,158,11,0.5)]";
++    }
++    return "bg-muted-foreground/20";
++  };
+ 
+   return (
+-    <div className={`space-y-0.5 ${className}`}>
+-      {models.map((model) => {
+-        const isSelected = selectedModel === model.value;
+-        const isDownloaded = model.isDownloaded;
+-        const isDownloading = model.isDownloading;
+-
+-        // For local models, click to select if downloaded
+-        const handleCardClick = () => {
+-          if (isLocalMode) {
+-            if (isDownloaded && !isSelected) {
+-              onModelSelect(model.value);
++    <div
++      onClick={handleCardClick}
++      className={`relative w-full p-2 rounded-md border text-left transition-colors duration-200 group overflow-hidden ${
++        isSelected ? styles.selected : styles.default
++      } ${!isLocalMode || (isDownloaded && !isSelected) ? "cursor-pointer" : ""}`}
++    >
++      <div className="flex items-center gap-1.5">
++        <div
++          className={`w-1.5 h-1.5 rounded-full shrink-0 ${getStatusDotClass()} ${
++            isSelected && isDownloaded
++              ? "animate-[pulse-glow_2s_ease-in-out_infinite]"
++              : isDownloading
++                ? "animate-[spinner-rotate_1s_linear_infinite]"
++                : ""
++          }`}
++        />
++
++        {model.icon ? (
++          <img
++            src={model.icon}
++            alt=""
++            className={`w-3.5 h-3.5 shrink-0 ${model.invertInDark ? "icon-monochrome" : ""}`}
++            aria-hidden="true"
++          />
++        ) : (
++          <Globe className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
++        )}
++
++        <span
++          className={cn(
++            "text-sm font-semibold text-foreground truncate tracking-tight",
++            truncateDescription && (model.description ? "shrink-0 max-w-[60%]" : "min-w-0 flex-1")
++          )}
++        >
++          {model.label}
++        </span>
++        {model.description && (
++          <span
++            className={
++              truncateDescription
++                ? "text-xs text-muted-foreground/60 truncate min-w-0 flex-1"
++                : "text-xs text-muted-foreground/50 tabular-nums shrink-0"
+             }
+-          } else {
+-            onModelSelect(model.value);
+-          }
+-        };
+-
+-        // Determine status dot color for local mode
+-        const getStatusDotClass = () => {
+-          if (!isLocalMode) {
+-            return isSelected
+-              ? "bg-primary shadow-[0_0_6px_oklch(0.62_0.22_260/0.6)]"
+-              : "bg-muted-foreground/30";
+-          }
+-          if (isDownloaded) {
+-            return isSelected
+-              ? "bg-primary shadow-[0_0_6px_oklch(0.62_0.22_260/0.6)]"
+-              : "bg-success shadow-[0_0_4px_rgba(34,197,94,0.5)]";
+-          }
+-          if (isDownloading) {
+-            return "bg-amber-500 shadow-[0_0_4px_rgba(245,158,11,0.5)]";
+-          }
+-          return "bg-muted-foreground/20";
+-        };
+-
+-        return (
+-          <div
+-            key={model.value}
+-            onClick={handleCardClick}
+-            className={`relative w-full p-2 rounded-md border text-left transition-colors duration-200 group overflow-hidden ${
+-              isSelected ? styles.selected : styles.default
+-            } ${!isLocalMode || (isDownloaded && !isSelected) ? "cursor-pointer" : ""}`}
+           >
+-            <div className="flex items-center gap-1.5">
+-              {/* Status dot with LED glow */}
+-              <div
+-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${getStatusDotClass()} ${
+-                  isSelected && isDownloaded
+-                    ? "animate-[pulse-glow_2s_ease-in-out_infinite]"
+-                    : isDownloading
+-                      ? "animate-[spinner-rotate_1s_linear_infinite]"
+-                      : ""
+-                }`}
+-              />
+-
+-              {/* Icon */}
+-              {model.icon ? (
+-                <img
+-                  src={model.icon}
+-                  alt=""
+-                  className={`w-3.5 h-3.5 shrink-0 ${model.invertInDark ? "icon-monochrome" : ""}`}
+-                  aria-hidden="true"
+-                />
+-              ) : (
+-                <Globe className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+-              )}
++            {model.description}
++          </span>
++        )}
++        {specHref && (
++          <a
++            href={specHref}
++            onClick={createExternalLinkHandler(specHref)}
++            className="inline-flex items-center gap-0.5 text-xs text-primary/60 hover:text-primary transition-colors shrink-0"
++          >
++            {t("models.learnMore")}
++            <ExternalLink size={9} />
++          </a>
++        )}
+ 
+-              {/* Model info - inline */}
+-              <span className="text-sm font-semibold text-foreground truncate tracking-tight">
+-                {model.label}
+-              </span>
+-              {model.description && (
+-                <span className="text-xs text-muted-foreground/50 tabular-nums shrink-0">
+-                  {model.description}
+-                </span>
+-              )}
+-              {model.specUrl && (
+-                <a
+-                  href={model.specUrl}
+-                  onClick={createExternalLinkHandler(model.specUrl)}
+-                  className="inline-flex items-center gap-0.5 text-xs text-primary/60 hover:text-primary transition-colors shrink-0"
++        {model.recommended && (
++          <span className="text-xs font-medium text-primary px-1.5 py-0.5 bg-primary/10 rounded-sm shrink-0">
++            {t("common.recommended")}
++          </span>
++        )}
++
++        <div className="ml-auto flex items-center gap-1.5 shrink-0">
++          {isSelected && (
++            <span className="text-xs font-medium text-primary px-2 py-0.5 bg-primary/10 rounded-sm">
++              {t("common.active")}
++            </span>
++          )}
++
++          {isLocalMode && (
++            <>
++              {isDownloaded ? (
++                <Button
++                  onClick={(e) => {
++                    e.stopPropagation();
++                    onDelete?.(model.value);
++                  }}
++                  size="sm"
++                  variant="ghost"
++                  className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-[color,opacity,transform] active:scale-95"
++                >
++                  <Trash2 size={12} />
++                </Button>
++              ) : isDownloading ? (
++                <Button
++                  onClick={(e) => {
++                    e.stopPropagation();
++                    onCancelDownload?.();
++                  }}
++                  disabled={isCancelling}
++                  size="sm"
++                  variant="outline"
++                  className="h-6 px-2.5 text-xs text-destructive border-destructive/25 hover:bg-destructive/8"
+                 >
+-                  {t("models.learnMore")}
+-                  <ExternalLink size={9} />
+-                </a>
++                  <X size={11} className="mr-0.5" />
++                  {isCancelling ? "..." : t("common.cancel")}
++                </Button>
++              ) : (
++                <Button
++                  onClick={(e) => {
++                    e.stopPropagation();
++                    onDownload?.(model.value);
++                  }}
++                  size="sm"
++                  variant="default"
++                  className="h-6 px-2.5 text-xs"
++                >
++                  <Download size={11} className="mr-1" />
++                  {t("common.download")}
++                </Button>
+               )}
++            </>
++          )}
++        </div>
++      </div>
++    </div>
++  );
++}
+ 
+-              {/* Recommended badge */}
+-              {model.recommended && (
+-                <span className="text-xs font-medium text-primary px-1.5 py-0.5 bg-primary/10 rounded-sm shrink-0">
+-                  {t("common.recommended")}
+-                </span>
+-              )}
++interface ModelCardListProps {
++  models: ModelCardOption[];
++  selectedModel: string;
++  onModelSelect: (modelId: string) => void;
++  colorScheme?: ColorScheme;
++  className?: string;
++  truncateDescription?: boolean;
++  // Local model actions (optional - when provided, enables local model UI)
++  onDownload?: (modelId: string) => void;
++  onDelete?: (modelId: string) => void;
++  onCancelDownload?: () => void;
++  isCancelling?: boolean;
++}
+ 
+-              {/* Actions - right aligned */}
+-              <div className="ml-auto flex items-center gap-1.5 shrink-0">
+-                {/* Selected/Active badge */}
+-                {isSelected && (
+-                  <span className="text-xs font-medium text-primary px-2 py-0.5 bg-primary/10 rounded-sm">
+-                    {t("common.active")}
+-                  </span>
+-                )}
+-
+-                {/* Local model action buttons */}
+-                {isLocalMode && (
+-                  <>
+-                    {isDownloaded ? (
+-                      <Button
+-                        onClick={(e) => {
+-                          e.stopPropagation();
+-                          onDelete?.(model.value);
+-                        }}
+-                        size="sm"
+-                        variant="ghost"
+-                        className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-[color,opacity,transform] active:scale-95"
+-                      >
+-                        <Trash2 size={12} />
+-                      </Button>
+-                    ) : isDownloading ? (
+-                      <Button
+-                        onClick={(e) => {
+-                          e.stopPropagation();
+-                          onCancelDownload?.();
+-                        }}
+-                        disabled={isCancelling}
+-                        size="sm"
+-                        variant="outline"
+-                        className="h-6 px-2.5 text-xs text-destructive border-destructive/25 hover:bg-destructive/8"
+-                      >
+-                        <X size={11} className="mr-0.5" />
+-                        {isCancelling ? "..." : "Cancel"}
+-                      </Button>
+-                    ) : (
+-                      <Button
+-                        onClick={(e) => {
+-                          e.stopPropagation();
+-                          onDownload?.(model.value);
+-                        }}
+-                        size="sm"
+-                        variant="default"
+-                        className="h-6 px-2.5 text-xs"
+-                      >
+-                        <Download size={11} className="mr-1" />
+-                        Download
+-                      </Button>
+-                    )}
+-                  </>
+-                )}
+-              </div>
+-            </div>
+-          </div>
+-        );
+-      })}
++export default function ModelCardList({
++  models,
++  selectedModel,
++  onModelSelect,
++  colorScheme = "purple",
++  className = "",
++  truncateDescription = false,
++  onDownload,
++  onDelete,
++  onCancelDownload,
++  isCancelling = false,
++}: ModelCardListProps) {
++  const { t } = useTranslation();
++
++  if (models.length === 0) {
++    return <p className="text-sm text-muted-foreground py-2">{t("models.noneAvailable")}</p>;
++  }
++
++  return (
++    <div className={`space-y-0.5 ${className}`}>
++      {models.map((model) => (
++        <ModelCard
++          key={model.value}
++          model={model}
++          isSelected={selectedModel === model.value}
++          onSelect={onModelSelect}
++          colorScheme={colorScheme}
++          truncateDescription={truncateDescription}
++          onDownload={onDownload}
++          onDelete={onDelete}
++          onCancelDownload={onCancelDownload}
++          isCancelling={isCancelling}
++        />
++      ))}
+     </div>
+   );
+ }
+diff --git a/src/components/ui/PromptStudio.tsx b/src/components/ui/PromptStudio.tsx
+index e45d2347..61840d6c 100644
+--- a/src/components/ui/PromptStudio.tsx
++++ b/src/components/ui/PromptStudio.tsx
+@@ -38,6 +38,7 @@ const PROVIDER_CONFIG: Record<string, ProviderConfig> = {
+   anthropic: { label: "Anthropic", apiKeyStorageKey: "anthropicApiKey" },
+   gemini: { label: "Gemini", apiKeyStorageKey: "geminiApiKey" },
+   groq: { label: "Groq", apiKeyStorageKey: "groqApiKey" },
++  openrouter: { label: "OpenRouter", apiKeyStorageKey: "openrouterApiKey" },
+   tinfoil: { label: "Tinfoil", apiKeyStorageKey: "tinfoilApiKey" },
+   openwhispr: { label: "OpenWhispr Cloud" },
+   custom: {
+@@ -164,7 +165,12 @@ export default function PromptStudio({ className = "", kind = "cleanup" }: Promp
+     } catch (error) {
+       const errorMessage = error instanceof Error ? error.message : String(error);
+       logger.error("PromptStudio test failed", { error: errorMessage }, "prompt-studio");
+-      setTestResult(t("promptStudio.test.failed", { error: errorMessage }));
++      const typed = error as { code?: string; provider?: string };
++      setTestResult(
++        typed?.code === "API_KEY_MISSING"
++          ? t("promptStudio.test.apiKeyMissing", { provider: typed.provider })
++          : t("promptStudio.test.failed", { error: errorMessage })
++      );
+     } finally {
+       setIsLoading(false);
+     }
+diff --git a/src/components/ui/SearchableModelList.tsx b/src/components/ui/SearchableModelList.tsx
+new file mode 100644
+index 00000000..5acf99c6
+--- /dev/null
++++ b/src/components/ui/SearchableModelList.tsx
+@@ -0,0 +1,259 @@
++import { useEffect, useId, useMemo, useRef, useState } from "react";
++import { useTranslation } from "react-i18next";
++import { useVirtualizer } from "@tanstack/react-virtual";
++import { Search } from "lucide-react";
++import { Input } from "./input";
++import { ModelCard, type ModelCardOption } from "./ModelCardList";
++import { getRemoteProviderIcon } from "../../utils/providerIcons";
++import { LIST_SEARCH_THRESHOLD } from "../../config/constants";
++
++// Above this count, OpenAICompatiblePanel switches from the plain list to this
++// searchable/grouped/virtualized variant.
++export const MODEL_SEARCH_THRESHOLD = LIST_SEARCH_THRESHOLD;
++
++const OTHER_GROUP = "__other";
++const SELECTED_GROUP = "__selected";
++
++type Row =
++  | { type: "header"; key: string; label: string; count: number }
++  | { type: "model"; key: string; data: ModelCardOption };
++
++function providerPrefix(value: string): string | null {
++  const slash = value.indexOf("/");
++  return slash > 0 ? value.slice(0, slash) : null;
++}
++
++function matchesQuery(model: ModelCardOption, normalizedQuery: string): boolean {
++  return (
++    model.value.toLowerCase().includes(normalizedQuery) ||
++    model.label.toLowerCase().includes(normalizedQuery) ||
++    (model.description?.toLowerCase().includes(normalizedQuery) ?? false)
++  );
++}
++
++// Resolve the provider icon from the "provider/" prefix. Group rows drop the
++// prefix from the label (the header already names the provider); the pinned
++// "Selected" row keeps the full id so its provider stays identifiable.
++function toDisplayOption(model: ModelCardOption, stripPrefix: boolean): ModelCardOption {
++  const prefix = providerPrefix(model.value);
++  if (!prefix) return model;
++  const name = model.value.slice(prefix.length + 1);
++  const { icon, invertInDark } = getRemoteProviderIcon(prefix, name);
++  const label = (stripPrefix && name) || model.label;
++  return { ...model, label, icon, invertInDark };
++}
++
++interface SearchableModelListProps {
++  models: ModelCardOption[];
++  selectedModel: string;
++  onModelSelect: (modelId: string) => void;
++}
++
++export default function SearchableModelList({
++  models,
++  selectedModel,
++  onModelSelect,
++}: SearchableModelListProps) {
++  const { t } = useTranslation();
++  const listboxId = useId();
++  const [query, setQuery] = useState("");
++  const [activeIndex, setActiveIndex] = useState(-1);
++  const scrollRef = useRef<HTMLDivElement>(null);
++  const normalizedQuery = query.trim().toLowerCase();
++
++  const selectedOption = useMemo(
++    () => models.find((m) => m.value === selectedModel) ?? null,
++    [models, selectedModel]
++  );
++
++  const { rows, matchCount } = useMemo(() => {
++    const groups = new Map<string, ModelCardOption[]>();
++    const seen = new Set<string>();
++    for (const model of models) {
++      if (model.value === selectedModel) continue; // pinned separately
++      if (seen.has(model.value)) continue;
++      if (normalizedQuery && !matchesQuery(model, normalizedQuery)) continue;
++      seen.add(model.value);
++      const prefix = providerPrefix(model.value);
++      const key = prefix ? prefix.replace(/^~/, "").toLowerCase() : OTHER_GROUP;
++      const bucket = groups.get(key);
++      if (bucket) bucket.push(model);
++      else groups.set(key, [model]);
++    }
++
++    const sortedKeys = [...groups.keys()].sort((a, b) => {
++      if (a === OTHER_GROUP) return 1;
++      if (b === OTHER_GROUP) return -1;
++      return a.localeCompare(b);
++    });
++
++    const result: Row[] = [];
++    let matched = 0;
++    if (selectedOption) {
++      result.push({
++        type: "header",
++        key: SELECTED_GROUP,
++        label: t("reasoning.custom.selectedGroup"),
++        count: 1,
++      });
++      result.push({
++        type: "model",
++        key: `m:${selectedOption.value}`,
++        data: toDisplayOption(selectedOption, false),
++      });
++    }
++    for (const key of sortedKeys) {
++      const bucket = groups.get(key)!.sort((a, b) => a.label.localeCompare(b.label));
++      result.push({
++        type: "header",
++        key: `g:${key}`,
++        label: key === OTHER_GROUP ? t("reasoning.custom.otherGroup") : key,
++        count: bucket.length,
++      });
++      for (const model of bucket) {
++        result.push({ type: "model", key: `m:${model.value}`, data: toDisplayOption(model, true) });
++        matched += 1;
++      }
++    }
++    return { rows: result, matchCount: matched };
++  }, [models, selectedModel, selectedOption, normalizedQuery, t]);
++
++  const virtualizer = useVirtualizer({
++    count: rows.length,
++    getScrollElement: () => scrollRef.current,
++    estimateSize: (index) => (rows[index].type === "header" ? 30 : 40),
++    getItemKey: (index) => rows[index].key,
++    overscan: 8,
++  });
++
++  // Reset scroll + keyboard cursor whenever the filtered result set changes.
++  useEffect(() => {
++    setActiveIndex(-1);
++    virtualizer.scrollToOffset(0);
++  }, [normalizedQuery, virtualizer]);
++
++  // Rows also rebuild without a query change (list refetch, selection moving
++  // into the pinned group) — indexes shift, so drop the cursor entirely.
++  useEffect(() => {
++    setActiveIndex(-1);
++  }, [models, selectedModel]);
++
++  const moveActive = (direction: 1 | -1) => {
++    const step = (from: number) => {
++      for (let i = from + direction; i >= 0 && i < rows.length; i += direction) {
++        if (rows[i].type === "model") return i;
++      }
++      return -1;
++    };
++    const next = step(activeIndex < 0 && direction < 0 ? rows.length : activeIndex);
++    if (next >= 0) {
++      setActiveIndex(next);
++      virtualizer.scrollToIndex(next, { align: "auto" });
++    }
++  };
++
++  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
++    if (event.key === "ArrowDown") {
++      event.preventDefault();
++      moveActive(1);
++    } else if (event.key === "ArrowUp") {
++      event.preventDefault();
++      moveActive(-1);
++    } else if (event.key === "Enter" && activeIndex >= 0) {
++      const row = rows[activeIndex];
++      if (row?.type === "model") {
++        event.preventDefault();
++        onModelSelect(row.data.value);
++      }
++    }
++  };
++
++  const activeRow = activeIndex >= 0 ? rows[activeIndex] : undefined;
++  const activeId = activeRow?.type === "model" ? `${listboxId}-${activeRow.data.value}` : undefined;
++  const selectedMatches = !!selectedOption && matchesQuery(selectedOption, normalizedQuery);
++  const showEmpty = normalizedQuery.length > 0 && matchCount === 0 && !selectedMatches;
++
++  return (
++    <div className="space-y-2">
++      <div className="relative">
++        <Search
++          size={14}
++          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none"
++        />
++        <Input
++          value={query}
++          onChange={(event) => setQuery(event.target.value)}
++          onKeyDown={handleKeyDown}
++          placeholder={t("reasoning.custom.searchPlaceholder")}
++          aria-label={t("reasoning.custom.searchPlaceholder")}
++          role="combobox"
++          aria-expanded={rows.length > 0}
++          aria-controls={listboxId}
++          aria-activedescendant={activeId}
++          className="h-9 pl-8 text-sm"
++        />
++      </div>
++
++      {rows.length > 0 && (
++        <div ref={scrollRef} className="overflow-y-auto pr-0.5 max-h-80">
++          <div
++            id={listboxId}
++            role="listbox"
++            aria-label={t("reasoning.custom.searchPlaceholder")}
++            style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}
++          >
++            {virtualizer.getVirtualItems().map((virtualItem) => {
++              const row = rows[virtualItem.index];
++              const isActive = virtualItem.index === activeIndex;
++              return (
++                <div
++                  key={row.key}
++                  data-index={virtualItem.index}
++                  ref={virtualizer.measureElement}
++                  style={{
++                    position: "absolute",
++                    top: 0,
++                    left: 0,
++                    width: "100%",
++                    transform: `translateY(${virtualItem.start}px)`,
++                  }}
++                >
++                  {row.type === "header" ? (
++                    <div className="flex items-center gap-1.5 px-0.5 pt-2 pb-1">
++                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
++                        {row.label}
++                      </span>
++                      <span className="text-[11px] text-muted-foreground/40 tabular-nums">
++                        {row.count}
++                      </span>
++                    </div>
++                  ) : (
++                    <div
++                      id={`${listboxId}-${row.data.value}`}
++                      role="option"
++                      aria-selected={row.data.value === selectedModel}
++                      className={`pb-0.5 rounded-md ${isActive ? "ring-1 ring-primary/50" : ""}`}
++                    >
++                      <ModelCard
++                        model={row.data}
++                        isSelected={row.data.value === selectedModel}
++                        onSelect={onModelSelect}
++                        truncateDescription
++                      />
++                    </div>
++                  )}
++                </div>
++              );
++            })}
++          </div>
++        </div>
++      )}
++
++      {showEmpty && (
++        <p className="text-xs text-muted-foreground py-3 text-center">
++          {t("reasoning.custom.noSearchResults", { query: query.trim() })}
++        </p>
++      )}
++    </div>
++  );
++}
+diff --git a/src/config/constants.ts b/src/config/constants.ts
+index 8a171ded..5d342d2d 100644
+--- a/src/config/constants.ts
++++ b/src/config/constants.ts
+@@ -77,6 +77,7 @@ export const API_ENDPOINTS = {
+   GROQ_BASE: "https://api.groq.com/openai/v1",
+   XAI_BASE: "https://api.x.ai/v1",
+   MISTRAL_BASE: "https://api.mistral.ai/v1",
++  OPENROUTER_BASE: "https://openrouter.ai/api/v1",
+   TRANSCRIPTION_BASE: DEFAULT_TRANSCRIPTION_BASE,
+   TRANSCRIPTION: buildApiUrl(DEFAULT_TRANSCRIPTION_BASE, "/audio/transcriptions"),
+ } as const;
+@@ -93,6 +94,9 @@ export const MODEL_CONSTRAINTS = {
+   INFERENCE_TIMEOUT: 30000, // 30 seconds default (configurable)
+ } as const;
+ 
++// List length above which pickers switch to a searchable variant.
++export const LIST_SEARCH_THRESHOLD = 12;
++
+ // Token Limits
+ export const TOKEN_LIMITS = {
+   MIN_TOKENS: 512,
+diff --git a/src/config/secretKeys.js b/src/config/secretKeys.js
+new file mode 100644
+index 00000000..480811be
+--- /dev/null
++++ b/src/config/secretKeys.js
+@@ -0,0 +1,62 @@
++// Single source of truth for the uniform BYOK cloud-LLM API-key secrets:
++// environment.js, ipcHandlers.js and the settings store all derive their
++// per-key plumbing from this list, so adding a provider is one entry.
++// CommonJS + pure data so both the main process and the Vite renderer share it.
++// `base` yields the IPC channels `get-<base>-key` / `save-<base>-key`.
++// preload.js can't require local modules under sandbox, so it mirrors the
++// {base, get, save} tuples inline — keep BYOK_KEY_BRIDGES there in sync
++// (guarded by test/helpers/secretKeys.test.js).
++const BYOK_API_KEYS = [
++  {
++    base: "openai",
++    env: "OPENAI_API_KEY",
++    get: "getOpenAIKey",
++    save: "saveOpenAIKey",
++    storeKey: "openaiApiKey",
++  },
++  {
++    base: "anthropic",
++    env: "ANTHROPIC_API_KEY",
++    get: "getAnthropicKey",
++    save: "saveAnthropicKey",
++    storeKey: "anthropicApiKey",
++  },
++  {
++    base: "gemini",
++    env: "GEMINI_API_KEY",
++    get: "getGeminiKey",
++    save: "saveGeminiKey",
++    storeKey: "geminiApiKey",
++  },
++  {
++    base: "groq",
++    env: "GROQ_API_KEY",
++    get: "getGroqKey",
++    save: "saveGroqKey",
++    storeKey: "groqApiKey",
++  },
++  { base: "xai", env: "XAI_API_KEY", get: "getXaiKey", save: "saveXaiKey", storeKey: "xaiApiKey" },
++  {
++    base: "mistral",
++    env: "MISTRAL_API_KEY",
++    get: "getMistralKey",
++    save: "saveMistralKey",
++    storeKey: "mistralApiKey",
++  },
++  {
++    base: "openrouter",
++    env: "OPENROUTER_API_KEY",
++    get: "getOpenrouterKey",
++    save: "saveOpenrouterKey",
++    storeKey: "openrouterApiKey",
++  },
++  {
++    base: "tinfoil",
++    env: "TINFOIL_API_KEY",
++    get: "getTinfoilKey",
++    save: "saveTinfoilKey",
++    storeKey: "tinfoilApiKey",
++  },
++];
++
++module.exports = { BYOK_API_KEYS };
+diff --git a/src/helpers/environment.js b/src/helpers/environment.js
+index b87f7139..e4a23f9a 100644
+--- a/src/helpers/environment.js
++++ b/src/helpers/environment.js
+@@ -5,15 +5,10 @@ const { app } = require("electron");
+ const debugLogger = require("./debugLogger");
+ const { normalizeUiLanguage } = require("./i18nMain");
+ const secretCrypto = require("./secretCrypto");
++const { BYOK_API_KEYS } = require("../config/secretKeys");
+ 
+ const SECRET_KEYS = [
+-  "OPENAI_API_KEY",
+-  "ANTHROPIC_API_KEY",
+-  "GEMINI_API_KEY",
+-  "GROQ_API_KEY",
+-  "XAI_API_KEY",
+-  "MISTRAL_API_KEY",
+-  "TINFOIL_API_KEY",
++  ...BYOK_API_KEYS.map((k) => k.env),
+   "ASSEMBLYAI_API_KEY",
+   "DEEPGRAM_API_KEY",
+   "CORTI_CLIENT_ID",
+@@ -266,62 +261,6 @@ class EnvironmentManager {
+     return { success: true };
+   }
+ 
+-  getOpenAIKey() {
+-    return this._getKey("OPENAI_API_KEY");
+-  }
+-
+-  saveOpenAIKey(key) {
+-    return this._saveKey("OPENAI_API_KEY", key);
+-  }
+-
+-  getAnthropicKey() {
+-    return this._getKey("ANTHROPIC_API_KEY");
+-  }
+-
+-  saveAnthropicKey(key) {
+-    return this._saveKey("ANTHROPIC_API_KEY", key);
+-  }
+-
+-  getGeminiKey() {
+-    return this._getKey("GEMINI_API_KEY");
+-  }
+-
+-  saveGeminiKey(key) {
+-    return this._saveKey("GEMINI_API_KEY", key);
+-  }
+-
+-  getGroqKey() {
+-    return this._getKey("GROQ_API_KEY");
+-  }
+-
+-  saveGroqKey(key) {
+-    return this._saveKey("GROQ_API_KEY", key);
+-  }
+-
+-  getXaiKey() {
+-    return this._getKey("XAI_API_KEY");
+-  }
+-
+-  saveXaiKey(key) {
+-    return this._saveKey("XAI_API_KEY", key);
+-  }
+-
+-  getMistralKey() {
+-    return this._getKey("MISTRAL_API_KEY");
+-  }
+-
+-  saveMistralKey(key) {
+-    return this._saveKey("MISTRAL_API_KEY", key);
+-  }
+-
+-  getTinfoilKey() {
+-    return this._getKey("TINFOIL_API_KEY");
+-  }
+-
+-  saveTinfoilKey(key) {
+-    return this._saveKey("TINFOIL_API_KEY", key);
+-  }
+-
+   getAssemblyAIKey() {
+     return this._getKey("ASSEMBLYAI_API_KEY");
+   }
+@@ -555,4 +494,15 @@ class EnvironmentManager {
+   }
+ }
+ 
++// Generate the uniform BYOK key accessors (getOpenAIKey/saveOpenAIKey/…) from
++// the shared manifest so each provider is defined in exactly one place.
++for (const k of BYOK_API_KEYS) {
++  EnvironmentManager.prototype[k.get] = function () {
++    return this._getKey(k.env);
++  };
++  EnvironmentManager.prototype[k.save] = function (key) {
++    return this._saveKey(k.env, key);
++  };
++}
++
+ module.exports = EnvironmentManager;
+diff --git a/src/helpers/ipcHandlers.js b/src/helpers/ipcHandlers.js
+index 7f14f0de..cd688b4f 100644
+--- a/src/helpers/ipcHandlers.js
++++ b/src/helpers/ipcHandlers.js
+@@ -4,6 +4,7 @@ const fs = require("fs");
+ const os = require("os");
+ const crypto = require("crypto");
+ const debugLogger = require("./debugLogger");
++const { BYOK_API_KEYS } = require("../config/secretKeys");
+ const tokenStore = require("./tokenStore");
+ const { classifyAndLog } = require("./networkErrors");
+ const GnomeShortcutManager = require("./gnomeShortcut");
+@@ -823,13 +824,12 @@ class IPCHandlers {
+       return this.windowManager.resizeMainWindow(sizeKey);
+     });
+ 
+-    ipcMain.handle("get-openai-key", async (event) => {
+-      return this.environmentManager.getOpenAIKey();
+-    });
+-
+-    ipcMain.handle("save-openai-key", async (event, key) => {
+-      return this.environmentManager.saveOpenAIKey(key);
+-    });
++    // Uniform BYOK key channels (get-<base>-key / save-<base>-key) from the
++    // shared manifest — adding a provider needs no handler here.
++    for (const k of BYOK_API_KEYS) {
++      ipcMain.handle(`get-${k.base}-key`, () => this.environmentManager[k.get]());
++      ipcMain.handle(`save-${k.base}-key`, (event, key) => this.environmentManager[k.save](key));
++    }
+ 
+     ipcMain.handle("db-save-transcription", async (event, text, rawText, options) => {
+       const result = this.databaseManager.saveTranscription(text, rawText, options);
+@@ -2498,6 +2498,10 @@ class IPCHandlers {
+ 
+     ipcMain.handle("open-external", async (event, url) => {
+       try {
++        const { protocol } = new URL(url);
++        if (!["http:", "https:", "mailto:"].includes(protocol)) {
++          return { success: false, error: `Blocked URL scheme: ${protocol}` };
++        }
+         await shell.openExternal(url);
+         return { success: true };
+       } catch (error) {
+@@ -2632,34 +2636,6 @@ class IPCHandlers {
+       }
+     });
+ 
+-    ipcMain.handle("get-anthropic-key", async (event) => {
+-      return this.environmentManager.getAnthropicKey();
+-    });
+-
+-    ipcMain.handle("get-gemini-key", async (event) => {
+-      return this.environmentManager.getGeminiKey();
+-    });
+-
+-    ipcMain.handle("save-gemini-key", async (event, key) => {
+-      return this.environmentManager.saveGeminiKey(key);
+-    });
+-
+-    ipcMain.handle("get-groq-key", async (event) => {
+-      return this.environmentManager.getGroqKey();
+-    });
+-
+-    ipcMain.handle("save-groq-key", async (event, key) => {
+-      return this.environmentManager.saveGroqKey(key);
+-    });
+-
+-    ipcMain.handle("get-xai-key", async () => {
+-      return this.environmentManager.getXaiKey();
+-    });
+-
+-    ipcMain.handle("save-xai-key", async (event, key) => {
+-      return this.environmentManager.saveXaiKey(key);
+-    });
+-
+     ipcMain.handle(
+       "proxy-xai-transcription",
+       async (event, { audioBuffer, language, keyterms }) => {
+@@ -2696,14 +2672,6 @@ class IPCHandlers {
+       }
+     );
+ 
+-    ipcMain.handle("get-mistral-key", async () => {
+-      return this.environmentManager.getMistralKey();
+-    });
+-
+-    ipcMain.handle("save-mistral-key", async (event, key) => {
+-      return this.environmentManager.saveMistralKey(key);
+-    });
+-
+     ipcMain.handle(
+       "proxy-mistral-transcription",
+       async (event, { audioBuffer, model, language, contextBias }) => {
+@@ -2779,14 +2747,6 @@ class IPCHandlers {
+       }
+     );
+ 
+-    ipcMain.handle("get-tinfoil-key", async () => {
+-      return this.environmentManager.getTinfoilKey();
+-    });
+-
+-    ipcMain.handle("save-tinfoil-key", async (event, key) => {
+-      return this.environmentManager.saveTinfoilKey(key);
+-    });
+-
+     ipcMain.handle("get-tinfoil-chat-models", async () => {
+       return getTinfoilChatModels();
+     });
+@@ -2996,10 +2956,6 @@ class IPCHandlers {
+       return this.environmentManager.saveActivationMode(mode);
+     });
+ 
+-    ipcMain.handle("save-anthropic-key", async (event, key) => {
+-      return this.environmentManager.saveAnthropicKey(key);
+-    });
+-
+     ipcMain.handle("get-ui-language", async () => {
+       return this.environmentManager.getUiLanguage();
+     });
+diff --git a/src/hooks/useSettings.ts b/src/hooks/useSettings.ts
+index 0c4d7056..cca14772 100644
+--- a/src/hooks/useSettings.ts
++++ b/src/hooks/useSettings.ts
+@@ -66,6 +66,7 @@ export interface ApiKeySettings {
+   groqApiKey: string;
+   xaiApiKey: string;
+   mistralApiKey: string;
++  openrouterApiKey: string;
+   cortiClientId: string;
+   cortiClientSecret: string;
+   tinfoilApiKey: string;
+@@ -246,6 +247,7 @@ function useSettingsInternal() {
+     groqApiKey: store.groqApiKey,
+     xaiApiKey: store.xaiApiKey,
+     mistralApiKey: store.mistralApiKey,
++    openrouterApiKey: store.openrouterApiKey,
+     tinfoilApiKey: store.tinfoilApiKey,
+     dictationKey: store.dictationKey,
+     meetingKey: store.meetingKey,
+diff --git a/src/locales/de/translation.json b/src/locales/de/translation.json
+index 36dcf185..62e82e31 100644
+--- a/src/locales/de/translation.json
++++ b/src/locales/de/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "Keine Modelle zurückgegeben. Prüfen Sie die Endpoint-URL.",
+       "providerName": "Benutzerdefiniert",
+       "ownerLabel": "Anbieter: {{owner}}",
+-      "unableToLoadModels": "Modelle konnten nicht vom Endpoint geladen werden."
++      "unableToLoadModels": "Modelle konnten nicht vom Endpoint geladen werden.",
++      "searchPlaceholder": "Modelle suchen…",
++      "selectedGroup": "Ausgewählt",
++      "otherGroup": "Sonstige",
++      "noSearchResults": "Keine Modelle für „{{query}}“",
++      "selectModelHint": "Noch kein Modell ausgewählt — wählen Sie eines aus der Liste unten.",
++      "keyRequiredHint": "Für die Inferenz ist ein API-Schlüssel erforderlich — fügen Sie einen hinzu, um diesen Anbieter zu nutzen."
+     },
+     "getApiKey": "API-Schlüssel holen ->",
+     "selectModel": "Modell auswählen",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Anbieter",
+       "run": "Test ausführen",
+-      "customEndpoint": "Benutzerdefinierter Endpoint"
++      "customEndpoint": "Benutzerdefinierter Endpoint",
++      "apiKeyMissing": "{{provider}} API-Schlüssel nicht konfiguriert. Fügen Sie ihn in den KI-Modelle-Einstellungen hinzu."
+     },
+     "view": {
+       "customPrompt": "Benutzerdefinierter Prompt",
+@@ -1850,6 +1857,7 @@
+   },
+   "models": {
+     "learnMore": "Mehr erfahren",
++    "noneAvailable": "Keine Modelle verfügbar",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "Schnelle mehrsprachige ASR mit automatischer Spracherkennung (25 Sprachen)",
+diff --git a/src/locales/en/translation.json b/src/locales/en/translation.json
+index 9308c364..111d030e 100644
+--- a/src/locales/en/translation.json
++++ b/src/locales/en/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "No models returned. Check your endpoint URL.",
+       "providerName": "Custom",
+       "ownerLabel": "Owner: {{owner}}",
+-      "unableToLoadModels": "Unable to load models from endpoint."
++      "unableToLoadModels": "Unable to load models from endpoint.",
++      "searchPlaceholder": "Search models…",
++      "selectedGroup": "Selected",
++      "otherGroup": "Other",
++      "noSearchResults": "No models match \"{{query}}\"",
++      "selectModelHint": "No model selected yet — choose one from the list below.",
++      "keyRequiredHint": "An API key is required for inference — add one to use this provider."
+     },
+     "getApiKey": "Get your API key ->",
+     "selectModel": "Select Model",
+@@ -1101,7 +1107,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Provider",
+       "run": "Run Test",
+-      "customEndpoint": "Custom endpoint"
++      "customEndpoint": "Custom endpoint",
++      "apiKeyMissing": "{{provider}} API key not configured. Add it in AI Models settings."
+     },
+     "view": {
+       "customPrompt": "Custom prompt",
+@@ -1938,6 +1945,7 @@
+   },
+   "models": {
+     "learnMore": "Learn more",
++    "noneAvailable": "No models available",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "Fast multilingual ASR with auto language detection (25 languages)",
+diff --git a/src/locales/es/translation.json b/src/locales/es/translation.json
+index 3886b00b..e1af69cc 100644
+--- a/src/locales/es/translation.json
++++ b/src/locales/es/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "No se devolvieron modelos. Revisa la URL del endpoint.",
+       "providerName": "Personalizado",
+       "ownerLabel": "Propietario: {{owner}}",
+-      "unableToLoadModels": "No se pudieron cargar modelos desde el endpoint."
++      "unableToLoadModels": "No se pudieron cargar modelos desde el endpoint.",
++      "searchPlaceholder": "Buscar modelos…",
++      "selectedGroup": "Seleccionado",
++      "otherGroup": "Otros",
++      "noSearchResults": "Ningún modelo coincide con \"{{query}}\"",
++      "selectModelHint": "Aún no hay un modelo seleccionado — elige uno de la lista de abajo.",
++      "keyRequiredHint": "Se requiere una clave API para la inferencia — agrega una para usar este proveedor."
+     },
+     "getApiKey": "Obtener clave API ->",
+     "selectModel": "Seleccionar modelo",
+@@ -1061,7 +1067,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Proveedor",
+       "run": "Ejecutar prueba",
+-      "customEndpoint": "Endpoint personalizado"
++      "customEndpoint": "Endpoint personalizado",
++      "apiKeyMissing": "La clave API de {{provider}} no está configurada. Agrégala en la configuración de Modelos de IA."
+     },
+     "view": {
+       "customPrompt": "Prompt personalizado",
+@@ -1898,6 +1905,7 @@
+   },
+   "models": {
+     "learnMore": "Más información",
++    "noneAvailable": "No hay modelos disponibles",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "ASR multilingüe rápido con detección automática de idioma (25 idiomas)",
+diff --git a/src/locales/fr/translation.json b/src/locales/fr/translation.json
+index 32f9dec5..9feac79a 100644
+--- a/src/locales/fr/translation.json
++++ b/src/locales/fr/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "Aucun modèle renvoyé. Vérifiez l'URL du endpoint.",
+       "providerName": "Personnalisé",
+       "ownerLabel": "Propriétaire : {{owner}}",
+-      "unableToLoadModels": "Impossible de charger les modèles depuis le endpoint."
++      "unableToLoadModels": "Impossible de charger les modèles depuis le endpoint.",
++      "searchPlaceholder": "Rechercher des modèles…",
++      "selectedGroup": "Sélectionné",
++      "otherGroup": "Autre",
++      "noSearchResults": "Aucun modèle ne correspond à « {{query}} »",
++      "selectModelHint": "Aucun modèle sélectionné — choisissez-en un dans la liste ci-dessous.",
++      "keyRequiredHint": "Une clé API est requise pour l'inférence — ajoutez-en une pour utiliser ce fournisseur."
+     },
+     "getApiKey": "Obtenir la clé API ->",
+     "selectModel": "Sélectionner un modèle",
+@@ -1061,7 +1067,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Fournisseur",
+       "run": "Lancer le test",
+-      "customEndpoint": "Endpoint personnalisé"
++      "customEndpoint": "Endpoint personnalisé",
++      "apiKeyMissing": "Clé API {{provider}} non configurée. Ajoutez-la dans les paramètres Modèles IA."
+     },
+     "view": {
+       "customPrompt": "Prompt personnalisé",
+@@ -1898,6 +1905,7 @@
+   },
+   "models": {
+     "learnMore": "En savoir plus",
++    "noneAvailable": "Aucun modèle disponible",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "ASR multilingue rapide avec détection automatique de langue (25 langues)",
+diff --git a/src/locales/it/translation.json b/src/locales/it/translation.json
+index fc4601f3..84bafa00 100644
+--- a/src/locales/it/translation.json
++++ b/src/locales/it/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "Nessun modello restituito. Controlla l'URL dell'endpoint.",
+       "providerName": "Personalizzato",
+       "ownerLabel": "Proprietario: {{owner}}",
+-      "unableToLoadModels": "Impossibile caricare i modelli dall'endpoint."
++      "unableToLoadModels": "Impossibile caricare i modelli dall'endpoint.",
++      "searchPlaceholder": "Cerca modelli…",
++      "selectedGroup": "Selezionato",
++      "otherGroup": "Altro",
++      "noSearchResults": "Nessun modello corrisponde a \"{{query}}\"",
++      "selectModelHint": "Nessun modello selezionato — scegline uno dall'elenco qui sotto.",
++      "keyRequiredHint": "Per l'inferenza è richiesta una chiave API — aggiungine una per usare questo provider."
+     },
+     "getApiKey": "Ottieni la chiave API ->",
+     "selectModel": "Seleziona modello",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Provider",
+       "run": "Esegui test",
+-      "customEndpoint": "Endpoint personalizzato"
++      "customEndpoint": "Endpoint personalizzato",
++      "apiKeyMissing": "Chiave API di {{provider}} non configurata. Aggiungila nelle impostazioni Modelli IA."
+     },
+     "view": {
+       "customPrompt": "Prompt personalizzato",
+@@ -1850,6 +1857,7 @@
+   },
+   "models": {
+     "learnMore": "Scopri di più",
++    "noneAvailable": "Nessun modello disponibile",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "ASR multilingue veloce con rilevamento automatico della lingua (25 lingue)",
+diff --git a/src/locales/ja/translation.json b/src/locales/ja/translation.json
+index d2ae2451..ca447942 100644
+--- a/src/locales/ja/translation.json
++++ b/src/locales/ja/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "モデルが見つかりません。エンドポイント URL を確認してください。",
+       "providerName": "カスタム",
+       "ownerLabel": "提供元: {{owner}}",
+-      "unableToLoadModels": "エンドポイントからモデルを読み込めませんでした。"
++      "unableToLoadModels": "エンドポイントからモデルを読み込めませんでした。",
++      "searchPlaceholder": "モデルを検索…",
++      "selectedGroup": "選択中",
++      "otherGroup": "その他",
++      "noSearchResults": "「{{query}}」に一致するモデルはありません",
++      "selectModelHint": "モデルが未選択です — 下のリストから選択してください。",
++      "keyRequiredHint": "推論には API キーが必要です — このプロバイダーを使用するには追加してください。"
+     },
+     "getApiKey": "API キーを取得 ->",
+     "selectModel": "モデルを選択",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "プロバイダー",
+       "run": "テスト実行",
+-      "customEndpoint": "カスタムエンドポイント"
++      "customEndpoint": "カスタムエンドポイント",
++      "apiKeyMissing": "{{provider}} の API キーが未設定です。AI モデル設定で追加してください。"
+     },
+     "view": {
+       "customPrompt": "カスタムプロンプト",
+@@ -1850,6 +1857,7 @@
+   },
+   "models": {
+     "learnMore": "詳細を見る",
++    "noneAvailable": "利用可能なモデルがありません",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "高速多言語 ASR、自動言語検出対応（25 言語）",
+diff --git a/src/locales/pt/translation.json b/src/locales/pt/translation.json
+index 4b004b2e..ecfcd71d 100644
+--- a/src/locales/pt/translation.json
++++ b/src/locales/pt/translation.json
+@@ -428,7 +428,13 @@
+       "noModels": "Nenhum modelo retornado. Verifique a URL do endpoint.",
+       "providerName": "Personalizado",
+       "ownerLabel": "Proprietário: {{owner}}",
+-      "unableToLoadModels": "Não foi possível carregar modelos do endpoint."
++      "unableToLoadModels": "Não foi possível carregar modelos do endpoint.",
++      "searchPlaceholder": "Pesquisar modelos…",
++      "selectedGroup": "Selecionado",
++      "otherGroup": "Outros",
++      "noSearchResults": "Nenhum modelo corresponde a \"{{query}}\"",
++      "selectModelHint": "Nenhum modelo selecionado ainda — escolha um na lista abaixo.",
++      "keyRequiredHint": "Uma chave API é necessária para a inferência — adicione uma para usar este provedor."
+     },
+     "getApiKey": "Obter chave API ->",
+     "selectModel": "Selecionar modelo",
+@@ -992,7 +998,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Provedor",
+       "run": "Executar teste",
+-      "customEndpoint": "Endpoint personalizado"
++      "customEndpoint": "Endpoint personalizado",
++      "apiKeyMissing": "Chave API do {{provider}} não configurada. Adicione nas configurações de Modelos de IA."
+     },
+     "view": {
+       "customPrompt": "Prompt personalizado",
+@@ -1829,6 +1836,7 @@
+   },
+   "models": {
+     "learnMore": "Saiba mais",
++    "noneAvailable": "Nenhum modelo disponível",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "ASR multilíngue rápido com detecção automática de idioma (25 idiomas)",
+diff --git a/src/locales/ru/translation.json b/src/locales/ru/translation.json
+index 385dba15..fc6f8a3f 100644
+--- a/src/locales/ru/translation.json
++++ b/src/locales/ru/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "Модели не найдены. Проверьте URL конечной точки.",
+       "providerName": "Пользовательский",
+       "ownerLabel": "Автор: {{owner}}",
+-      "unableToLoadModels": "Не удалось загрузить модели с конечной точки."
++      "unableToLoadModels": "Не удалось загрузить модели с конечной точки.",
++      "searchPlaceholder": "Поиск моделей…",
++      "selectedGroup": "Выбрано",
++      "otherGroup": "Другое",
++      "noSearchResults": "Нет моделей по запросу «{{query}}»",
++      "selectModelHint": "Модель ещё не выбрана — выберите её из списка ниже.",
++      "keyRequiredHint": "Для инференса требуется API-ключ — добавьте его, чтобы использовать этого провайдера."
+     },
+     "getApiKey": "Получить API-ключ ->",
+     "selectModel": "Выберите модель",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "Провайдер",
+       "run": "Запустить тест",
+-      "customEndpoint": "Пользовательская конечная точка"
++      "customEndpoint": "Пользовательская конечная точка",
++      "apiKeyMissing": "API-ключ {{provider}} не настроен. Добавьте его в настройках ИИ-моделей."
+     },
+     "view": {
+       "customPrompt": "Пользовательский промпт",
+@@ -1850,6 +1857,7 @@
+   },
+   "models": {
+     "learnMore": "Подробнее",
++    "noneAvailable": "Нет доступных моделей",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "Быстрое многоязычное распознавание с автоопределением языка (25 языков)",
+diff --git a/src/locales/zh-CN/translation.json b/src/locales/zh-CN/translation.json
+index 07f96268..8a727efe 100644
+--- a/src/locales/zh-CN/translation.json
++++ b/src/locales/zh-CN/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "未返回任何模型，请检查端点 URL。",
+       "providerName": "自定义",
+       "ownerLabel": "所有者：{{owner}}",
+-      "unableToLoadModels": "无法从端点加载模型。"
++      "unableToLoadModels": "无法从端点加载模型。",
++      "searchPlaceholder": "搜索模型…",
++      "selectedGroup": "已选择",
++      "otherGroup": "其他",
++      "noSearchResults": "没有与“{{query}}”匹配的模型",
++      "selectModelHint": "尚未选择模型 — 请从下方列表中选择一个。",
++      "keyRequiredHint": "推理需要 API 密钥 — 请添加密钥以使用此提供商。"
+     },
+     "getApiKey": "获取你的 API Key ->",
+     "selectModel": "选择模型",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "服务商",
+       "run": "运行测试",
+-      "customEndpoint": "自定义端点"
++      "customEndpoint": "自定义端点",
++      "apiKeyMissing": "未配置 {{provider}} API 密钥，请在 AI 模型设置中添加。"
+     },
+     "view": {
+       "customPrompt": "自定义提示词",
+@@ -1845,6 +1852,7 @@
+   },
+   "models": {
+     "learnMore": "了解更多",
++    "noneAvailable": "没有可用的模型",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "快速多语言语音识别，自动语言检测（25 种语言）",
+diff --git a/src/locales/zh-TW/translation.json b/src/locales/zh-TW/translation.json
+index 24319547..193d4a36 100644
+--- a/src/locales/zh-TW/translation.json
++++ b/src/locales/zh-TW/translation.json
+@@ -449,7 +449,13 @@
+       "noModels": "沒有取得任何模型。請檢查端點 URL。",
+       "providerName": "自訂",
+       "ownerLabel": "擁有者：{{owner}}",
+-      "unableToLoadModels": "無法從端點載入模型。"
++      "unableToLoadModels": "無法從端點載入模型。",
++      "searchPlaceholder": "搜尋模型…",
++      "selectedGroup": "已選擇",
++      "otherGroup": "其他",
++      "noSearchResults": "沒有與「{{query}}」相符的模型",
++      "selectModelHint": "尚未選擇模型 — 請從下方清單中選擇一個。",
++      "keyRequiredHint": "推論需要 API 金鑰 — 請新增金鑰以使用此供應商。"
+     },
+     "getApiKey": "取得 API Key ->",
+     "selectModel": "選擇模型",
+@@ -1013,7 +1019,8 @@
+       "openwhisprCloud": "OpenWhispr Cloud",
+       "providerLabel": "供應商",
+       "run": "執行測試",
+-      "customEndpoint": "自訂端點"
++      "customEndpoint": "自訂端點",
++      "apiKeyMissing": "未設定 {{provider}} API 金鑰。請在 AI 模型設定中新增。"
+     },
+     "view": {
+       "customPrompt": "自訂提示詞",
+@@ -1845,6 +1852,7 @@
+   },
+   "models": {
+     "learnMore": "瞭解更多",
++    "noneAvailable": "沒有可用的模型",
+     "descriptions": {
+       "parakeet": {
+         "parakeet_tdt_0_6b_v3": "快速多語言 ASR，自動語言偵測（25 種語言）",
+diff --git a/src/models/ModelRegistry.ts b/src/models/ModelRegistry.ts
+index d89391a8..0962a9ad 100644
+--- a/src/models/ModelRegistry.ts
++++ b/src/models/ModelRegistry.ts
+@@ -315,6 +315,19 @@ export function getReasoningModelLabel(modelId: string): string {
+   return model?.fullLabel || modelId;
+ }
+ 
++const NON_REGISTRY_PROVIDER_NAMES: Record<string, string> = {
++  openrouter: "OpenRouter",
++  custom: "Custom",
++};
++
++export function getProviderDisplayName(provider: string): string {
++  return (
++    REASONING_PROVIDERS[provider as keyof typeof REASONING_PROVIDERS]?.name ??
++    NON_REGISTRY_PROVIDER_NAMES[provider] ??
++    provider
++  );
++}
++
+ export function getModelProvider(modelId: string): string {
+   if (isCloudCleanupMode()) {
+     return "openwhispr";
+@@ -326,6 +339,10 @@ export function getModelProvider(modelId: string): string {
+     return "custom";
+   }
+ 
++  if (storedProvider === "openrouter") {
++    return "openrouter";
++  }
++
+   if (isEnterpriseProvider(storedProvider)) {
+     return storedProvider;
+   }
+@@ -420,7 +437,7 @@ export interface OpenAiApiConfig {
+   supportsTemperature: boolean;
+ }
+ 
+-export function getOpenAiApiConfig(modelId: string): OpenAiApiConfig {
++export function getOpenAiApiConfig(modelId: string, provider?: string): OpenAiApiConfig {
+   const model = getCloudModel(modelId);
+   if (model?.tokenParam) {
+     return {
+@@ -429,6 +446,13 @@ export function getOpenAiApiConfig(modelId: string): OpenAiApiConfig {
+     };
+   }
+ 
++  // OpenRouter's vendor-prefixed ids (openai/gpt-4o, anthropic/claude-…) speak
++  // standard Chat Completions. Scoped to the provider so vendor-prefixed ids on
++  // custom endpoints keep the request shape they had before OpenRouter landed.
++  if (provider === "openrouter" && modelId.includes("/")) {
++    return { tokenParam: "max_tokens", supportsTemperature: true };
++  }
++
+   // Fallback for models not in the registry (custom model IDs, etc.)
+   const isLegacy =
+     modelId.startsWith("gpt-3") ||
+diff --git a/src/services/ReasoningService.ts b/src/services/ReasoningService.ts
+index 14dea324..eeff9330 100644
+--- a/src/services/ReasoningService.ts
++++ b/src/services/ReasoningService.ts
+@@ -2,6 +2,7 @@ import {
+   getModelProvider,
+   getCloudModel,
+   getOpenAiApiConfig,
++  getProviderDisplayName,
+   isEnterpriseProvider,
+ } from "../models/ModelRegistry";
+ import { BaseReasoningService, ReasoningConfig } from "./BaseReasoningService";
+@@ -64,7 +65,7 @@ class ReasoningService extends BaseReasoningService {
+   }
+ 
+   private async getApiKey(
+-    provider: "openai" | "anthropic" | "gemini" | "groq" | "tinfoil" | "custom"
++    provider: "openai" | "anthropic" | "gemini" | "groq" | "tinfoil" | "custom" | "openrouter"
+   ): Promise<string> {
+     if (provider === "custom") {
+       let customKey = "";
+@@ -102,6 +103,7 @@ class ReasoningService extends BaseReasoningService {
+           anthropic: () => window.electronAPI.getAnthropicKey(),
+           gemini: () => window.electronAPI.getGeminiKey(),
+           groq: () => window.electronAPI.getGroqKey(),
++          openrouter: () => window.electronAPI.getOpenrouterKey(),
+           tinfoil: () => window.electronAPI.getTinfoilKey?.(),
+         };
+         apiKey = (await keyGetters[provider]()) ?? undefined;
+@@ -125,12 +127,16 @@ class ReasoningService extends BaseReasoningService {
+     }
+ 
+     if (!apiKey) {
+-      const errorMsg = `${provider.charAt(0).toUpperCase() + provider.slice(1)} API key not configured`;
++      const displayName = getProviderDisplayName(provider);
++      const errorMsg = `${displayName} API key not configured`;
+       logger.logReasoning(`${provider.toUpperCase()}_KEY_MISSING`, {
+         provider,
+         error: errorMsg,
+       });
+-      throw new Error(errorMsg);
++      const error = new Error(errorMsg) as Error & { code: string; provider: string };
++      error.code = "API_KEY_MISSING";
++      error.provider = displayName;
++      throw error;
+     }
+ 
+     return apiKey;
+@@ -349,7 +355,15 @@ class ReasoningService extends BaseReasoningService {
+     provider: string,
+     config: ReasoningConfig & { systemPrompt: string }
+   ): AsyncGenerator<string, void, unknown> {
+-    const cloudProviders = ["openai", "groq", "gemini", "anthropic", "tinfoil", "custom"];
++    const cloudProviders = [
++      "openai",
++      "groq",
++      "gemini",
++      "anthropic",
++      "tinfoil",
++      "custom",
++      "openrouter",
++    ];
+     const isLocalProvider = !cloudProviders.includes(provider);
+ 
+     const settings = getSettings();
+@@ -371,7 +385,7 @@ class ReasoningService extends BaseReasoningService {
+       endpoint = `http://127.0.0.1:${serverResult.port}/v1/chat/completions`;
+     } else {
+       const providerKey = provider as
+-        "openai" | "groq" | "gemini" | "anthropic" | "tinfoil" | "custom";
++        "openai" | "groq" | "gemini" | "anthropic" | "tinfoil" | "custom" | "openrouter";
+       const overrideKey = providerKey === "custom" ? config.customApiKey?.trim() : "";
+       apiKey = overrideKey || (await this.getApiKey(providerKey));
+ 
+@@ -382,6 +396,9 @@ class ReasoningService extends BaseReasoningService {
+         case "gemini":
+           endpoint = buildApiUrl(API_ENDPOINTS.GEMINI, "/openai/chat/completions");
+           break;
++        case "openrouter":
++          endpoint = buildApiUrl(API_ENDPOINTS.OPENROUTER_BASE, "/chat/completions");
++          break;
+         case "tinfoil":
+           throw new Error("Tinfoil streaming must use the verified SDK transport");
+         case "openai":
+@@ -397,7 +414,7 @@ class ReasoningService extends BaseReasoningService {
+       }
+     }
+ 
+-    const apiConfig = getOpenAiApiConfig(model);
++    const apiConfig = getOpenAiApiConfig(model, provider);
+     const useOldTokenParam = isLocalProvider || isLanCleanup || provider === "groq";
+ 
+     const requestBody: Record<string, unknown> = {
+@@ -555,7 +572,15 @@ class ReasoningService extends BaseReasoningService {
+       );
+     }
+ 
+-    const cloudProviders = ["openai", "groq", "gemini", "anthropic", "tinfoil", "custom"];
++    const cloudProviders = [
++      "openai",
++      "groq",
++      "gemini",
++      "anthropic",
++      "tinfoil",
++      "custom",
++      "openrouter",
++    ];
+     const isLocalProvider = !cloudProviders.includes(provider);
+ 
+     const settings = getSettings();
+@@ -585,17 +610,26 @@ class ReasoningService extends BaseReasoningService {
+       baseURL = `http://127.0.0.1:${serverResult.port}/v1`;
+     } else {
+       const providerKey = provider as
+-        "openai" | "groq" | "gemini" | "anthropic" | "tinfoil" | "custom";
++        "openai" | "groq" | "gemini" | "anthropic" | "tinfoil" | "custom" | "openrouter";
+       const overrideKey = providerKey === "custom" ? config.customApiKey?.trim() : "";
+       apiKey = overrideKey || (await this.getApiKey(providerKey));
+       baseURL =
+-        provider === "custom" ? config.baseUrl?.trim() || getConfiguredOpenAIBase() : undefined;
++        provider === "openrouter"
++          ? API_ENDPOINTS.OPENROUTER_BASE
++          : provider === "custom"
++            ? config.baseUrl?.trim() || getConfiguredOpenAIBase()
++            : undefined;
+     }
+     const aiProvider = isLocalProvider || isLanCleanup ? "local" : provider;
++    // OpenRouter ids are never in the local registry, so the supportsThinking
++    // exemption below can't apply — honor the toggle directly.
++    const openrouterDisableThinking = provider === "openrouter" && config.disableThinking === true;
+     // Resolving a Tinfoil model refreshes the registry, so read model config after it.
+-    const aiModel = await getAIModel(aiProvider, model, apiKey, baseURL);
++    const aiModel = await getAIModel(aiProvider, model, apiKey, baseURL, {
++      disableThinking: openrouterDisableThinking,
++    });
+ 
+-    const apiConfig = getOpenAiApiConfig(model);
++    const apiConfig = getOpenAiApiConfig(model, provider);
+     const modelDef = getCloudModel(model);
+     const userSuppressesThinking = config.disableThinking === true && !!modelDef?.supportsThinking;
+     const needsGroqDisableThinking =
+@@ -876,6 +910,7 @@ class ReasoningService extends BaseReasoningService {
+       const anthropicKey = await window.electronAPI?.getAnthropicKey?.();
+       const geminiKey = await window.electronAPI?.getGeminiKey?.();
+       const groqKey = await window.electronAPI?.getGroqKey?.();
++      const openrouterKey = await window.electronAPI?.getOpenrouterKey?.();
+       const tinfoilKey = await window.electronAPI?.getTinfoilKey?.();
+       const localAvailable = await window.electronAPI?.checkLocalReasoningAvailable?.();
+ 
+@@ -884,11 +919,20 @@ class ReasoningService extends BaseReasoningService {
+         hasAnthropic: !!anthropicKey,
+         hasGemini: !!geminiKey,
+         hasGroq: !!groqKey,
++        hasOpenrouter: !!openrouterKey,
+         hasTinfoil: !!tinfoilKey,
+         hasLocal: !!localAvailable,
+       });
+ 
+-      return !!(openaiKey || anthropicKey || geminiKey || groqKey || tinfoilKey || localAvailable);
++      return !!(
++        openaiKey ||
++        anthropicKey ||
++        geminiKey ||
++        groqKey ||
++        openrouterKey ||
++        tinfoilKey ||
++        localAvailable
++      );
+     } catch (error) {
+       logger.logReasoning("API_KEY_CHECK_ERROR", {
+         error: (error as Error).message,
+@@ -900,7 +944,8 @@ class ReasoningService extends BaseReasoningService {
+   }
+ 
+   clearApiKeyCache(
+-    provider?: "openai" | "anthropic" | "gemini" | "groq" | "mistral" | "tinfoil" | "custom"
++    provider?:
++      "openai" | "anthropic" | "gemini" | "groq" | "mistral" | "tinfoil" | "custom" | "openrouter"
+   ): void {
+     if (provider) {
+       if (provider !== "custom") {
+diff --git a/src/services/ai/inferenceProviders/index.ts b/src/services/ai/inferenceProviders/index.ts
+index b865f4a9..be70824a 100644
+--- a/src/services/ai/inferenceProviders/index.ts
++++ b/src/services/ai/inferenceProviders/index.ts
+@@ -12,6 +12,7 @@ import { tinfoilProvider } from "./tinfoil";
+ export const PROVIDER_REGISTRY: Readonly<Record<string, InferenceProvider>> = Object.freeze({
+   openai: openaiProvider,
+   custom: openaiProvider,
++  openrouter: openaiProvider,
+   anthropic: anthropicProvider,
+   gemini: geminiProvider,
+   groq: groqProvider,
+diff --git a/src/services/ai/inferenceProviders/openai.ts b/src/services/ai/inferenceProviders/openai.ts
+index 767dd933..37128b4a 100644
+--- a/src/services/ai/inferenceProviders/openai.ts
++++ b/src/services/ai/inferenceProviders/openai.ts
+@@ -124,6 +124,7 @@ export const openaiProvider: InferenceProvider = {
+   async call({ text, model, agentName, config, ctx }) {
+     const resolvedProvider = config.provider || getSettings().cleanupProvider || "";
+     const isCustomProvider = resolvedProvider === "custom";
++    const isOpenRouter = resolvedProvider === "openrouter";
+ 
+     logger.logReasoning("OPENAI_START", {
+       model,
+@@ -132,7 +133,9 @@ export const openaiProvider: InferenceProvider = {
+     });
+ 
+     const overrideKey = isCustomProvider ? config.customApiKey?.trim() : "";
+-    const apiKey = overrideKey || (await ctx.getApiKey(isCustomProvider ? "custom" : "openai"));
++    const apiKey =
++      overrideKey ||
++      (await ctx.getApiKey(isCustomProvider ? "custom" : isOpenRouter ? "openrouter" : "openai"));
+ 
+     logger.logReasoning("OPENAI_API_KEY", {
+       hasApiKey: !!apiKey,
+@@ -146,9 +149,17 @@ export const openaiProvider: InferenceProvider = {
+       { role: "user", content: userContent },
+     ];
+ 
+-    const openAiBase = config.baseUrl?.trim() || getConfiguredOpenAIBase();
+-    await detectServerType(openAiBase);
+-    const endpointCandidates = getEndpointCandidates(openAiBase);
++    const openAiBase = isOpenRouter
++      ? API_ENDPOINTS.OPENROUTER_BASE
++      : config.baseUrl?.trim() || getConfiguredOpenAIBase();
++    // OpenRouter speaks Chat Completions only — no /responses probe needed.
++    let endpointCandidates: Array<{ url: string; type: "responses" | "chat" }>;
++    if (isOpenRouter) {
++      endpointCandidates = [{ url: buildApiUrl(openAiBase, "/chat/completions"), type: "chat" }];
++    } else {
++      await detectServerType(openAiBase);
++      endpointCandidates = getEndpointCandidates(openAiBase);
++    }
+     const isCustomEndpoint = openAiBase !== API_ENDPOINTS.OPENAI_BASE;
+ 
+     logger.logReasoning("OPENAI_ENDPOINTS", {
+@@ -187,7 +198,7 @@ export const openaiProvider: InferenceProvider = {
+               )
+             );
+ 
+-          const apiConfig = getOpenAiApiConfig(model);
++          const apiConfig = getOpenAiApiConfig(model, resolvedProvider);
+           const requestBody: Record<string, unknown> = { model };
+ 
+           if (type === "responses") {
+diff --git a/src/services/ai/providers.ts b/src/services/ai/providers.ts
+index d9ceecda..ce0a8558 100644
+--- a/src/services/ai/providers.ts
++++ b/src/services/ai/providers.ts
+@@ -11,11 +11,25 @@ import { getTinfoilLanguageModel } from "./tinfoilClient";
+ // APIs (fs, process, AWS credential chain) that don't work in the browser.
+ // See `src/helpers/enterpriseAiProviders.js` for the main-process counterpart.
+ 
++// OpenRouter's reasoning control is a top-level request field the AI SDK
++// can't emit — inject it at the fetch boundary.
++const withDisabledReasoning: typeof fetch = (input, init) => {
++  if (typeof init?.body === "string") {
++    try {
++      const body = JSON.parse(init.body);
++      body.reasoning = { enabled: false };
++      init = { ...init, body: JSON.stringify(body) };
++    } catch {}
++  }
++  return fetch(input, init);
++};
++
+ export async function getAIModel(
+   provider: string,
+   model: string,
+   apiKey: string,
+-  baseURL?: string
++  baseURL?: string,
++  opts?: { disableThinking?: boolean }
+ ): Promise<LanguageModel> {
+   switch (provider) {
+     case "openai":
+@@ -30,6 +44,13 @@ export async function getAIModel(
+       return getTinfoilLanguageModel(apiKey, model);
+     case "custom":
+       return createOpenAI({ apiKey, baseURL })(model);
++    case "openrouter":
++      // OpenRouter implements Chat Completions, not the OpenAI Responses API.
++      return createOpenAI({
++        apiKey,
++        baseURL,
++        ...(opts?.disableThinking ? { fetch: withDisabledReasoning } : {}),
++      }).chat(model);
+     case "local":
+       return createOpenAI({ apiKey: "no-key", baseURL }).chat(model);
+     default:
+diff --git a/src/services/ai/thinkingSuppression.ts b/src/services/ai/thinkingSuppression.ts
+index b090c848..7d826b93 100644
+--- a/src/services/ai/thinkingSuppression.ts
++++ b/src/services/ai/thinkingSuppression.ts
+@@ -20,6 +20,13 @@ function suppressThinking(requestBody: Record<string, unknown>, providerKey: str
+     return;
+   }
+ 
++  // OpenRouter forwards unknown params to upstream backends, which may reject
++  // them — use its native reasoning control instead.
++  if (providerKey === "openrouter") {
++    requestBody.reasoning = { enabled: false };
++    return;
++  }
++
+   if (usesOllamaDialect(providerKey)) {
+     requestBody.think = false;
+   } else {
+diff --git a/src/stores/settingsStore.ts b/src/stores/settingsStore.ts
+index 81be18d6..8a5ff4f7 100644
+--- a/src/stores/settingsStore.ts
++++ b/src/stores/settingsStore.ts
+@@ -569,6 +569,7 @@ export interface SettingsState
+   setGroqApiKey: (key: string) => void;
+   setXaiApiKey: (key: string) => void;
+   setMistralApiKey: (key: string) => void;
++  setOpenrouterApiKey: (key: string) => void;
+   setCortiClientId: (key: string) => void;
+   setCortiClientSecret: (key: string) => void;
+   setTinfoilApiKey: (key: string) => void;
+@@ -765,6 +766,7 @@ const SECRET_IPC_SAVERS = {
+   groq: "saveGroqKey",
+   xai: "saveXaiKey",
+   mistral: "saveMistralKey",
++  openrouter: "saveOpenrouterKey",
+   cortiClientId: "saveCortiClientId",
+   cortiClientSecret: "saveCortiClientSecret",
+   tinfoil: "saveTinfoilKey",
+@@ -805,6 +807,7 @@ const STALE_SECRET_LOCALSTORAGE_KEYS = [
+   "groqApiKey",
+   "xaiApiKey",
+   "mistralApiKey",
++  "openrouterApiKey",
+   "cortiClientId",
+   "cortiClientSecret",
+   "tinfoilApiKey",
+@@ -819,7 +822,8 @@ const STALE_SECRET_LOCALSTORAGE_KEYS = [
+ ] as const;
+ 
+ function invalidateApiKeyCaches(
+-  provider?: "openai" | "anthropic" | "gemini" | "groq" | "mistral" | "tinfoil" | "custom"
++  provider?:
++    "openai" | "anthropic" | "gemini" | "groq" | "mistral" | "tinfoil" | "custom" | "openrouter"
+ ) {
+   if (provider) {
+     if (_ReasoningService) {
+@@ -837,6 +841,21 @@ function invalidateApiKeyCaches(
+   debouncedPersistToEnv();
+ }
+ 
++// Uniform BYOK key setter: persist to the secure store (debounced) and clear
++// the provider's cached key. cacheProvider is omitted where there is no scoped
++// cache to clear (xai), preserving prior behavior.
++function createSecretSetter(
++  storeKey: string,
++  saver: SecretProvider,
++  cacheProvider?: Parameters<typeof invalidateApiKeyCaches>[0]
++) {
++  return (key: string) => {
++    useSettingsStore.setState({ [storeKey]: key });
++    debouncedSaveSecret(saver, key);
++    invalidateApiKeyCaches(cacheProvider);
++  };
++}
++
+ export const useSettingsStore = create<SettingsState>()((set, get) => ({
+   uiLanguage: normalizeUiLanguage(isBrowser ? localStorage.getItem("uiLanguage") : null),
+   useLocalWhisper: readBoolean("useLocalWhisper", false),
+@@ -886,6 +905,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
+   groqApiKey: "",
+   xaiApiKey: "",
+   mistralApiKey: "",
++  openrouterApiKey: "",
+   cortiClientId: "",
+   cortiClientSecret: "",
+   tinfoilApiKey: "",
+@@ -1288,36 +1308,13 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
+     }
+   },
+ 
+-  setOpenaiApiKey: (key: string) => {
+-    set({ openaiApiKey: key });
+-    debouncedSaveSecret("openai", key);
+-    invalidateApiKeyCaches("openai");
+-  },
+-  setAnthropicApiKey: (key: string) => {
+-    set({ anthropicApiKey: key });
+-    debouncedSaveSecret("anthropic", key);
+-    invalidateApiKeyCaches("anthropic");
+-  },
+-  setGeminiApiKey: (key: string) => {
+-    set({ geminiApiKey: key });
+-    debouncedSaveSecret("gemini", key);
+-    invalidateApiKeyCaches("gemini");
+-  },
+-  setGroqApiKey: (key: string) => {
+-    set({ groqApiKey: key });
+-    debouncedSaveSecret("groq", key);
+-    invalidateApiKeyCaches("groq");
+-  },
+-  setXaiApiKey: (key: string) => {
+-    set({ xaiApiKey: key });
+-    debouncedSaveSecret("xai", key);
+-    invalidateApiKeyCaches();
+-  },
+-  setMistralApiKey: (key: string) => {
+-    set({ mistralApiKey: key });
+-    debouncedSaveSecret("mistral", key);
+-    invalidateApiKeyCaches("mistral");
+-  },
++  setOpenaiApiKey: createSecretSetter("openaiApiKey", "openai", "openai"),
++  setAnthropicApiKey: createSecretSetter("anthropicApiKey", "anthropic", "anthropic"),
++  setGeminiApiKey: createSecretSetter("geminiApiKey", "gemini", "gemini"),
++  setGroqApiKey: createSecretSetter("groqApiKey", "groq", "groq"),
++  setXaiApiKey: createSecretSetter("xaiApiKey", "xai"),
++  setMistralApiKey: createSecretSetter("mistralApiKey", "mistral", "mistral"),
++  setOpenrouterApiKey: createSecretSetter("openrouterApiKey", "openrouter", "openrouter"),
+   setCortiClientId: (key: string) => {
+     set({ cortiClientId: key });
+     debouncedSaveSecret("cortiClientId", key);
+@@ -1330,11 +1327,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
+   },
+   setCortiEnvironment: createStringSetter("cortiEnvironment"),
+   setCortiTenant: createStringSetter("cortiTenant"),
+-  setTinfoilApiKey: (key: string) => {
+-    set({ tinfoilApiKey: key });
+-    debouncedSaveSecret("tinfoil", key);
+-    invalidateApiKeyCaches("tinfoil");
+-  },
++  setTinfoilApiKey: createSecretSetter("tinfoilApiKey", "tinfoil", "tinfoil"),
+   setCustomTranscriptionApiKey: (key: string) => {
+     set({ customTranscriptionApiKey: key });
+     debouncedSaveSecret("customTranscription", key);
+@@ -1721,6 +1714,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
+     if (keys.groqApiKey !== undefined) s.setGroqApiKey(keys.groqApiKey);
+     if (keys.xaiApiKey !== undefined) s.setXaiApiKey(keys.xaiApiKey);
+     if (keys.mistralApiKey !== undefined) s.setMistralApiKey(keys.mistralApiKey);
++    if (keys.openrouterApiKey !== undefined) s.setOpenrouterApiKey(keys.openrouterApiKey);
+     if (keys.cortiClientId !== undefined) s.setCortiClientId(keys.cortiClientId);
+     if (keys.cortiClientSecret !== undefined) s.setCortiClientSecret(keys.cortiClientSecret);
+     if (keys.tinfoilApiKey !== undefined) s.setTinfoilApiKey(keys.tinfoilApiKey);
+@@ -1970,6 +1964,7 @@ export async function initializeSettings(): Promise<void> {
+         groq,
+         xai,
+         mistral,
++        openrouter,
+         cortiClientId,
+         cortiClientSecret,
+         tinfoil,
+@@ -1987,6 +1982,7 @@ export async function initializeSettings(): Promise<void> {
+         window.electronAPI.getGroqKey?.(),
+         window.electronAPI.getXaiKey?.(),
+         window.electronAPI.getMistralKey?.(),
++        window.electronAPI.getOpenrouterKey?.(),
+         window.electronAPI.getCortiClientId?.(),
+         window.electronAPI.getCortiClientSecret?.(),
+         window.electronAPI.getTinfoilKey?.(),
+@@ -2006,6 +2002,7 @@ export async function initializeSettings(): Promise<void> {
+         groqApiKey: groq || "",
+         xaiApiKey: xai || "",
+         mistralApiKey: mistral || "",
++        openrouterApiKey: openrouter || "",
+         cortiClientId: cortiClientId || "",
+         cortiClientSecret: cortiClientSecret || "",
+         tinfoilApiKey: tinfoil || "",
+@@ -2021,6 +2018,21 @@ export async function initializeSettings(): Promise<void> {
+       for (const key of STALE_SECRET_LOCALSTORAGE_KEYS) {
+         localStorage.removeItem(key);
+       }
++
++      // Users who configured OpenRouter through the Custom tab keep their key
++      // in the shared custom slot — seed the dedicated slot from it once.
++      if (!openrouter && customRx) {
++        const hydrated = useSettingsStore.getState();
++        const usesOpenRouterViaCustom = (Object.keys(INFERENCE_SCOPES) as InferenceScope[]).some(
++          (scope) => {
++            const cfg = selectResolvedLLMConfig(hydrated, scope);
++            return cfg.provider === "custom" && (cfg.cloudBaseUrl || "").includes("openrouter.ai");
++          }
++        );
++        if (usesOpenRouterViaCustom) {
++          hydrated.setOpenrouterApiKey(customRx);
++        }
++      }
+     } catch (err) {
+       logger.warn(
+         "Failed to hydrate secrets from main process",
+diff --git a/src/types/electron.ts b/src/types/electron.ts
+index f3612cb5..7e24f452 100644
+--- a/src/types/electron.ts
++++ b/src/types/electron.ts
+@@ -1001,6 +1001,8 @@ declare global {
+       // Groq API key management
+       getGroqKey: () => Promise<string | null>;
+       saveGroqKey: (key: string) => Promise<void>;
++      getOpenrouterKey: () => Promise<string | null>;
++      saveOpenrouterKey: (key: string) => Promise<void>;
+ 
+       // xAI API key management
+       getXaiKey?: () => Promise<string | null>;
+diff --git a/src/utils/externalLinks.ts b/src/utils/externalLinks.ts
+index 630ec353..d8c89554 100644
+--- a/src/utils/externalLinks.ts
++++ b/src/utils/externalLinks.ts
+@@ -12,3 +12,19 @@ export function createExternalLinkHandler(url: string) {
+     openExternalLink(url);
+   };
+ }
++
++// Tags an outbound link with OpenWhispr UTM attribution. Non-http(s) and
++// already-attributed URLs pass through unchanged so existing links can't break.
++export function withUtm(url: string, campaign = "app"): string {
++  try {
++    const u = new URL(url);
++    if (u.protocol !== "http:" && u.protocol !== "https:") return url;
++    if (u.searchParams.has("utm_source")) return url; // respect existing attribution
++    u.searchParams.set("utm_source", "openwhispr");
++    u.searchParams.set("utm_medium", "app");
++    u.searchParams.set("utm_campaign", campaign);
++    return u.toString();
++  } catch {
++    return url;
++  }
++}
+diff --git a/src/utils/providerIcons.ts b/src/utils/providerIcons.ts
+index 0b9d764f..c349803f 100644
+--- a/src/utils/providerIcons.ts
++++ b/src/utils/providerIcons.ts
+@@ -13,6 +13,7 @@ import azureIcon from "@/assets/icons/providers/azure.svg";
+ import vertexIcon from "@/assets/icons/providers/vertex.svg";
+ import xaiIcon from "@/assets/icons/providers/xai.svg";
+ import cortiIcon from "@/assets/icons/providers/corti.svg";
++import openrouterIcon from "@/assets/icons/providers/openrouter.svg";
+ import tinfoilIcon from "@/assets/icons/providers/tinfoil.svg";
+ 
+ export const PROVIDER_ICONS: Record<string, string> = {
+@@ -32,6 +33,7 @@ export const PROVIDER_ICONS: Record<string, string> = {
+   vertex: vertexIcon,
+   xai: xaiIcon,
+   corti: cortiIcon,
++  openrouter: openrouterIcon,
+   tinfoil: tinfoilIcon,
+ };
+ 
+@@ -46,9 +48,36 @@ export const MONOCHROME_PROVIDERS = [
+   "openai-oss",
+   "xai",
+   "corti",
++  "openrouter",
+   "tinfoil",
+ ] as const;
+ 
+ export function isMonochromeProvider(provider: string): boolean {
+   return (MONOCHROME_PROVIDERS as readonly string[]).includes(provider);
+ }
++
++// OpenRouter-style provider prefixes (the slug before "/") → our internal icon keys.
++const REMOTE_PROVIDER_ALIASES: Record<string, string> = {
++  google: "gemini",
++  "meta-llama": "llama",
++  meta: "llama",
++  mistralai: "mistral",
++  "x-ai": "xai",
++  amazon: "bedrock",
++};
++
++// Resolves the icon for a remote provider prefix (e.g. "openai" from "openai/gpt-4").
++// A model family with its own icon wins over the publisher prefix, so
++// "google/gemma-7b" gets the Gemma icon rather than Gemini's.
++export function getRemoteProviderIcon(
++  prefix: string,
++  modelName?: string
++): {
++  icon: string | undefined;
++  invertInDark: boolean;
++} {
++  const base = prefix.startsWith("~") ? prefix.slice(1) : prefix;
++  const family = modelName?.split(/[-.:@ ]/, 1)[0].toLowerCase();
++  const key = family && PROVIDER_ICONS[family] ? family : (REMOTE_PROVIDER_ALIASES[base] ?? base);
++  return { icon: PROVIDER_ICONS[key], invertInDark: isMonochromeProvider(key) };
++}

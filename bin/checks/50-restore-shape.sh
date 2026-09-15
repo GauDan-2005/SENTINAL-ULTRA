@@ -105,6 +105,15 @@ def split_id(i):
         o, n = i.split("#", 1)
         return o, n
     if "::" in i:
+        head = i.split("::", 1)[0]
+        # A path-shaped FIRST segment means the id is <file>::[Class::]name, which is
+        # pytest's class form and deno's step form. There the file is the first segment
+        # and everything after it is class plus test name, so rsplit hands back
+        # "<file>::Class" as the path and nothing ever matches it. Measured on
+        # deepfabric 297, where all five tests/test_topic_graph.py::TestGraph::* ids came
+        # back UNRESOLVED. Same class of defect as the Go arm in LEDGER L7.
+        if "/" in head or head.endswith(SRC_EXT):
+            return head, i.rsplit("::", 1)[1]
         o, n = i.rsplit("::", 1)
         return o, n
     return None, i

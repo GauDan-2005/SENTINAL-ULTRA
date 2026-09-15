@@ -1,13 +1,14 @@
 ---
 id: preflight-false-positives
 status: locally-verified
-last_verified: 2026-08-07
+last_verified: 2026-08-16
 verified_by:
   - 20260807_080545__tair-opensource_redisshake__1005
-evidence: "bin/preflight.sh blocked a clean bundle on an upstream scripts/commands/config.json, and bin/checks/50-restore-shape printed UNRESOLVED on all 22 graded ids because Go ids are import paths"
+  - 20260803_111822__nolabs-ai_deepfabric__297
+evidence: "bin/preflight.sh blocked a clean bundle on an upstream scripts/commands/config.json; bin/checks/50-restore-shape printed UNRESOLVED on all 22 graded ids because Go ids are import paths; and on deepfabric 297 the same snippet printed a plausible but wrong 5 of 16 because pytest CLASS-scoped ids put the file in the first :: segment rather than the last but one"
 applies_to:
-  languages: [go, any]
-  runners: [go-test, any]
+  languages: [go, python, any]
+  runners: [go-test, pytest, any]
   phases: [packaging, pre-upload]
 blocks_submission: false
 fails_gate: []
@@ -80,7 +81,47 @@ shipped seven guards running the agent's own copies.
 `src/test` root to derive from. Build the payload from `git ls-files | grep '_test\.go$'` and
 derive the wipe list from the archive itself, per LEDGER L18.
 
-## 3. Send gate 7 goes red after any git command in `work/`, and the content is fine
+## 2b. It also mis-resolves a pytest CLASS-scoped id, and this one prints a number rather than UNRESOLVED
+
+Added 2026-08-16 from deepfabric 297, the first pytest task in this workspace.
+
+Section 2 is about an id the checker cannot map at all, which it says so about. **This is the worse
+case: the id maps to something, the something is wrong, and a plausible number comes out.** There is
+no `UNRESOLVED` line to warn you.
+
+The Section 10.3 snippet does `i.rsplit('::', 1)` and treats the head as a path. On pytest that is
+right for a **function** id and wrong for a **class** id:
+
+| id shape | `rsplit('::', 1)` head | matches a stem? |
+|---|---|---|
+| `tests/test_config.py::test_get_engine_args` | `tests/test_config.py` | yes, correct |
+| `tests/test_topic_graph.py::TestGraph::test_build` | `tests/test_topic_graph.py::TestGraph` | **no, and it is counted outside** |
+
+**On pytest the file is the FIRST `::` segment, never the last but one.** Measured on deepfabric 297,
+whose `tests.patch` edits all four graded files so the true answer is zero:
+
+```
+snippet as written : 5 of 16 'outside'   (every one of them class-scoped)
+corrected          : 0 of 16 outside
+```
+
+All five misreported ids are the `TestGraph` and `TestIntegration` ones. A session reading `5 of 16`
+would conclude a create-only patch is insufficient **for the wrong reason** and reach for a full-tree
+payload, when the bundle needs a targeted payload of four files.
+
+The one-line correction, which is right for both pytest shapes and leaves the other schemes alone:
+
+```python
+head = i.split('::', 1)[0] if ('::' in i and '/' in i.split('::', 1)[0]) else head
+```
+
+This is LEDGER **L7** on a fifth id scheme, after pytest-function, JUnit `#`, cargo `module::test`
+and Go import paths. The generalisation L7 already states holds and is worth restating in its
+strongest form: **check that the id scheme and the `touched` paths share a namespace, and check it
+per shape rather than per language.** One language can carry two id shapes and only one of them can
+be broken.
+
+## 3. Pre-submit gate 7 goes red after any git command in `work/`, and the content is fine
 
 Added 2026-08-11 from firefly 1123, round 4.
 

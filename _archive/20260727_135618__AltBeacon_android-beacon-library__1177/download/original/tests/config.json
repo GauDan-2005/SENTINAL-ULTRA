@@ -1,0 +1,37 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "./gradlew --no-daemon --offline testDebugUnitTest --tests 'org.altbeacon.beacon.SettingsTest' --tests 'org.altbeacon.beacon.SettingsJavaTest' || true\npython3 - <<'PY'\nimport glob, xml.etree.ElementTree as ET\nfor f in sorted(glob.glob('lib/build/test-results/testDebugUnitTest/*.xml')):\n    root = ET.parse(f).getroot()\n    for tc in root.iter('testcase'):\n        name = tc.get('classname') + '::' + tc.get('name')\n        if tc.find('failure') is not None or tc.find('error') is not None:\n            status = 'FAILED'\n        elif tc.find('skipped') is not None:\n            status = 'SKIPPED'\n        else:\n            status = 'PASSED'\n        print(name, status)\nPY"
+    ],
+    "selected_test_files_to_run": [
+      "lib/src/test/java/org/altbeacon/beacon/SettingsJavaTest.java",
+      "lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "org.altbeacon.beacon.SettingsTest::setSettingsTest",
+      "org.altbeacon.beacon.SettingsTest::configureCustomDistanceCalculatorTest",
+      "org.altbeacon.beacon.SettingsJavaTest::setSettingsTest"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^(?P<name>[A-Za-z0-9_.]+::[A-Za-z0-9_$]+) PASSED$",
+      "fail_regex": "^(?P<name>[A-Za-z0-9_.]+::[A-Za-z0-9_$]+) (?:FAILED|ERROR)$"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

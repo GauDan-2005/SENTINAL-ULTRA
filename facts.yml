@@ -41,7 +41,7 @@
 
 meta:
   version: 1
-  updated: 2026-08-06
+  updated: 2026-08-14
   precedence: >-
     docs/ wins on policy and judgment. learning/ wins on observed platform
     behaviour. This file wins on the number itself, because it is the only copy
@@ -599,6 +599,35 @@ facts:
       - .claude/skills/quality-rehearsal/SKILL.md
     pattern: '(?i)review gate|agentic judge|difficulty screen'
 
+  - id: difficulty_check_cap
+    value: {max_checks: 4, auto_verdict: "Invalid Difficulty", effective_from: "2026-08-14", retroactive: false, is_rejection: false, still_human_reviewed: true, counter_advances_only_on_returned_result: true, reviewer_bounce_resets_to_zero: true, new_readonly_fields: 4, named_fields: ["Difficulty checks run", "Difficulty checks remaining", "Last counted submission version", "Last difficulty check result"], resubmit_unchanged_at_limit: true}
+    statement: "As of 2026-08-14 a task gets at most 4 difficulty checks. Once 4 have run without passing, the platform sets the validity answer to Invalid Difficulty itself and routes the task to review as it stands. It is not a rejection, it is not retroactive, and a human reviewer still reads it. At the limit the task comes back once with the verdict already on it and is resubmitted unchanged. The counter advances only when a check runs AND returns a result, so a submission returned before the check runs and one killed by a technical issue both cost nothing, and a reviewer sending the task back restarts the count at zero. All four read-only fields were named off the live page on 2026-08-18: Difficulty checks run (helper text: counted since the last review, which is the platform stating the per-review-cycle reset), Difficulty checks remaining, Last counted submission version (the version id the last increment was charged to, which is what makes a platform retry cost no run), and Last difficulty check result (persisted so the unfixable verdict can be re-applied if an EC changes the radio). docs/faq.md names only the first two."
+    source: docs/faq.md
+    kind: rule
+    verified_on: 2026-08-18
+    enforced_by: platform difficulty check
+    appears_in:
+      - CLAUDE.md
+      - .claude/rules/
+      - .cursor/rules/sentinel-difficulty-scope.mdc
+      - .claude/skills/sentinel-difficulty-scope/SKILL.md
+      - learning/when-fail-easy-is-not-not-fixable.md
+      - learning/platform-announcements.md
+    pattern: '(?i)invalid difficulty|difficulty.check (cap|budget|counter)|four difficulty checks|4 difficulty checks|checks remaining'
+    contradicts:
+      - regex: '(?i)not a strike count that terminates'
+        why: "as of 2026-08-14 it does terminate; the fourth difficulty check forces Invalid Difficulty"
+        unless: '(?i)used to|no longer|until 2026-08-14|before the cap|superseded|was written'
+      - regex: '(?i)repeated `?FAIL EASY`? does not terminate'
+        why: "as of 2026-08-14 a repeated FAIL EASY terminates at the fourth difficulty check"
+        unless: '(?i)used to|no longer|until 2026-08-14|before the cap|superseded|was written'
+      - regex: '(?i)the count does not force a verdict'
+        why: "the fourth difficulty check now forces Invalid Difficulty, so the count does force a verdict"
+        unless: '(?i)used to|no longer|until 2026-08-14|before the cap|superseded|was written'
+      - regex: '(?i)difficulty check.{0,40}\bno limit\b'
+        why: "the no-limit era ended on 2026-08-14; the cap is 4"
+        unless: '(?i)used to|no longer|before|until|superseded|was'
+
   - id: related_pr_difficulty_material
     value: {allowed: true, bounds: ["related PR only", "no wholesale copy", "no change to original scope or feature"]}
     statement: "When a task comes back too easy, difficulty material may be adapted from a later RELATED PR in the same repo. Never an unrelated PR, never a wholesale copy, and never a change to the scope or feature of the original PR."
@@ -666,14 +695,119 @@ facts:
 
   - id: inapp_check_runtime_limit_min
     value: 5
-    statement: "In-app checks have a 5-minute runtime limit; iterate with Send to reviewer unchecked."
+    statement: "In-app checks have a 5-minute runtime limit. Run and iterate with those checks until they pass, then submit."
     source: docs/tasking-guide.md
     kind: rule
-    verified_on: 2026-07-31
+    verified_on: 2026-08-14
     enforced_by: platform
     appears_in:
       - .claude/rules/
     pattern: '(?i)5-minute|five-minute'
+
+  - id: submission_routing
+    value: {send_to_reviewer_checkbox: false, removed_on: "2026-08-05", pass_routes_to_reviewer_queue: true, fail_returns_to_submitter: true, always_no_pass_message: false}
+    statement: "There is no Send to reviewer checkbox. Submitting runs the post-submission evals: a pass sends the task to the reviewer queue automatically, a fail returns it to be fixed and resubmitted. The AlwaysNoPass message is gone and there is no way to push a task past a failing eval, so the eight conditions are now the pre-submit gate you clear before pressing Submit."
+    source: docs/tasking-guide.md
+    kind: rule
+    verified_on: 2026-08-14
+    enforced_by: platform submission flow
+    appears_in:
+      - CLAUDE.md
+      - AGENTS.md
+      - README.md
+      - INDEX.md
+      - .claude/rules/
+    pattern: '(?i)pre-submit gate|reviewer queue|no box to check|send.to.reviewer|AlwaysNoPass'
+    contradicts:
+      - regex: '(?i)check(ing)? the (send.to.reviewer )?box'
+        why: "the Send to reviewer checkbox was removed on 2026-08-05; there is no box to check"
+        unless: '(?i)removed|no longer|used to|former|gone|predate'
+      - regex: '(?i)box unchecked'
+        why: "there is no checkbox; iterate until the checks pass, then submit"
+        unless: '(?i)removed|no longer|used to|former|gone|predate'
+      - regex: '(?i)(check|tick|uncheck)(ing|ed)?\s+(the\s+)?send.to.reviewer'
+        why: "the checkbox was removed on 2026-08-05; there is nothing to check"
+        unless: '(?i)removed|no longer|used to|former|gone|predate'
+      - regex: '(?i)send.to.reviewer\s+(check)?box'
+        why: "the checkbox was removed on 2026-08-05"
+        # this one matches any mention of the control, so the exemption has to cover
+        # the sentences that mention it in order to say it is gone
+        unless: '(?i)removed|no longer|\bno\b|\bnot\b|never|any more|used to|former|gone|predate'
+      - regex: '(?i)AlwaysNoPass'
+        why: "the message no longer appears"
+        unless: '(?i)removed|no longer|gone|former'
+
+  - id: timed_reviewer_workflow
+    value: {base_minutes: 5, max_extension_minutes: 5, max_extensions: 1, track: "timed-static-v1", original_task_zip: always, submitted_zip: {fixable: always, invalid_not_fixable: optional, valid_as_is: absent, invalid_difficulty: absent, other: absent}, routine_local_execution: false, extension_static_only: true, triggers: [artifact_or_evaluation_identity_conflict, concrete_claim_or_feedback_contradiction, direct_major_or_pr_scope_signal, specific_coverage_or_faithfulness_discrepancy], timer_ends_at: form_ready}
+    statement: "Peer review uses a five-minute platform-first static path after the original task ZIP, the branch-appropriate reviewed artifact, and current reviewer page are ready. One recorded, static-only five-minute extension is available for one concrete identity conflict, contradiction, direct Major or PR-scope signal, or named coverage or faithfulness discrepancy. Docker, Harbor, Oracle, NOP, local verifier, container, mutation, determinism, hostile, gaming, and stock-battery work are not routine reviewer work. At the deadline reviewers count only confirmed findings and hand over a humanized form-ready answer. Before new issues are reviewed, previous Reviewer Feedback is reconciled item by item. After the document exists, its writing is studied when present, accepted tasks update learning, the exact review UUID is appended once to review_tally.md, and only matching original/submitted ZIP source copies at the workspace root are removed after form-ready verification. Archive and calibration follow outside review minutes."
+    source: user-directed workspace policy
+    kind: project
+    verified_on: 2026-08-19
+    enforced_by: Section 13 timed reviewer workflow
+    appears_in:
+      - CLAUDE.md
+      - .claude/rules/13-reviewer-path.md
+      - .claude/rules/14-reviewer-workflow.md
+    pattern: '(?i)timed-static-v1|five-minute.*review|review-fast|in-depth extension'
+
+  - id: reviewer_rubric_thresholds
+    value: {major_for_needs_revision: 1, minor_for_needs_revision: 5, minor_accepted_with_coaching: [1, 4], major_pillars: 5, secondary_requirements: 11, unfixable_buckets: [Structure, Difficulty]}
+    statement: "One confirmed Major Pillar violation is Needs Revision on its own. Five or more Minor violations across the eleven Secondary Requirements is Needs Revision for systemic low quality, and 1 to 4 Minors accept with mandatory coaching comments. Unfixable is tagged Structure or Difficulty separately, never lumped together as invalid. There are exactly five Major Pillars, numbered 1 to 5. Reviewer Integrity carries Major severity and is listed alongside them in the quick reference table at docs/reviewer-rubric.md:136, where its row carries a dash instead of a number, and it grades the review's own writing rather than the task, so it is not a sixth pillar."
+    source: docs/reviewer-rubric.md
+    kind: rule
+    verified_on: 2026-08-14
+    enforced_by: the reviewing EC
+    appears_in:
+      - CLAUDE.md
+      - .claude/rules/
+    pattern: '(?i)major pillar|secondary requirement|coaching comment|unfixable'
+
+  - id: reviewer_form_questions
+    value: {questions: 7, conditional_on_verdict: ["If Accept confirmations", "If Needs Revision error categories", "Explain what revisions are needed"], rebuttal_acknowledgement: true, review_duration_field: true, error_category_labels: 19, accept_confirmations: 6, supersedes: "LEDGER L65"}
+    statement: "The live reviewer form has seven questions, exactly the seven docs/tasking-guide.md:401-459 describes, including the Acknowledgement of Submitter Rebuttal and the review-duration field. Q2a, Q2b and Q3 are conditional on the verdict radio and do not render until one is picked. This workspace recorded four questions from 2026-08-11 to 2026-08-18; both captures behind that were truncated documents and truncation drops trailing fields, which is where those two sit. LEDGER L100 reverses L65. An absence is retired only by a capture that could have shown the thing, so the Accept-branch confirmation count, five in two truncated pastes against six in docs, is still open because no capture here has had a verdict selected."
+    source: sample_review_page.md
+    kind: measurement
+    verified_on: 2026-08-18
+    enforced_by: the platform form
+    appears_in:
+      - .claude/rules/
+      - learning/
+    pattern: '(?i)reviewer form|acknowledgement of submitter rebuttal|review.duration'
+    contradicted_by:
+      - regex: '(?i)(four|4) questions where'
+        why: "the live form has seven; the four-question reading came from two truncated captures (LEDGER L100)"
+        unless: '(?i)superseded|kept as the record|retired|reversed'
+
+  - id: reviewer_page_contents
+    value: {original_task_zip: always, submitted_zip: {fixable: always, invalid_not_fixable: optional, valid_as_is: absent, invalid_difficulty: absent, other: absent}, submitter_answers: true, eval_panels: 6, difficulty_counter_fields: 4, previous_reviewer_feedback: true, supersedes: "the zip arrives alone"}
+    statement: "The reviewer input always carries the original task ZIP. The submitted ZIP is always present for Fixable, optional for Invalid/Not Fixable, and absent for Valid-as-is, Invalid Difficulty, and every other branch. The reviewer page also carries every available form answer including Comments for Reviewer, all six evaluation panels with their contents, the four difficulty-check counters, and any previous round's reviewer feedback. Ask for current page evidence before starting the timed review. docs/reviewer-rubric.md:123 makes claiming something is inaccessible when it is visibly present a flaggable integrity item. A ready seed may settle an artifact-identity or claim contradiction through a narrow diff during the recorded extension; it is not a standard timed-review prerequisite. LEDGER L101."
+    source: sample_review_page.md
+    kind: measurement
+    verified_on: 2026-08-18
+    enforced_by: the platform page
+    appears_in:
+      - .claude/rules/
+      - learning/
+    pattern: '(?i)reviewer page|submitter.s (form )?answers|seed zip'
+    contradicted_by:
+      - regex: '(?i)(the )?zip arrives alone|receives? the zip alone|bare (submission )?zip'
+        why: "the reviewer input follows the selected branch matrix, carries relevant submitter answers, and exposes six evaluation panels"
+        unless: '(?i)superseded|kept as the record|retired|reversed|does not arrive alone'
+
+  - id: verifier_timeout_vs_config_timeout
+    value: {severity: minor, secondary_requirement: 1, reviewer_flag_rate_pct: 18, supersedes: "LEDGER L58"}
+    statement: "A [verifier] timeout_sec shorter than the task's own tests/config.json execution.timeout_sec is Secondary Requirement 1, a Minor violation flagged in 18% of reviewer comments, because the outer budget can kill a slow but correct run. Name both numbers. It arrives that way from the generator in 7 of 8 bundles measured here, so word it as the arriving default the submitter did not correct. This supersedes the conclusion of LEDGER L58 and leaves its measurement standing."
+    source: docs/reviewer-rubric.md
+    kind: rule
+    verified_on: 2026-08-14
+    enforced_by: the reviewing EC
+    appears_in:
+      - .claude/rules/
+    pattern: '(?i)execution\.timeout_sec|verifier timeout'
+    contradicts:
+      - regex: '(?i)execution\.timeout_sec[^\n]*not a finding'
+        why: "docs/reviewer-rubric.md:101 makes the mismatch Secondary Requirement 1, a Minor violation; LEDGER L58's conclusion is superseded by L73"
+        unless: '(?i)superseded|used to|no longer|formerly'
 
   # ── local guidance, never a gate ──────────────────────────────────────────
   - id: handling_time_total_band

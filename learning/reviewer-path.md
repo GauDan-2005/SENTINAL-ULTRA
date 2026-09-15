@@ -6,7 +6,7 @@ verified_by:
   - 20260723_030152__mithriljs_mithril.js__2021
   - 20260720_144200__thomas4019_expressa__132
   - 20260717_182400__felixguendling_cista__172
-evidence: "Three peer reviews run on this workspace on 2026-08-11; two independent captures of the live reviewer form both show four questions, not the seven docs/tasking-guide.md:401-459 describes"
+evidence: "Three peer reviews run on this workspace on 2026-08-11. Its run list, stock-defect sweep and severity discipline stand; its two form findings were reversed on 2026-08-18 by a capture of the whole reviewer page (LEDGER L100, L101)"
 applies_to:
   languages: [any]
   runners: [any]
@@ -16,7 +16,11 @@ fails_gate: [none]
 supersedes: []
 contradicts:
   - "CLAUDE.md, 'Peer review is out of scope for this workspace'"
+superseded_in_part_by:
+  - reviewer-page-carries-the-whole-submission.md
 ---
+> **Process scope, 2026-08-19.** This note preserves measurements from the legacy deep-battery reviewer workflow. New reviews use the timed platform-first static path in Section 13. Docker, Harbor, Oracle, NOP, container, mutation, and full-audit work are no longer routine review steps. Consult a measured legacy case only after a recorded timed-review trigger or in a separately requested diagnostic.
+
 
 # Reviewing, when the workspace was built for submitting
 
@@ -25,7 +29,50 @@ ever assigned". It has been assigned twice on 2026-08-11, mithril.js 2021 and ex
 note is what the two runs established. The rule text now lives in
 `.claude/rules/13-reviewer-path.md`; this is the evidence behind it.
 
-## The live form has four questions, not seven
+## The 2026-08-13 export added the verdict rule this note never had
+
+Everything below was measured before `docs/reviewer-rubric.md` existed. The tab was announced on
+2026-08-12 and landed here in the 2026-08-13 re-export. It touches no measurement in this note. What
+it supplies is the thing all three reviews had to invent, the arithmetic between a pile of findings
+and a verdict: one confirmed Major Pillar violation is Needs Revision, five or more Minor violations
+of the Secondary Requirements is Needs Revision, and one to four Minors is an Accept that owes
+mandatory coaching comments. The rule is Section 12.2 and the pillar mapping is Section 12.11.
+
+Three things it changes about the reviews recorded here, two of them reclassifications rather than
+new findings:
+
+- **The `[verifier] 300` against `execution 1800` mismatch is a finding again.** The measurement in
+  LEDGER L58 still holds, and it now reads at 10 of 11 arriving bundles. What changed is that
+  `docs/reviewer-rubric.md:101` names it Secondary Requirement 1 at an 18% flag rate, and `docs/`
+  wins on policy. So it is a Minor, it is mechanical, you name both numbers, and because it arrives
+  as the generator's default you word it as the arriving default the submitter did not correct rather
+  than as something they broke, which is the L61 discipline unchanged (LEDGER **L73**)
+- **The agent-writable test infrastructure probe is a Major, not colour.** `docs/reviewer-rubric.md:71`
+  makes tests that can be satisfied by editing them rather than solving the task a Pillar 3 Needs
+  Revision. mithril's reward 1.0 with the solution never applied is that trigger exactly, and it was
+  written up here as one finding among eleven
+- **A graded test that reaches the deliverable by its path is a Major too.** cista 172's 4 of 21 was
+  filed as an instruction and naming defect. Under `docs/reviewer-rubric.md:47`, an oracle depending
+  on a path that appears only in the golden patch and is not stated or derivable is Pillar 1
+
+And three things the rubric asks for that none of the three reviews ran: network integrity, a Major
+pillar flagged in 41% of reviewer comments, base image and dependency pinning, and a determinism
+read of the graded tests. Nothing here was measured about any of them, which is the honest status rather than a
+clean sheet.
+
+## SUPERSEDED 2026-08-18: the live form has seven questions after all
+
+Everything in this section below the next paragraph is kept as the record of what was measured and
+how the wrong conclusion was reached. **Do not act on it.**
+`reviewer-page-carries-the-whole-submission.md` carries the correction and LEDGER **L100** carries the
+row. In one line: a conversion of the **whole** reviewer page shows the Acknowledgement of Submitter
+Rebuttal at `sample_review_page.md:433-441` and the review-duration field at `:467`, both 2026-08-11
+captures were truncated documents, and truncation drops trailing fields, which is exactly where those
+two sit. Two truncated captures agreeing about an absence is one mechanism firing twice and not two
+witnesses, so the retiring condition this section set for itself was never actually met. The rule that
+replaces it: **an absence is retired only by a capture that could have shown the thing.**
+
+## The original section, kept as the record: the live form has four questions, not seven
 
 `docs/tasking-guide.md:401-459` lists seven reviewer questions, including **Acknowledgement of
 Submitter Rebuttal** and **How long did it take you to complete this review**. The form pasted from
@@ -70,7 +117,21 @@ mid-word). So two captures now agree on five and both are truncated documents. K
 Path D template until an untruncated Accept-branch capture arrives, and note that the branch only
 matters on an Accept, so the cost of carrying the sixth is zero.
 
-## The submitter's Comments for Reviewer do not arrive with the zip
+## SUPERSEDED 2026-08-18: the reviewer page carries the submitter's answers and every eval panel
+
+Kept below as the record. **Do not act on it.** The same capture shows the reviewer is given the seed
+zip (`sample_review_page.md:62`), the submitted zip (`:141`), the submitter's verdict and both
+checkbox groups and their numbered issue details (`:56-148`), Files Changed, PR additions, the eight
+confirmations, the difficulty answer and the senior estimate (`:323-379`), Comments for Reviewer
+(`:383-415`), all six evaluation panels with their contents (`:179-321`), the four difficulty counters
+(`:149-177`) and any previous round's reviewer feedback (`:15`). LEDGER **L101**.
+
+What the three reviews below measured was what arrived in a chat message, not what the platform shows,
+and one submitter's "there is only zip present in the platform nothing else" was about the same
+message rather than about the page. **Ask for all of it** (Section 13 R1.5). The advice to word a
+finding against the bundle is still good writing; the reason given for it is gone.
+
+## The original section, kept as the record: the submitter's Comments for Reviewer do not arrive with the zip
 
 Three reviews now, three bare submission zips, none with the submitter's form answers. On cista 172
 the submitter confirmed it directly, "There is only zip present in the platform nothing else", so this
@@ -170,14 +231,27 @@ it exactly as they do to `submission_answer.txt` (plain English, no em or en das
 check vocabulary, one unwrapped line per paragraph).
 
 - Open with what is **right**, with the measurements, before the notes. Both files do. It stops a
-  revision round undoing the parts that already work, and it is the evidence for not scoring 1
+  revision round undoing the parts that already work, and it is the evidence for not scoring 1.
+  **Superseded in part on 2026-08-14.** All three finished reviews open with the same sentence, the
+  first ten words identical, and `docs/reviewer-rubric.md:119` asks for comments that are specific
+  and idiosyncratic. The opener stays; its wording is written fresh from each bundle's own numbers
 - One numbered note per finding, each with the evidence, a `Guidelines reference.` line where a
   section supports it, and a `What to do.` line. Reviewers are asked to cite Guidelines sections for
-  specific or easily-missed rules (`docs/tasking-guide.md`, reviewer form question 4)
+  specific or easily-missed rules (`docs/tasking-guide.md`, reviewer form question 4).
+  **Superseded on 2026-08-14.** The measurement holds, 20 of the 39 notes across the three reviews
+  carry the Guidelines line and 33 carry the remedy line, but the fixed labelled block is the
+  "exhaustive parallel bullet lists" half of `docs/reviewer-rubric.md:121`. The evidence per note is
+  unchanged and mandatory; the labels are not. See `.claude/rules/06-writing-rules.md` Section 5.1
 - A closing note listing what you looked at and are **not** asking to change, so an unticked box is
   not read as an oversight
-- Say which findings are measured and which are read. The line "I built the image and ran the bundle,
-  which a reviewer is not required to do" earns the measured ones their weight
+- Say which findings are measured and which are read, because a reader cannot otherwise tell a
+  container run from a careful read. **Superseded in part on 2026-08-14.** The measurement holds and
+  is itself the problem: all three reviews carry the sentence "I built the image and ran the bundle,
+  which a reviewer is not required to do" verbatim, and three unrelated bundles sharing one sentence
+  is the mirrored-language soft signal at `docs/reviewer-rubric.md:121`. The distinction stays and is
+  mandatory; that sentence does not. Make the point out of this bundle's own runs, naming what you
+  built and what you ran, so the wording is new every time. See `.claude/rules/06-writing-rules.md`
+  Section 5.1
 
 ## Severity discipline, because half of what a first pass produces is wrong
 
@@ -193,5 +267,5 @@ the answer file. The pattern in the refutations, worth pre-empting:
 - a real mechanism whose remedy would make the bundle worse
 
 Before filing, check the finding against `_archive/*/download/original/` for "is this just the
-generator default" and against `_archive/*/work/` for "did five accepted bundles do it too". Four
+generator default" and against `_archive/*/work/` for "did the accepted bundles do it too". Four
 LEDGER rows, L57 to L60, are the ones that failed those checks.

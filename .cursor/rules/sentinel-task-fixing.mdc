@@ -86,7 +86,7 @@ When you do:
 
 ### Checks that catch a bad oracle before the evals do
 
-- **Diff the patch's file list against the PR's.** `grep '^diff --git' solution/golden.patch | sed 's|diff --git a/||;s| b/.*||'` next to the files the source PR actually changed. Extra files are the "no unnecessary changes" rule being broken; missing files (docs, changelogs the PR updated) are the same defect inverted. Test files are the exception — those belong in `tests.patch`
+- **Diff the patch's file list against the PR's.** `grep '^diff --git' solution/golden.patch | sed 's|diff --git a/||;s| b/.*||'` next to the files the source PR actually changed. Extra files are the "no unnecessary changes" rule being broken. **Missing files are NOT the same defect inverted.** A docs or changelog file the PR touched and golden omits is the accepted shape, measured at **7 of 8** archived goldens ship no `.md` or docs file at all, accepted kvdex 245 included, and the eighth is AltBeacon 1177 shipping its `CHANGELOG.md` (LEDGER L59), so do not add one. Test files are the exception and belong in `tests.patch`
 - **`solve.sh` forward-only and idempotent.** Apply if needed, no-op if already applied, fail loudly when nothing applies. The sanctioned shape is four steps in this order — a `git apply -p1 --reverse --check` probe that exits 0 because the patch is already in, a plain forward `git apply -p1`, a `git apply -p1 --3way` retry, then a loud nonzero failure. **The `--3way` retry is prescribed, not a defect**; it is the documented handling for a patch that will not apply cleanly, verified with three consecutive applies in one container (`learning/solve-sh-idempotency.md`). What is banned is a reverse-apply that counts as SUCCESS after the forward apply failed — that inverts a correctly applied tree on the second run and hides a golden patch that never applied. This is about the fallback, not the flag: a reverse-diff task shipping `init_state.patch` correctly runs `patch -p1 -R` as its only path
 
 ```bash
@@ -104,7 +104,7 @@ echo "ERROR: golden.patch did not apply cleanly." >&2
 exit 1
 ```
 
-- **The platform runs the oracle three times and the pass bar is 3/3.** Anything under 3/3 blocks Send to reviewer and is a task defect on the Fixable path, not flake. Read the number before theorising: `1/3` or `2/3` needs prior state to go wrong, so it points at state accumulation and reproduces by running `solve.sh` twice in one container; `0/3` says run one already failed, which rules out every state-accumulation theory in one step. Real per-test output alongside an N/3 line means task defect. Blank or null results with no verifier output means infra. So run `solve.sh` three times in one container during the local checks — runs two and three against the already-patched tree — and record all three rewards for Comments for Reviewer. See `learning/solve-sh-idempotency.md`
+- **The platform runs the oracle three times and the pass bar is 3/3.** Anything under 3/3 sends the submission straight back to you instead of to the reviewer queue, and it is a task defect on the Fixable path, not flake. Read the number before theorising: `1/3` or `2/3` needs prior state to go wrong, so it points at state accumulation and reproduces by running `solve.sh` twice in one container; `0/3` says run one already failed, which rules out every state-accumulation theory in one step. Real per-test output alongside an N/3 line means task defect. Blank or null results with no verifier output means infra. So run the full cycle, `solve.sh` then `tests/test.sh`, three times in one container during the local checks, runs two and three against the already-patched tree, and record all three rewards for Comments for Reviewer. Three `solve.sh` runs on their own are a weaker check about the oracle script and must never be reported as an oracle result (`learning/oracle-protocol-is-solve-then-verify.md`). See `learning/solve-sh-idempotency.md`
 - **Check the oracle against whatever standard the instruction names.** If the instruction says the API should behave like a known library function, read the implementation against that function's real contract rather than against the PR alone. Boundary cases are where a plausible-looking oracle is wrong and the tests agree with it
 - Both `solve.sh` and `tests/test.sh` ship mode `0755`
 
@@ -338,56 +338,120 @@ Pick the shape by counting where the graded ids actually live:
 
 ```bash
 python3 - <<'PY'
-import json, re
-
+import json, os, re
 patch = open('tests/tests.patch', encoding='utf-8', errors='replace').read()
 touched = set(re.findall(r'^diff --git a/(\S+)', patch, re.M))
+added = '\n'.join(l[1:] for l in patch.splitlines()
+                  if l.startswith('+') and not l.startswith('+++'))
 
-# A graded id names its owner in one of three schemes and none of them is a path
-# on its own, so map every patched file to every name it could be cited by:
-#   pytest / deno   tests/ext/encoder.test.ts::ext - encoder        -> a path
-#   junit           pkg.ClassTest#method, pkg.ClassTest::method     -> an FQCN
-#   cargo / go      mlkem512::packed_roundtrip, consistency_512     -> a module, no file
-paths, fqcns, classes = set(touched), set(), set()
+# Graded ids come in FIVE shapes and each maps back to a file differently:
+#   tests/x.test.ts::name           path::name     (deno, pytest, vitest, jest)
+#   pkg.ClassTest::method           fqcn::method   (gradle, kotlin)
+#   pkg.ClassTest#method            fqcn#method    (junit, surefire)
+#   example.com/m/pkg::TestFunc     IMPORT path    (go)  <- has / AND . and is NOT a file
+#   module::test  /  bare_test      symbol only    (cargo, ctest)
+# The first three name a file. The fourth names a PACKAGE and has to be mapped
+# through go.mod. The fifth names neither and is resolved by where the symbol
+# occurs. Never let a shape you cannot map fall through and count as outside.
+stems = set()
 for t in touched:
-    seg = t.split('/')
-    classes.add(seg[-1].rsplit('.', 1)[0])
-    for root in ('java', 'kotlin'):                  # maven / gradle source layout
-        if root in seg:
-            fqcns.add('.'.join(seg[seg.index(root) + 1:]).rsplit('.', 1)[0])
+    stems.add(t)                                              # exact path
+    stems.add(t.rsplit('/', 1)[-1].rsplit('.', 1)[0])         # simple class / file stem
+    parts = t.split('/')
+    for lang in ('java', 'kotlin'):                           # FQCN, maven / gradle layout
+        if lang in parts:
+            stems.add('.'.join(parts[parts.index(lang) + 1:]).rsplit('.', 1)[0])
+
+# ---- Go support. Three things the naive version gets silently wrong: a test on a
+# CONTEXT line of a modified file, a name defined in a DIFFERENT package, and a
+# NESTED module whose path is not its directory. All three printed a number with
+# zero UNRESOLVED, which is the worst way for this to fail.
+modules = []                                                  # (module path, dir), longest first
+for root, dirs, files in os.walk('environment/repo'):
+    dirs[:] = [d for d in dirs if d != '.git']
+    if 'go.mod' in files:
+        m = re.search(r'^module\s+(\S+)', open(os.path.join(root, 'go.mod')).read(), re.M)
+        if m:
+            modules.append((m.group(1), os.path.relpath(root, 'environment/repo').strip('./')))
+modules.sort(key=lambda t: -len(t[0]))
+
+creates, cur = set(), None                                    # a create shows its WHOLE content
+for line in patch.splitlines():
+    m = re.match(r'^diff --git a/\S+ b/(\S+)', line)
+    if m: cur = m.group(1); continue
+    if line.startswith('new file mode') and cur: creates.add(cur)
+
+defs_by_dir, complete, patched_dirs, cur = {}, {}, set(), None
+for line in patch.splitlines():
+    m = re.match(r'^\+\+\+ b/(\S+)', line)
+    if m:
+        cur = m.group(1); d = os.path.dirname(cur); patched_dirs.add(d)
+        complete[d] = complete.get(d, True) and (cur in creates)
+        continue
+    if cur is None: continue
+    m = re.match(r'^[ +]func\s+([A-Za-z_]\w*)\s*\(', line)     # added AND context lines
+    if m: defs_by_dir.setdefault(os.path.dirname(cur), set()).add(m.group(1))
+
+def go_classify(head, name):
+    for mod, mdir in modules:
+        if head == mod or head.startswith(mod + '/'):
+            sub = head[len(mod):].lstrip('/')
+            d = os.path.normpath(os.path.join(mdir, sub)) if mdir else sub
+            d = '' if d == '.' else d
+            if d not in patched_dirs: return 'outside'
+            if re.split(r'[ (/]', name)[0] in defs_by_dir.get(d, set()): return 'inside'
+            # not defined by the patch. Only safe to call outside when every patched
+            # file in that directory is a create, so the patch shows all of them.
+            return 'outside' if complete.get(d) else 'unresolved'
+    return None
+
+tokens = set()                                                # every word in the UNPATCHED tests
+for root, dirs, files in os.walk('environment/repo'):
+    dirs[:] = [d for d in dirs if d not in ('.git', 'node_modules', 'target', 'build')]
+    if 'test' not in root.lower():
+        continue
+    for f in files:
+        p = os.path.join(root, f)
+        if not os.path.isfile(p) or os.path.relpath(p, 'environment/repo') in touched:
+            continue                                          # skips broken symlinks too
+        tokens |= set(re.findall(r'[A-Za-z_]\w+',
+                                 open(p, encoding='utf-8', errors='replace').read()))
 
 g = json.load(open('tests/config.json'))['grading']
-ids = g['fail_to_pass'] + g.get('pass_to_pass', [])
-
-def owner(i):
-    if '#' in i:
-        return i.rsplit('#', 1)[0]
-    if '::' in i:
-        return i.rsplit('::', 1)[0]
-    return i
-
 inside, outside, unresolved = [], [], []
-for i in ids:
-    o = owner(i)
-    if '/' in o:                                             # path-shaped
-        (inside if o in paths else outside).append(i)
-    elif '.' in o and o.split('.')[-1][:1].isupper():        # FQCN
-        (inside if o in fqcns else outside).append(i)
-    elif o[:1].isupper() and o != i:                         # bare class name
-        (inside if o in classes else outside).append(i)
-    else:                                                    # cargo module, or bare
+for i in g['fail_to_pass'] + g.get('pass_to_pass', []):
+    head, name = i.rsplit('#', 1) if '#' in i else (
+                 i.rsplit('::', 1) if '::' in i else ('', i))
+    if head and ('/' in head or '.' in head):                 # names a file, a class or a package
+        if head in stems:
+            inside.append(i); continue                        # a file the patch touches
+        if os.path.exists(os.path.join('environment/repo', head)):
+            outside.append(i); continue                       # a real file the patch does not touch
+        go = go_classify(head, name)
+        if go:
+            {'inside': inside, 'outside': outside, 'unresolved': unresolved}[go].append(i); continue
+        if '/' not in head:
+            outside.append(i); continue                       # FQCN: the stems set is authoritative
+        unresolved.append(i); continue                        # a slashed head that is neither
+    sym = re.split(r'[ (]', name)[0]                          # symbol-only id: cargo, ctest
+    if head and re.search(r'\b%s\b' % re.escape(head), added):
+        inside.append(i)
+    elif re.search(r'\b%s\b' % re.escape(sym), added):
+        inside.append(i)
+    elif sym in tokens or head in tokens:
+        outside.append(i)
+    else:
         unresolved.append(i)
 
+print(len(outside), 'of', len(inside) + len(outside) + len(unresolved),
+      'graded ids live in files tests.patch does not touch')
 if unresolved:
-    print('UNRESOLVED:', len(unresolved), 'of', len(ids),
-          'graded ids name no file (cargo/go style). Resolve those by hand from',
-          "execution.commands / selected_test_files_to_run before choosing a shape.")
-print(len(outside), 'of', len(ids) - len(unresolved),
-      'resolvable graded ids live in files tests.patch does not touch')
+    print('UNRESOLVED:', len(unresolved), 'ids map to no patched file and no known symbol.',
+          'Resolve these by hand before choosing a shape:', unresolved[:5])
 PY
 ```
 
-Measured against the four bundles this workspace has on disk: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177, and `UNRESOLVED: 38 of 38` on libcrux 1165. **Never read a bare number as "outside" when the id scheme and the patched paths do not share a namespace.** Cargo, Go and Jest ids carry no path at all, so the old `i.split('::')[0]` form matched nothing and reported every id as outside — on libcrux that read `35 of 35`, which argues for a payload on a bundle whose f2p all live in a created file. Hand-resolved, libcrux is 21 of 38 outside: the 17 f2p all sit in the created `sentinel_pqcp_verifier.rs`, and the 21 p2p all sit in two files the patch does not touch. Still a payload, but for a reason the script never established.
+Re-measured 2026-08-16: `102 of 132` on kvdex 245, `1124 of 1223` on equalsverifier 1166, `210 of 230` on AltBeacon 1177, `21 of 38` on libcrux 1165, `19 of 43` on xlwings 2719, `0 of 24` on elfuse 162, `330 of 350` on hulak 118 and `7 of 33` on redisshake 1005. statrs 315 returns `3 of 127` with 106 UNRESOLVED and is not answered yet. **An UNRESOLVED line means the count is not yet an answer.** **Never read a bare number as "outside" when the id scheme and the patched paths do not share a namespace.** Cargo, Go and Jest ids carry no path at all, so the old `i.split('::')[0]` form matched nothing and reported every id as outside — on libcrux that read `35 of 35`, which argues for a payload on a bundle whose f2p all live in a created file. Hand-resolved, libcrux is 21 of 38 outside: the 17 f2p all sit in the created `sentinel_pqcp_verifier.rs`, and the 21 p2p all sit in two files the patch does not touch. Still a payload, but for a reason the script never established.
 
 **Zero → create-only patch, no payload needed.** Regenerate `tests.patch` so every graded file is a create (`new file mode`, `--- /dev/null`) rather than a diff. A create has no context lines, so nothing can conflict. Delete those paths first in `test.sh`, reading the list out of the patch with `sed -n 's|^+++ b/||p' /tests/tests.patch`.
 
@@ -440,10 +504,15 @@ git status --porcelain                        # MUST be empty (clean tree)
 ls .git/logs 2>/dev/null                      # MUST NOT exist / be empty
 du -sh .git                                   # MUST be < 100 MB
 git fsck --unreachable --no-progress          # MUST print nothing (see below)
+git worktree list                             # MUST show only this checkout
+ls .git/worktrees 2>/dev/null                 # MUST NOT exist
+git stash list                                # MUST be empty (a stash ref keeps its blobs reachable)
 git apply --check ../../tests/tests.patch     # MUST apply cleanly
 ```
 
 The `fsck` line is not in the `docs/` checklist and is the one that catches what the others miss. A repo can pass every other line and still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p`. Regenerating `tests.patch` writes them; so does running the oracle anywhere but a disposable copy. If it prints anything, read one before doing anything else, then re-run `git reflog expire --expire=now --all && git gc --prune=now` until it is silent.
+
+The worktree and stash lines are there for the same reason. `docs/reviewer-rubric.md:89` puts a stray remote, worktree or stash inside the Major git-state pillar, and `:95` says a reviewer checks that before assessing any content. Clear a stash with `git stash clear && rm -f .git/refs/stash` **before** the gc, because a stash ref keeps its blobs reachable and `gc --prune=now` will never touch them.
 
 Then verify at the task level:
 
@@ -467,7 +536,8 @@ find . -name '__pycache__' -o -name '*.pyc' -o -name '.DS_Store' \
 - **Script modes:** `tests/test.sh` and `solution/solve.sh` are `0755`. Check the mode in the extracted zip, not only the working copy — a `0644` verifier entrypoint fails at run time, not at build time
 - **Grader fails closed:** reward `1.0` only when the test command also exited zero (Section 6)
 - **Hostile-delete gate:** one stated requirement stubbed in a throwaway copy drops the reward to `0.0`
-- **Golden patch file list matches the source PR's**, in both directions
+- **Run 4, the gaming probe:** with the solution unapplied, an edit to the test infrastructure the graded tests call but `tests.patch` never creates - the assertion library, the fixtures, the harness the specs import - leaves the reward at `0.0`. Use `bin/hostile-probe.sh` rather than a hand-rolled `sed`, because a probe that cannot prove its edit landed measured nothing
+- **Golden patch carries no file the source PR never touched.** The reverse direction is not a gate, see the L59 note above
 
 ### Zipping the corrected task
 

@@ -88,6 +88,25 @@ Note that merging changes the suite's top-level test count too, so any figure yo
 in `submission_answer` (total tests, required tests) moves with it. Re-run the oracle and
 re-read the numbers off `report.json` rather than editing them by hand.
 
+**The exception, measured 2026-08-14 on android-beacon 1177.** Nesting works when the extra cases can
+run under the same runtime configuration as their parent. It does **not** work when the new case needs a
+*different* one. A Robolectric `@Config(sdk = 24)` is per-method, so a check of behaviour that only
+exists below API 26 cannot be nested as a sub-step under a test pinned to API 28. The same goes for any
+case needing a different toolchain target or interpreter version.
+
+There the case costs a whole graded id, and at the 20 ceiling that means **freeing one first**. What
+worked: merge two existing tests that were checking the same kind of thing into one, which drops the
+count to 19, then add the new test to return to 20. `distanceModelUpdateUrlIsPushedToTheManager` folded
+into `scanPeriodsAndModelUrlArePushedToTheManager`, and the freed slot took
+`theDefaultScanStrategyBelowAndroid8IsTheBackgroundService`. Every assertion survived and `fail_to_pass`
+never left 20.
+
+Two things the merge drags with it, both easy to miss. The graded ids change, so
+`grading.fail_to_pass` needs the removals **and** the additions in the same edit, and
+`execution.selected_test_files_to_run` needs checking too when a file name moves. And the new runtime
+level has to exist in the image's offline cache before the test can run at all, which is its own
+failure and is covered in `diagnosing-platform-only-failures.md`.
+
 ## The full check list
 
 Worth reproducing locally before every upload, because all of it is cheap:

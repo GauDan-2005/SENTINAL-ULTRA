@@ -174,3 +174,53 @@ git apply --check ../../solution/golden.patch
 Related: [unreachable-git-blobs.md](unreachable-git-blobs.md) for the rest of the git sweep. On
 this task `git fsck` also reported the broken `refs/remotes/origin/HEAD` that note describes,
 in the bundle as received.
+
+## The pre-zip `git gc` packs the ref away, and an empty directory is not a ref
+
+Added 2026-08-14, android-beacon 1177 round 8, raised by a human reviewer as "there is no refs
+directory under environment/repo/.git in the re-upload, so /app in the image isn't a repository".
+
+**It did not reproduce as written and the reviewer was still right.** The zip carries
+`environment/repo/.git/refs/` and `.git/refs/heads/` as directory entries, and `unzip` here gives a
+tree where `git status` exits 0 and `rev-parse HEAD` resolves. What is missing is the *file*:
+
+| | seed | re-upload before the fix |
+|---|---|---|
+| `.git/refs/heads/main` | **41-byte file** | absent |
+| `.git/refs/heads/` | directory | empty directory |
+| `.git/packed-refs` | present | present |
+
+The pre-zip scrub ends in `git gc --prune=now`, which packs the loose refs away. Git itself is happy
+with `packed-refs`, so every local check passes. The bundle has quietly come to depend on **empty
+directory entries surviving the round trip**, and they do not survive every tool that unpacks a zip.
+
+**Fix: write the loose ref back after the gc, as the last git operation.** Compute into a variable
+first, because redirecting into the file being read truncates it and leaves the literal string `HEAD`
+in the ref (`.claude/rules/12-common-mistakes.md:42`):
+
+```bash
+git gc --prune=now
+SHA=$(git rev-parse HEAD)
+BRANCH=$(git symbolic-ref --short HEAD)
+printf '%s\n' "$SHA" > ".git/refs/heads/$BRANCH"
+[ "$(stat -c%s ".git/refs/heads/$BRANCH")" -eq 41 ] || exit 1
+```
+
+Assert the 41 bytes. That is 40 hex plus a newline, and it is the same size the seed ships, so it
+doubles as a check that the right thing landed. Matching the seed also stops the bundle depending on
+empty-directory preservation at all, which is a stronger guarantee than any zip flag.
+
+## A gitignored build cache reappears between rounds
+
+Same round. `environment/repo/.gradle/` was **absent** when round 7's zip was built and **present**
+four days later, in both `work/` and the untouched `download/original/`, dated well after the
+download. Something on the machine writes it. It is in the repo's own `.gitignore`, so
+`git status --porcelain` stays empty and nothing warns you.
+
+A single build cache in the image caps the packaging axis outright, so this is a shipped-bundle defect
+that appears without anyone touching the tree. **Sweep immediately before the zip, not once at the
+start of the round**, and make the rezip step refuse to build while one is present. Confirm it is
+untracked at the base commit first (`git ls-files --error-unmatch .gradle`), because deleting a
+tracked path is a boundary violation. The seed itself contains no `.gradle/` directory, so removing it
+from the pristine extract restores that copy rather than editing it.
+

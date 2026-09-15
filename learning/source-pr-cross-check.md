@@ -122,6 +122,13 @@ What that looks like in practice: take every absolute claim in `instruction.md` 
 reported, `ForegroundServiceScanStrategy` equality being identity-sensitive on the `Notification`
 because `android.app.Notification` does not override `equals`.
 
+**The audit is necessary and it is not sufficient, which LEDGER L21 records the hard way.** Round 6 of
+that task ran this audit and still shipped a *narrowing*, and its rewrite is what round 7 had to fix,
+because a narrowing written under pressure reaches for a stronger word to sound precise. It replaced a
+false claim with "one piece of behaviour does move, and it is the only one", falsified three ways in the
+patch. **The dependency is the unbounded quantifier itself**, so the move is to delete "every", "only",
+"everything else" and "unchanged" rather than to re-scope them.
+
 **The audit also finds your own mistakes.** That same gap had been visible a round earlier as a
 graded assertion that disagreed with the instruction, and round 5 resolved the disagreement by
 deleting the assertion. See `LEDGER.md` L20. A test that contradicts the instruction is evidence

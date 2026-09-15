@@ -1,0 +1,13 @@
+Needs Revision. Source PR #172 is the right asset (static type hashing and WITH_STATIC_VERSION), and instruction.md matches problem_statement.md. The package still needs real fixes before accept.
+
+Oracle: solution/solve.sh tries a normal git apply, then --3way, then falls through to git apply -R. That reverse path is not idempotent. Run solve twice on the same tree and the second pass can undo golden. Replace it with forward-only apply: content marker or reverse --check for already-applied, then forward apply only.
+
+Metadata / static: tests/config.json has 21 fail_to_pass ids. The allowed range is 10 to 20. Merge or drop cases so the count fits. If you drop coverage, trim the matching promises in the instruction in the same zip.
+
+Environment / bundle: solve.sh and test.sh are mode 644 in the zip; both should be 755. The repo shows 24 mode-only dirties (tracked 100755 flipped to 100644). In task.toml, [environment] network_mode is "no-network" (should be "public" per the FAQ), and [agent] allowed_hosts is a long LLM/registry list instead of the Portkey allowlist shape.
+
+Coverage: the instruction calls for distinct hashing on basic_unique_ptr, hash_storage, tuple, strong, dynamic_fws_multimap_base, chrono duration/time_point, cycle-safe recursion with a visited budget, compile-time rejection when WITH_VERSION and WITH_STATIC_VERSION are combined, and rejection of non-reflectable types. None of that is in the graded f2p set. It also says aggregates differ when member types or order differ, but two_ints_b is defined in the test patch and never compared.
+
+Faithfulness: the instruction says the hash is structural and not tied to runtime type-name lookups. The shipped static_type_hash path still goes through type_str / static_type2str_hash, and hash_tuple throws away member contributions (same as upstream). Narrow the instruction to what you grade, or add asserts that actually enforce what you wrote.
+
+Do not shrink or replace the PR. Fix solve.sh, the f2p count, git/script packaging, task.toml network fields, and the instruction/tests pair together, then re-zip.

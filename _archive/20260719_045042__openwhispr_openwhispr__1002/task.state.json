@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260719_045042__openwhispr_openwhispr__1002",
+  "submission_id": "451dd036-2828-4229-96a3-a1275d92ad43",
+  "repo": "openwhispr/openwhispr",
+  "pr": "1002",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-10",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2: read the whole bundle, resolve the two task.toml network mismatches with the submitter, then Step 3"
+}

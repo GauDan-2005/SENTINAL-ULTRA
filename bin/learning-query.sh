@@ -7,6 +7,7 @@
 # Usage:
 #   bin/learning-query.sh --task tasks/<name>          # infer language and runner
 #   bin/learning-query.sh --lang java --runner maven --phase difficulty
+#   bin/learning-query.sh --candidate 'raw_exit_code'  # matching notes and LEDGER rows only
 #   bin/learning-query.sh --stale                      # notes over 60 days old
 #   bin/learning-query.sh --all                        # every note, ranked
 #
@@ -27,13 +28,16 @@ LEARNING="${SENTINEL_LEARNING_DIR:-$ROOT/learning}"
 
 usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
-LANG_ARG=""; RUNNER_ARG=""; PHASE_ARG=""; TASK_ARG=""; STALE=0; ALL=0
+LANG_ARG=""; RUNNER_ARG=""; PHASE_ARG=""; TASK_ARG=""; CANDIDATE=""; STALE=0; ALL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --lang)    LANG_ARG="${2:-}"; shift 2 ;;
     --runner)  RUNNER_ARG="${2:-}"; shift 2 ;;
     --phase)   PHASE_ARG="${2:-}"; shift 2 ;;
     --task)    TASK_ARG="${2:-}"; shift 2 ;;
+    --candidate)
+      [ -n "${2:-}" ] || { echo "SKIP --candidate needs a search term" >&2; exit 3; }
+      CANDIDATE="$2"; shift 2 ;;
     --stale)   STALE=1; shift ;;
     --all)     ALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -77,7 +81,7 @@ if [ -n "$TASK_ARG" ]; then
 fi
 
 export LQ_LANG="$LANG_ARG" LQ_RUNNER="$RUNNER_ARG" LQ_PHASE="$PHASE_ARG"
-export LQ_STALE="$STALE" LQ_ALL="$ALL" LQ_DIR="$LEARNING" LQ_ROOT="$ROOT"
+export LQ_CANDIDATE="$CANDIDATE" LQ_STALE="$STALE" LQ_ALL="$ALL" LQ_DIR="$LEARNING" LQ_ROOT="$ROOT"
 
 python3 - <<'PY'
 import os, re, sys, datetime, glob
@@ -89,6 +93,7 @@ runner = (os.environ.get("LQ_RUNNER") or "").strip().lower()
 phase  = (os.environ.get("LQ_PHASE")  or "").strip().lower()
 stale  = os.environ.get("LQ_STALE") == "1"
 showall= os.environ.get("LQ_ALL")   == "1"
+candidate = (os.environ.get("LQ_CANDIDATE") or "").strip().lower()
 
 try:
     import yaml
@@ -228,6 +233,42 @@ def show(title, rows):
 
 ctx = f"lang={lang or '?'} runner={runner or '?'} phase={phase or '?'}"
 print(f"# learning-query  {ctx}")
+
+if candidate:
+    print(f"# candidate: {candidate}")
+    note_hits = {}
+    for path in sorted(glob.glob(os.path.join(D, "*.md"))):
+        name = os.path.basename(path)
+        if name == "README.md":
+            continue
+        hits = []
+        for number, raw in enumerate(open(path, encoding="utf-8", errors="replace"), 1):
+            if candidate in raw.lower():
+                hits.append((number, raw.strip()))
+        if hits:
+            note_hits[name] = hits
+    if note_hits:
+        print(f"\n== candidate files ({len(note_hits)}) ==")
+        shown = 0
+        for name in sorted(note_hits):
+            hits = note_hits[name]
+            if name == "LEDGER.md":
+                for number, line in hits[:10]:
+                    print(f"  {name}:{number}: {line[:240]}")
+                    shown += 1
+                if len(hits) > 10:
+                    print(f"  {name}: {len(hits) - 10} more matching rows; use a narrower term")
+            else:
+                number, line = hits[0]
+                suffix = f" ({len(hits)} matching lines)" if len(hits) > 1 else ""
+                print(f"  {name}:{number}:{suffix} {line[:240]}")
+                shown += 1
+            if shown >= 20:
+                print("  result cap reached; use a narrower term")
+                break
+    else:
+        print("\nno candidate matches")
+    sys.exit(0)
 
 if stale:
     rows = []

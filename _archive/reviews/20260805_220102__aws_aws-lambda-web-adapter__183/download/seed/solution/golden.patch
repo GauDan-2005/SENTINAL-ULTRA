@@ -1,0 +1,645 @@
+diff --git a/.gitallowed b/.gitallowed
+new file mode 100644
+index 0000000..b91dbb8
+--- /dev/null
++++ b/.gitallowed
+@@ -0,0 +1 @@
++-----BEGIN PRIVATE KEY-----
+\ No newline at end of file
+diff --git a/Cargo.toml b/Cargo.toml
+index 9eecdbd..170c18d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -19,6 +19,7 @@ exclude = ["examples"]
+ [dependencies]
+ http = "0.2"
+ hyper = { version = "0.14", features = ["client"] }
++hyper-rustls = "0.23.2"
+ lambda_http = "0.7.3"
+ flate2 = "1.0.25"
+ tokio = { version = "1.24", features = [
+@@ -39,9 +40,9 @@ url = "2.3.1"
+ 
+ [dev-dependencies]
+ httpmock = "0.6"
+-hyper-tls = "0.5.0"
+ http-body-util = "0.1.0-rc.2"
+ http-body = "0.4.5"
++aws-sigv4 = "0.54"
+ 
+ [[bin]]
+ name = "lambda-adapter"
+@@ -49,3 +50,5 @@ path = "src/main.rs"
+ 
+ [profile.release]
+ strip = true
++lto = true
++opt-level = 'z'
+\ No newline at end of file
+diff --git a/examples/fastapi-https/.gitignore b/examples/fastapi-https/.gitignore
+new file mode 100644
+index 0000000..4808264
+--- /dev/null
++++ b/examples/fastapi-https/.gitignore
+@@ -0,0 +1,244 @@
++
++# Created by https://www.gitignore.io/api/osx,linux,python,windows,pycharm,visualstudiocode
++
++### Linux ###
++*~
++
++# temporary files which can be created if a process still has a handle open of a deleted file
++.fuse_hidden*
++
++# KDE directory preferences
++.directory
++
++# Linux trash folder which might appear on any partition or disk
++.Trash-*
++
++# .nfs files are created when an open file is removed but is still being accessed
++.nfs*
++
++### OSX ###
++*.DS_Store
++.AppleDouble
++.LSOverride
++
++# Icon must end with two \r
++Icon
++
++# Thumbnails
++._*
++
++# Files that might appear in the root of a volume
++.DocumentRevisions-V100
++.fseventsd
++.Spotlight-V100
++.TemporaryItems
++.Trashes
++.VolumeIcon.icns
++.com.apple.timemachine.donotpresent
++
++# Directories potentially created on remote AFP share
++.AppleDB
++.AppleDesktop
++Network Trash Folder
++Temporary Items
++.apdisk
++
++### PyCharm ###
++# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio and Webstorm
++# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
++
++# User-specific stuff:
++.idea/**/workspace.xml
++.idea/**/tasks.xml
++.idea/dictionaries
++
++# Sensitive or high-churn files:
++.idea/**/dataSources/
++.idea/**/dataSources.ids
++.idea/**/dataSources.xml
++.idea/**/dataSources.local.xml
++.idea/**/sqlDataSources.xml
++.idea/**/dynamic.xml
++.idea/**/uiDesigner.xml
++
++# Gradle:
++.idea/**/gradle.xml
++.idea/**/libraries
++
++# CMake
++cmake-build-debug/
++
++# Mongo Explorer plugin:
++.idea/**/mongoSettings.xml
++
++## File-based project format:
++*.iws
++
++## Plugin-specific files:
++
++# IntelliJ
++/out/
++
++# mpeltonen/sbt-idea plugin
++.idea_modules/
++
++# JIRA plugin
++atlassian-ide-plugin.xml
++
++# Cursive Clojure plugin
++.idea/replstate.xml
++
++# Ruby plugin and RubyMine
++/.rakeTasks
++
++# Crashlytics plugin (for Android Studio and IntelliJ)
++com_crashlytics_export_strings.xml
++crashlytics.properties
++crashlytics-build.properties
++fabric.properties
++
++### PyCharm Patch ###
++# Comment Reason: https://github.com/joeblau/gitignore.io/issues/186#issuecomment-215987721
++
++# *.iml
++# modules.xml
++# .idea/misc.xml
++# *.ipr
++
++# Sonarlint plugin
++.idea/sonarlint
++
++### Python ###
++# Byte-compiled / optimized / DLL files
++__pycache__/
++*.py[cod]
++*$py.class
++
++# C extensions
++*.so
++
++# Distribution / packaging
++.Python
++build/
++develop-eggs/
++dist/
++downloads/
++eggs/
++.eggs/
++lib/
++lib64/
++parts/
++sdist/
++var/
++wheels/
++*.egg-info/
++.installed.cfg
++*.egg
++
++# PyInstaller
++#  Usually these files are written by a python script from a template
++#  before PyInstaller builds the exe, so as to inject date/other infos into it.
++*.manifest
++*.spec
++
++# Installer logs
++pip-log.txt
++pip-delete-this-directory.txt
++
++# Unit test / coverage reports
++htmlcov/
++.tox/
++.coverage
++.coverage.*
++.cache
++.pytest_cache/
++nosetests.xml
++coverage.xml
++*.cover
++.hypothesis/
++
++# Translations
++*.mo
++*.pot
++
++# Flask stuff:
++instance/
++.webassets-cache
++
++# Scrapy stuff:
++.scrapy
++
++# Sphinx documentation
++docs/_build/
++
++# PyBuilder
++target/
++
++# Jupyter Notebook
++.ipynb_checkpoints
++
++# pyenv
++.python-version
++
++# celery beat schedule file
++celerybeat-schedule.*
++
++# SageMath parsed files
++*.sage.py
++
++# Environments
++.env
++.venv
++env/
++venv/
++ENV/
++env.bak/
++venv.bak/
++
++# Spyder project settings
++.spyderproject
++.spyproject
++
++# Rope project settings
++.ropeproject
++
++# mkdocs documentation
++/site
++
++# mypy
++.mypy_cache/
++
++### VisualStudioCode ###
++.vscode/*
++!.vscode/settings.json
++!.vscode/tasks.json
++!.vscode/launch.json
++!.vscode/extensions.json
++.history
++
++### Windows ###
++# Windows thumbnail cache files
++Thumbs.db
++ehthumbs.db
++ehthumbs_vista.db
++
++# Folder config file
++Desktop.ini
++
++# Recycle Bin used on file shares
++$RECYCLE.BIN/
++
++# Windows Installer files
++*.cab
++*.msi
++*.msm
++*.msp
++
++# Windows shortcuts
++*.lnk
++
++# Build folder
++
++*/build/*
++
++# End of https://www.gitignore.io/api/osx,linux,python,windows,pycharm,visualstudiocode
+\ No newline at end of file
+diff --git a/examples/fastapi-https/__init__.py b/examples/fastapi-https/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/examples/fastapi-https/app/Dockerfile b/examples/fastapi-https/app/Dockerfile
+new file mode 100644
+index 0000000..1eed37d
+--- /dev/null
++++ b/examples/fastapi-https/app/Dockerfile
+@@ -0,0 +1,9 @@
++FROM public.ecr.aws/docker/library/python:3.8.12-slim-buster
++COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:v0.6.3 /lambda-adapter /opt/extensions/lambda-adapter
++WORKDIR /var/task
++COPY requirements.txt ./
++RUN python -m pip install -r requirements.txt
++COPY *.py *.pem ./
++ENV PORT=8443 READINESS_CHECK_PROTOCOL=http RUST_LOG=info
++ENV AWS_LWA_ENABLE_TLS=true AWS_LWA_TLS_SERVER_NAME=api.example.com AWS_LWA_TLS_CERT_FILE=/var/task/cert.pem
++CMD exec uvicorn --port=$PORT --ssl-keyfile key.pem --ssl-certfile cert.pem --log-level info main:app
+diff --git a/examples/fastapi-https/app/__init__.py b/examples/fastapi-https/app/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/examples/fastapi-https/app/cert.pem b/examples/fastapi-https/app/cert.pem
+new file mode 100644
+index 0000000..0db6495
+--- /dev/null
++++ b/examples/fastapi-https/app/cert.pem
+@@ -0,0 +1,32 @@
++-----BEGIN CERTIFICATE-----
++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
++-----END CERTIFICATE-----
+diff --git a/examples/fastapi-https/app/key.pem b/examples/fastapi-https/app/key.pem
+new file mode 100644
+index 0000000..38610b2
+--- /dev/null
++++ b/examples/fastapi-https/app/key.pem
+@@ -0,0 +1,52 @@
++-----BEGIN PRIVATE KEY-----
++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
+++hz58ionR0VxVTmfnsAv5VzIVivFGQ==
++-----END PRIVATE KEY-----
+diff --git a/examples/fastapi-https/app/main.py b/examples/fastapi-https/app/main.py
+new file mode 100644
+index 0000000..ee60be1
+--- /dev/null
++++ b/examples/fastapi-https/app/main.py
+@@ -0,0 +1,8 @@
++from fastapi import FastAPI
++
++app = FastAPI()
++
++
++@app.get("/")
++async def root():
++    return {"message": "Hello World"}
+diff --git a/examples/fastapi-https/template.yaml b/examples/fastapi-https/template.yaml
+new file mode 100644
+index 0000000..416464a
+--- /dev/null
++++ b/examples/fastapi-https/template.yaml
+@@ -0,0 +1,38 @@
++AWSTemplateFormatVersion: '2010-09-09'
++Transform: AWS::Serverless-2016-10-31
++Description: >
++  python3.8
++
++  Sample SAM Template for FastAPI HTTPS
++
++# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
++Globals:
++  Function:
++    Timeout: 3
++
++Resources:
++  FastAPIFunction:
++    Type: AWS::Serverless::Function
++    Properties:
++      Architectures:
++        - x86_64
++      PackageType: Image
++      MemorySize: 256
++      Events:
++        ApiEvents:
++          Type: HttpApi
++    Metadata:
++      Dockerfile: Dockerfile
++      DockerContext: ./app
++      DockerTag: python3.8-v1
++
++Outputs:
++  FastAPIURL:
++    Description: "API Gateway endpoint URL for Prod stage for FastAPI function"
++    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/"
++  FastAPIFunction:
++    Description: "FastAPI Lambda Function ARN"
++    Value: !GetAtt FastAPIFunction.Arn
++  FastAPIIamRole:
++    Description: "Implicit IAM Role created for FastAPI function"
++    Value: !GetAtt FastAPIFunctionRole.Arn
+diff --git a/src/lib.rs b/src/lib.rs
+index e72b9a8..30a8117 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -25,6 +25,7 @@ use hyper::{
+     client::{Client, HttpConnector},
+     Body,
+ };
++use hyper_rustls::HttpsConnector;
+ use lambda_http::aws_lambda_events::serde_json;
+ pub use lambda_http::Error;
+ use lambda_http::{Request, RequestExt, Response};
+@@ -34,18 +35,13 @@ use tokio_retry::{strategy::FixedInterval, Retry};
+ use tower::Service;
+ use url::Url;
+ 
+-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+ pub enum Protocol {
++    #[default]
+     Http,
+     Tcp,
+ }
+ 
+-impl Default for Protocol {
+-    fn default() -> Self {
+-        Protocol::Http
+-    }
+-}
+-
+ impl From<&str> for Protocol {
+     fn from(value: &str) -> Self {
+         match value.to_lowercase().as_str() {
+@@ -66,6 +62,9 @@ pub struct AdapterOptions {
+     pub base_path: Option<String>,
+     pub async_init: bool,
+     pub compression: bool,
++    pub enable_tls: bool,
++    pub tls_server_name: Option<String>,
++    pub tls_cert_file: Option<String>,
+ }
+ 
+ impl AdapterOptions {
+@@ -89,13 +88,19 @@ impl AdapterOptions {
+                 .unwrap_or_else(|_| "false".to_string())
+                 .parse()
+                 .unwrap_or(false),
++            enable_tls: env::var("AWS_LWA_ENABLE_TLS")
++                .unwrap_or_else(|_| "false".to_string())
++                .parse()
++                .unwrap_or(false),
++            tls_server_name: env::var("AWS_LWA_TLS_SERVER_NAME").ok(),
++            tls_cert_file: env::var("AWS_LWA_TLS_CERT_FILE").ok(),
+         }
+     }
+ }
+ 
+ #[derive(Clone)]
+ pub struct Adapter {
+-    client: Arc<Client<HttpConnector>>,
++    client: Arc<Client<HttpsConnector<HttpConnector>>>,
+     healthcheck_url: Url,
+     healthcheck_protocol: Protocol,
+     async_init: bool,
+@@ -110,16 +115,37 @@ impl Adapter {
+     /// This function initializes a new HTTP client
+     /// to talk with the web server.
+     pub fn new(options: &AdapterOptions) -> Adapter {
+-        let client = Client::builder().pool_idle_timeout(Duration::from_secs(4)).build_http();
++        if let Some(cert_file) = &options.tls_cert_file {
++            env::set_var("SSL_CERT_FILE", cert_file);
++        }
++
++        let https = hyper_rustls::HttpsConnectorBuilder::new()
++            .with_native_roots()
++            .https_or_http()
++            .with_server_name(
++                options
++                    .tls_server_name
++                    .clone()
++                    .unwrap_or_else(|| "localhost".to_string()),
++            )
++            .enable_http1()
++            .build();
++
++        let client = Client::builder().pool_idle_timeout(Duration::from_secs(4)).build(https);
++
++        let schema = match options.enable_tls {
++            true => "https",
++            false => "http",
++        };
+ 
+         let healthcheck_url = format!(
+             "{}://{}:{}{}",
+-            "http", options.host, options.readiness_check_port, options.readiness_check_path
++            schema, options.host, options.readiness_check_port, options.readiness_check_path
+         )
+         .parse()
+         .unwrap();
+ 
+-        let domain = format!("{}://{}:{}", "http", options.host, options.port)
++        let domain = format!("{}://{}:{}", schema, options.host, options.port)
+             .parse()
+             .unwrap();
+ 
+@@ -136,7 +162,7 @@ impl Adapter {
+     }
+ 
+     /// Switch the default HTTP client with a different one.
+-    pub fn with_client(self, client: Client<HttpConnector>) -> Self {
++    pub fn with_client(self, client: Client<HttpsConnector<HttpConnector>>) -> Self {
+         Adapter {
+             client: Arc::new(client),
+             ..self
+@@ -194,7 +220,32 @@ impl Adapter {
+     async fn check_readiness(&self) -> bool {
+         let url = self.healthcheck_url.clone();
+         let protocol = self.healthcheck_protocol;
+-        is_web_ready(&url, &protocol).await
++        self.is_web_ready(&url, &protocol).await
++    }
++
++    async fn is_web_ready(&self, url: &Url, protocol: &Protocol) -> bool {
++        Retry::spawn(FixedInterval::from_millis(10), || {
++            self.check_web_readiness(url, protocol)
++        })
++        .await
++        .is_ok()
++    }
++
++    async fn check_web_readiness(&self, url: &Url, protocol: &Protocol) -> Result<(), i8> {
++        match protocol {
++            Protocol::Http => match self.client.get(url.to_string().parse().unwrap()).await {
++                Ok(_) => Ok(()),
++                Err(e) => {
++                    tracing::debug!(err =?e, "app is not ready");
++                    Err(-1)
++                }
++            },
++            Protocol::Tcp => match TcpStream::connect(format!("{}:{}", url.host().unwrap(), url.port().unwrap())).await
++            {
++                Ok(_) => Ok(()),
++                Err(_) => Err(-1),
++            },
++        }
+     }
+ 
+     /// Run the adapter to take events from Lambda.
+@@ -204,7 +255,8 @@ impl Adapter {
+ 
+     async fn fetch_response(&self, event: Request) -> Result<Response<Body>, Error> {
+         if self.async_init && !self.ready_at_init.load(Ordering::SeqCst) {
+-            is_web_ready(&self.healthcheck_url, &self.healthcheck_protocol).await;
++            self.is_web_ready(&self.healthcheck_url, &self.healthcheck_protocol)
++                .await;
+             self.ready_at_init.store(true, Ordering::SeqCst);
+         }
+ 
+@@ -312,22 +364,3 @@ impl Service<Request> for Adapter {
+         Box::pin(async move { adapter.fetch_response(event).await })
+     }
+ }
+-
+-async fn is_web_ready(url: &Url, protocol: &Protocol) -> bool {
+-    Retry::spawn(FixedInterval::from_millis(10), || check_web_readiness(url, protocol))
+-        .await
+-        .is_ok()
+-}
+-
+-async fn check_web_readiness(url: &Url, protocol: &Protocol) -> Result<(), i8> {
+-    match protocol {
+-        Protocol::Http => match Client::new().get(url.to_string().parse().unwrap()).await {
+-            Ok(_) => Ok(()),
+-            Err(_) => Err(-1),
+-        },
+-        Protocol::Tcp => match TcpStream::connect(format!("{}:{}", url.host().unwrap(), url.port().unwrap())).await {
+-            Ok(_) => Ok(()),
+-            Err(_) => Err(-1),
+-        },
+-    }
+-}

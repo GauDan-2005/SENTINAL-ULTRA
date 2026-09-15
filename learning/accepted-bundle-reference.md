@@ -1,11 +1,12 @@
 ---
 id: accepted-bundle-reference
 status: platform-confirmed
-last_verified: 2026-08-11
+last_verified: 2026-08-16
 verified_by:
   - 20260809_080653__sysprog21_elfuse__162
   - 20260719_045042__oliver-oloughlin_kvdex__245
   - 20260805_080500__statrs-dev_statrs__315
+  - 20260805_220102__xaaha_hulak__118
 evidence: "The bundle as accepted on round 6, measured out of _archive/"
 applies_to:
   languages: [typescript, any]
@@ -21,8 +22,49 @@ contradicts: []
 
 Source: `20260719_045042__oliver-oloughlin_kvdex__245`, accepted 2026-08-04 after six rounds.
 
-**There are now four accepted bundles**, plus one accepted Path C submission with no bundle at
-all (libcrux 1165, written up in `not-fixable-is-a-written-argument.md`).
+**There are now seven accepted bundles**, plus one accepted Path C submission with no bundle at
+all (libcrux 1165, written up in `not-fixable-is-a-written-argument.md`), so eight accepted
+submissions in total. Counted from the `accepted` rows in `INDEX.md`, which is the population every
+`n=` in `.claude/rules/09-task-toml-reference.md` column three refers to.
+
+**That population is bundles THIS workspace submitted, and a bundle accepted on the reviewer path
+does not join it** (added 2026-08-18). A peer's bundle that a review here accepted goes in
+`bundles-i-accepted-as-reviewer.md` instead, because dropping one in here silently changes what every
+`n=` in that column counts, which is the same contamination as measuring a `task.toml` baseline
+against `_archive/*/work/` (LEDGER L61, L72). The two files answer different questions: this one
+answers what got us accepted, and that one answers what the bar lets through when we are the ones
+applying it. Any sentence citing either says which.
+
+**And that file inverts this one's central caveat, which is why it is worth keeping.** The section
+below headed "What acceptance did NOT validate" exists because nobody here knows what those reviewers
+opened: hulak 118 closed on the single sentence "This task has been accepted." A review run under
+Section 13 knows exactly which of eight battery rows it ran before writing Accept, so for those rows
+the split between what acceptance validated and what merely was not caught is measured at the time
+rather than reconstructed. The guard travels with it: an Accept reached by reading harvests nothing.
+
+`20260805_220102__xaaha_hulak__118` was accepted 2026-08-16 on round 3 after four uploads, Go with
+`go test`, `implementation / feature`, difficulty **medium**, 215 minutes plus 210 of revisions.
+**Read its row with the elfuse caveat attached and then some**: the reviewer supplied the single
+sentence "This task has been accepted." and nothing else, so the Submission Quality Score, the Minor
+count and every round-4 check panel are unknown. What it is the reference for:
+
+- The first Go bundle here graded **whole-repo** (`go test -count=1 -json ./...`) with the
+  exit-code gate measured safe at base **and** post-oracle, which is the pair
+  `11-verifier-hardening.md` 10.1 asks for and the opposite answer to firefly 1123
+- The only accepted bundle to **change the `task.toml` `difficulty` field from arrival**, hard to
+  medium, and it did so because a peer reviewer asked directly. The other six all shipped the
+  arrival pair unchanged, and libcrux 1165 arrives medium against medium so it never carried the
+  mismatch at all
+- The first accepted bundle on which **Step 5.5 Run 4, the gaming probe, was never run** - not once
+  in five batteries, and neither four rounds of platform checks nor the reviewer noticed the absence
+- A worked case of the arrival `pass_at_k` measuring a **compile failure** rather than difficulty
+  (0/3 on both models, from six non-derivable private names), and of what the difficulty screen then
+  says once that is fixed (`FAIL EASY` at 75/75)
+
+**Two things it validated nothing about, stated because the row invites the opposite reading.** It
+ships `difficulty = "medium"` beside `pass_at_k_opus_4_8 = "4/4"`, which is 100% against the
+documented Medium bar of at most 4 of 8, and its two `pass_at_k_*` fields describe round 0's output,
+**three** rounds before the one that was accepted. Nobody flagged either. Not being caught is not the same as being right.
 `20260809_080653__sysprog21_elfuse__162` was accepted 2026-08-11, C, graded through pytest,
 `implementation / feature`, difficulty hard. **Read its row in `calibration.tsv` with the caveat
 attached**: the submitter reported only the word accepted, so its round count and every check
@@ -42,21 +84,43 @@ difficulty screen had blocked it **four consecutive times** (see
 `when-fail-easy-is-not-not-fixable.md`). `20260805_080500__statrs-dev_statrs__315` was accepted
 2026-08-11 after five uploads across rounds 0 to 4. Its measurements are in
 [calibration.tsv](calibration.tsv) and its full record in
-`_archive/20260805_080500__statrs-dev_statrs__315/task.md`. Where the two agree, the number is
-worth something; where they differ, there is no normal. All four agree on: an instruction whose
-longest prose paragraph sits under 800 characters (kvdex 717, statrs 769, redisshake 680, elfuse 379), a
+`_archive/20260805_080500__statrs-dev_statrs__315/task.md`. Where they agree, the number is
+worth something; where they differ, there is no normal. **Six of the seven accepted bundles** put
+their longest prose paragraph under 800 characters (kvdex 717, statrs 769, redisshake 680, hulak
+603, elfuse 379, xlwings 312), and **AltBeacon 1177 is the counterexample at 826 and was accepted
+anyway**, so read the band as a calibration rather than a threshold. Re-measured 2026-08-16 across
+all seven with the corrected script below; do not use the older split, which is retired under LEDGER
+L45 and is described further down. They also agree on a
 populated `pass_to_pass` guard, script modes at 0755, a silent `git fsck`, a git-independent
 test-tree restore, an exit-code gate in the grader, and an oracle whose runtime has large headroom
-against the verifier timeout. All four also ship an instruction that names **no internal file
-path and no library to use**, and elfuse is the extreme case of it. Where all four agree the number is worth more than where two do. They differ on nearly everything else, including the
+against the verifier timeout. They also ship an instruction that names **no internal file
+path and no library to use**, and elfuse is the extreme case of it. Where all of them agree the number is worth more than where two do. They differ on nearly everything else, including the
 `tests.patch` shape, the graded totals and the number of rounds. statrs is also the first accepted
 bundle here whose `golden.patch` was **edited** rather than shipped as received, under
 `docs/guidelines.md:286` case 1 and then again to expand scope, so it is the reference for what an
 accepted oracle edit looks like. redisshake 1005 is the second and the wider one, at three
 corrections in one patch, all three still unfixed upstream, each declared in its own issue block.
-**Two of the four accepted bundles carry an edited oracle**, so a case-1 correction is now the
-normal shape here rather than the exception, and `oracle-bug-vs-pr-scope.md` carries what makes
+**Six of the seven accepted bundles carry an edited `golden.patch`** - every one except kvdex 245,
+measured 2026-08-16 by diffing each `work/solution/golden.patch` against its own
+`download/original/` copy - so an oracle edit is now the normal shape here rather than the exception, and `oracle-bug-vs-pr-scope.md` carries what makes
 one survivable.
+`20260727_135618__AltBeacon_android-beacon-library__1177` was accepted 2026-08-14 on **round 8**,
+Kotlin and Java through Gradle and Robolectric, `implementation / feature`, difficulty hard, 12
+uploads, 205 minutes plus **350** of revisions. It is the reference for three things none of the
+others show. It is the only one accepted **after a human reviewer round**, so it is the only place
+this workspace can see what a person catches that the whole automated pipeline does not. It has the
+most rounds of any accepted bundle here by two. And it is the counterexample to the sub-800
+paragraph band, at 826.
+
+**What the reviewer caught is the point of the entry.** Every evaluation check had passed. The
+graded Kotlin file only ever compiled against a snapshot type whose fields are not optional, and
+`instruction.md` never asked for one, so **seven of the eight difficulty trials died in
+`compileDebugUnitTestKotlin`** with 24 errors and recorded all 230 graded ids as missing, the 210
+regression ids included. The hard tier was grading a compile target nobody could hit. No automated
+check can see that, because the oracle defines the type and therefore compiles, and the NOP fails
+either way. `quality-check-criteria.md` carries the check that would have caught it and
+`LEDGER.md` L76 carries the claim it refutes.
+
 Deno/TypeScript, `evolution_and_maintenance / migration`, difficulty hard, verdict Fixable
 throughout, PR scope never touched.
 
@@ -192,7 +256,7 @@ Measuring the four bundles here answered it in one command:
 | equalsverifier 1166 | 36 | 447 |
 | xlwings 2719 | 35 | 312 |
 | firefly 1123 | 55 | 663 |
-| hulak 118 | 49 | 603 |
+| hulak 118 (**accepted**) | 49 | **603** chars |
 | statrs 315 | 59 | 769 |
 | openwhispr 1002 | 21 | 602 |
 | redisshake 1005 | 15 | 680 |
@@ -280,3 +344,30 @@ What the four rows already show that this note on its own cannot:
 **A column in that file is calibration and never a target.** It tells you whether a number you
 measured is ordinary or unusual, which is a reason to look again, not a number to move toward.
 Nothing is improved by pushing `fail_to_pass` to 20 because kvdex was 20.
+
+
+## Ninth accepted bundle, ziti-sdk-c 668, 2026-08-11
+
+C library with C++ Catch2 tests on CMake, Ninja and vcpkg. Fixable, accepted on round 6 after
+seven uploads. 20 fail-to-pass and 6 pass-to-pass, `golden.patch` 6 files matching the source PR's
+non-test list exactly, `tests.patch` editing 3 pre-existing test files and creating none, full-tree
+base64 restore, instruction 46 lines with a 777 character longest paragraph.
+
+**What its acceptance validates.** Everything that had previously failed and was then changed and
+re-measured: two coverage blocks, an oracle spec gap, a Q10 instruction leak, and three difficulty
+screens. Also, for the first time here, a **verifier timeout pair that was corrected rather than
+inherited**, 1800 against an execution budget of 1800, which is Secondary Requirement 1 cleared.
+
+**What it merely did not catch, and this one is worth quoting back carefully.** The packaging axis
+sat at **1.0 from round 1 to acceptance**, on a PEM private key tracked at the base commit in
+`environment/repo/tests/test_ziti_model.cpp:805`. It could not be deleted, because deleting a
+tracked file is a hard boundary, and it was escalated and never resolved. The task was accepted
+carrying it. **That is one measurement on one task, not a licence**: it says a capped packaging
+axis did not block acceptance here with everything else clean, and says nothing about a stray
+artifact you put there yourself, which is the case `dockerignore-context-root.md` covers.
+
+**The thing it adds that no earlier accepted bundle has.** It is the only one whose difficulty
+answer rests on a measurement taken **before** the upload rather than on reasoning, and the method
+is in `implementation-control-is-the-lever-generator.md`. Rounds 4 and 5 chose levers by argument
+and both were worth zero; round 6 generated four implementations from the instruction alone,
+proved no requirement discriminated, and took the lever from their own honest-gaps reports.

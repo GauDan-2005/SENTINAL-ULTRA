@@ -1,8 +1,9 @@
 ---
 id: probe-the-instruction-you-already-wrote
 status: platform-confirmed
-last_verified: 2026-08-09
+last_verified: 2026-08-16
 verified_by:
+  - 20260805_220102__xaaha_hulak__118
   - 20260803_111822__xlwings_xlwings__2719
   - 20260805_080500__hyperledger-firefly_firefly__1123
 evidence: "Difficulty screen went 87.5% to 75% to 37.5% solves. The round that cleared it added no requirement at all: it graded the untested half of a sentence the instruction already carried. The platform artifact names that new id in two of the three opus failures"
@@ -48,7 +49,9 @@ already says most of those measure zero. This note is the other half of the answ
 **Before adding a requirement, take the instruction you have already written, split every sentence
 into its separate clauses, and check that a test fails when each clause is violated.** The clauses
 nothing grades are free difficulty: the behaviour is already stated so the task is fair, the agent is
-already told to build it, and closing the hole costs one graded id and no new instruction text.
+already told to build it, and closing the hole costs no new instruction text, and often no new
+graded id either. See the hulak section below for the third route and why it is the whole decision
+when the f2p list is near the cap.
 
 ## The measurement
 
@@ -118,5 +121,35 @@ map read in the other direction. Walking it both ways costs one pass:
 | clause has no assertion | a stated rule an implementation can ignore |
 | assertion has no clause | overreach, graded behaviour the agent was never told about |
 
+## Run it BEFORE the board is green, and the closure need not cost an id (hulak 118, accepted 2026-08-16)
+
+The three cases above were all holes found after everything passed, two of them by a reviewer.
+hulak 118 is the first record of the sweep being run the way this note asks for: as a pre-upload
+pass, on a round that was fixing something else entirely, before any screen had complained. It
+found one.
+
+Six clauses were broken one at a time in a throwaway copy and five went red with a named test. The
+sixth, "its rendered view marks the search area and every visible row", left the **whole suite
+green** when the first row was left unmarked, because no test ever clicked it. That round was
+accepted.
+
+**It cost zero graded ids, and the `pass_to_pass` route above was not available.** The clause is
+part of the new feature, so an assertion on it fails at base and cannot be a regression guard. The
+third route is the one `static-checks.md` records for a different reason: a `fail_to_pass` id maps
+to one **top-level test**, not to one assertion, so the closure goes **inside a graded test that
+already exists**. Here it was appended to `TestSelectorClickOnARowSelectsAndConfirmsIt`, and
+`fail_to_pass` stayed at **19** against the hard ceiling of 20.
+
+Order of preference when a slot is tight:
+
+1. **Fold into an existing `fail_to_pass` id** whose test already exercises that surface. Free
+2. **`pass_to_pass`**, if the behaviour already works at the base commit. Also free, and it misses
+   the 20-id cap entirely
+3. **Spend a new id.** Only when neither of the above reaches the surface
+
+The cost sentence at the top of this note used to assert route 3 unconditionally. It is wrong as
+stated: closing a hole costs a graded id only when no existing id is already exercising that
+surface, and at 19 of a hard 20 that distinction decides whether the sweep is available at all.
+
 See also [[difficulty-levers-must-discriminate]], [[related-pr-carries-its-own-bug]],
-[[quality-check-criteria]], [[peer-review-bounces]].
+[[quality-check-criteria]], [[peer-review-bounces]], [[static-checks]].

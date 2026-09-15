@@ -1,0 +1,7 @@
+frozen_on	2026-08-19
+frozen_at	2026-08-19T10:36:44Z
+zip	7c2fb5e2-f2ba-4d17-a581-9a7dfcf1e1cd_submission_2026-08-18T18_38_15.660Z.zip
+zip_sha256	809c5a4dbd2c7ca2907ad5384c0e4c1b4af1a886df5c78654d1ac89592940ab6
+manifest_sha256	cf9b0e4ef04ceb37cdf2b32e40fa234af6efb4e7ddc2ef56e584427bfde1dd5f
+entries	116
+tool	bin/pristine-freeze.sh v1

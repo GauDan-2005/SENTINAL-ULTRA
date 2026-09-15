@@ -48,25 +48,31 @@ done
 # ------------------------------------------- build caches in the source tree --
 # These paths are gitignored, so `git status` stays clean and nothing warns you.
 # Running gradle, maven, npm or cargo inside work/ or download/original/ is what
-# puts them there, and the next zip ships them.
+# puts them there, and the next zip ships them. A timed reviewer check inspects
+# only the submitted archive, so it never reads sibling work or pristine trees.
 
-CACHE_PATHS=".gradle target node_modules .pnpm-store .venv __pycache__ .pytest_cache .mypy_cache .ruff_cache build/tmp"
-if [ -n "$TASK_DIR" ] && [ -d "$TASK_DIR" ]; then
-  found_cache=""
-  for sub in work download/original; do
-    [ -d "$TASK_DIR/$sub" ] || continue
-    for c in $CACHE_PATHS; do
-      while IFS= read -r hit; do
-        [ -n "$hit" ] || continue
-        found_cache="$found_cache ${hit#"$TASK_DIR/"}"
-      done < <(find "$TASK_DIR/$sub" -maxdepth 6 -name "$(basename "$c")" 2>/dev/null || true)
+if [ "${PREFLIGHT_REVIEW_FAST:-0}" = "1" ]; then
+  SRC_TREE=""
+  pass "pkg.build-cache" "review-fast inspects the submitted zip only"
+else
+  CACHE_PATHS=".gradle target node_modules .pnpm-store .venv __pycache__ .pytest_cache .mypy_cache .ruff_cache build/tmp"
+  if [ -n "$TASK_DIR" ] && [ -d "$TASK_DIR" ]; then
+    found_cache=""
+    for sub in work download/original; do
+      [ -d "$TASK_DIR/$sub" ] || continue
+      for c in $CACHE_PATHS; do
+        while IFS= read -r hit; do
+          [ -n "$hit" ] || continue
+          found_cache="$found_cache ${hit#"$TASK_DIR/"}"
+        done < <(find "$TASK_DIR/$sub" -maxdepth 6 -name "$(basename "$c")" 2>/dev/null || true)
+      done
     done
-  done
-  if [ -n "$found_cache" ]; then
-    fail "pkg.build-cache" "build-tool cache under the task tree:$found_cache"
-    note "delete it, then re-run the stray sweep. Builds belong in a disposable scratchpad copy, never in work/ or download/original/"
-  else
-    pass "pkg.build-cache" "no build-tool cache under work/ or download/original/"
+    if [ -n "$found_cache" ]; then
+      fail "pkg.build-cache" "build-tool cache under the task tree:$found_cache"
+      note "delete it, then re-run the stray sweep. Builds belong in a disposable scratchpad copy, never in work/ or download/original/"
+    else
+      pass "pkg.build-cache" "no build-tool cache under work/ or download/original/"
+    fi
   fi
 fi
 

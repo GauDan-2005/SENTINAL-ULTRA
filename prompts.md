@@ -41,6 +41,26 @@ The four questions the form asks:
 
 ---
 
+## New review
+
+```
+This is a review task.
+
+Submission zip: <path to the zip>
+Submitter's form answers: <paste them, or say "not supplied">
+
+Set it up under review_tasks/ and run Section 12. Read docs/reviewer-rubric.md before the
+first finding is written and score against it: the five Major Pillars first, then the
+Secondary Requirements, then the verdict.
+```
+
+The zip usually arrives on its own. Ask for the submitter's answers anyway, and if they never
+come, say in the review which field went unanswered rather than filling it in unread. The
+rubric is the bar for the task and also for the write-up, so a review that reads as generated
+is a Major finding against the reviewer.
+
+---
+
 ## Resume from a transcript
 
 ```

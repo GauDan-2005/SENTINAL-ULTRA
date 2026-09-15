@@ -1,0 +1,1007 @@
+#!/usr/bin/env bash
+# Compact verifier entrypoint — SELF-CONTAINED (generic; shipped per task).
+#
+# Resolves the workspace, applies the eval tests (tests/tests.patch) at verify
+# time, runs the configured test command(s), then grades via an EMBEDDED copy of
+# grade.py (inlined at materialize time at the grader marker below — no sibling
+# grade.py ships). Reads tests/config.json = {execution, grading, artifacts}.
+# A fallback trap guarantees reward.txt exists.
+set -uo pipefail
+
+CONFIG="/tests/config.json"
+LOG_DIR="/logs/verifier"
+STDOUT_LOG="$LOG_DIR/test-stdout.txt"
+STDERR_LOG="$LOG_DIR/test-stderr.txt"
+REPORT="$LOG_DIR/report.json"
+OUTPUT="$LOG_DIR/output.json"
+REWARD="$LOG_DIR/reward.txt"
+
+mkdir -p "$LOG_DIR"
+
+# Safety net: if we crash before the grader writes the reward, write 0.
+write_zero_reward_if_missing() {
+  if [ ! -f "$REWARD" ]; then echo "0" > "$REWARD"; fi
+}
+trap write_zero_reward_if_missing EXIT
+
+if [ ! -f "$CONFIG" ]; then
+  echo "ERROR: missing $CONFIG" | tee "$STDERR_LOG"
+  echo '{"success": false, "infrastructure_error": "missing config.json", "reward": 0.0}' > "$REPORT"
+  echo "0" > "$REWARD"
+  exit 2
+fi
+
+# Resolve the workspace from hardcoded fallbacks (config carries no workspace).
+WORKSPACE=""
+for p in /app /testbed /workspace; do
+  if [ -d "$p" ]; then WORKSPACE="$p"; break; fi
+done
+if [ -z "$WORKSPACE" ]; then
+  echo "ERROR: could not resolve workspace" | tee "$STDERR_LOG"
+  echo '{"success": false, "infrastructure_error": "missing workspace", "reward": 0.0}' > "$REPORT"
+  echo "0" > "$REWARD"
+  exit 2
+fi
+cd "$WORKSPACE" || exit 2
+
+# Export configured env vars (execution.env).
+python3 - <<'PY' > /tmp/verifier_env.sh
+import json, shlex
+cfg = json.load(open("/tests/config.json"))
+env = (cfg.get("execution") or {}).get("env", {})
+if isinstance(env, dict):
+    for k, v in env.items():
+        if isinstance(k, str):
+            print(f"export {k}={shlex.quote(str(v))}")
+PY
+# shellcheck disable=SC1091
+source /tmp/verifier_env.sh
+
+# Apply the eval tests at VERIFY time. They ship as tests/tests.patch (NOT in
+# repo/), so the solving agent never saw them. git apply (plain, then 3-way for
+# agent edits to neighbouring files) when git exists; otherwise fall back to
+# patch(1), which patch_dockerfile injects into every task image — a slim/alpine
+# base without git must not zero the reward. A hard failure means we cannot
+# grade -> infra error, reward 0.
+# Restore the repo's test tree before applying the eval tests. Anything the agent added
+# or changed under lib/src/test is discarded, so it can neither collide with the new test
+# files this patch adds nor influence grading.
+#
+# The base tree ships as a gzipped tarball, base64'd into the quoted heredoc below, and is
+# NOT restored with git. The verify-time workspace is not guaranteed to be a git repository,
+# so a git-based restore is skipped exactly when it is needed and the trial dies on
+# "tests.patch did not apply". test.sh is read from /tests, so a payload carried inside it is
+# present whenever the verifier runs at all. A failed restore is a genuine harness failure.
+TEST_TREE="lib/src/test"
+TEST_TREE_B64="/tmp/tests_base.tar.gz.b64"
+TEST_TREE_TGZ="/tmp/tests_base.tar.gz"
+
+cat > "$TEST_TREE_B64" <<'TESTS_BASE_B64_EOF'
+H4sIAAAAAAAAA+xdeW/jthLv3/kUfAYKyN1YluQryR5oDm8bIMci8b62eCgWlEQ76sqSnyTneMV+
+9zdDUdZty0ectLWKrWKJ+pGcGQ5nRuTItvSm7xnNgPlB87vnORQ4ep0OP8ORPfO/1XZP6bR7vY6i
+faeoitZrfUc6z9Se1DH1A+oRso2qXuNhJ/l/7Jiea5mX1LGG8Ft+HNubqAMZ3G23y/ivqb1ehv9t
+BfmvbKLyRcc/nP/vxoLZBJjt+Ec0FIH3tbsgmBw1m75xx8bUl8V12XDHTTr52vSY3xTXah/29ggc
+76Y+8xsT5o0t37dch4j7Rw4ds/e1CCEuIJ9cfO4Prq8HP9eaH9aF+HJ8dnl+tTrQTf+0f/7v/pcT
+APtyen356aI/6J8hXghIJxPbMmgAZcMq+FWPGcy6Z14G3/VGMrUDnVEDoMUJBS2YTuTb8HziudQ0
+qB/cCIzaDIQ9TlwvYMCFIbV9Vosr5JVaTsCcoDG07IB56XthU42gvMvhw3JYRs73dh2049PB+fXV
+l0/Xv/RvAPXqqn+6adSz89tS4HfNEsq8a0Z8EtzkF33m3VsGi6nuUN1GogfelNVSyGWMKSxk+a5N
+odAnzzWY788ta1Od2e9roYQUFwlJI4vWyie86G34K/1Ec17vBEz4+Dmnk2ig65V0dk16zIZOMzV2
+9t41I53zYe+l1d8//kjN/3/Qe/oMRuDy9p+qqe2d/beNI89/mLs2LAPL819TlJ39v5WjmP8z22Uj
+krA8/1u91o7/WzkW8X8TYrA8/ztqV9vxfxtHRf4f20FoOX6iHliWA4wOYOlKdcz3/1Wl083wX1O7
+vfbO/9/GMaHGVzpipMhjfbu3Z43RwCdAo8AyeKE/po4VyMc+SAF4aPzU/+8UrP+31QpfucHV1Lar
+luZFo7KFbrXtjkaWM5Iv3NEldaAv3tuq5aGsnyrsubprMyPwLEO+if9Gcb+ZOg5CJ4uHDfb4HRkK
+/GIFd2/zBfDx0mqo47gBd43kU9cZWiOo4sfwL8k3v5L3RDuo7/0o0KXCVsmGDeSq7zV/2Pv5+hcy
+uCa3/T456598/olcnF/1b8nHm+tL8tv15xvy+ep8QAb928Ht0Z4qE58FhBLbchj87ysjwZ3lExrA
+mREesCDukDy5U4+ghjhKOnjZnvh31HQffPmWn4G8sh94jI6hC7dPfsDGMvOAgJpMgGK8AoT0ydBz
+x/yn4Y7BMzR5a/ZaMrlw3a9RW7Ao8RgnIbj3jFhO2KwHphPdg3qZt0+YPJKxiVjiqNlsfoarftOE
+gs6o+eB6X32QdxbFOcH/fbTGVvB0Yeke9Z6a+tSyzWZYi89Vot+0HJM9ynfB2N5ry6T/OMEWYovi
+PgEReaRij/zQ3JtMdfB1CecIKVCb5M/QKxblhPjrTwH7z+/kjj3eAi2d0cA9gSvHnkefpPAK8evw
+aER7ywmIzRwgrS/DeQSSUX87uyvQTBpQKOGwh/AKPtAk2u9xwaHrEQmxLCinvIXTO4TFP96A4CVr
+xAMB/2NxDCgvIWidSNLpHfWoEYAcmtbICiRfNuDKcSBZ9X2iduvk3TvSrudiQHi8IeUPv1HDxxMd
++zb7y2PB1HN4i8Lb4a0fkcRJ+t4Dn7nw3DDDHTnW/1jIECnZt/CS0B4yDIkzpk9HEsY98lTFkw/d
+L+RVTdHAe6WqPhyqB4qKKkcbaq12u9M2hl2zTZUhNYfasH2oqjo9HA5pl0+BiqIZHeVQUWqJCjPS
+QybhKeRo5maS/eF1Euo7KB4+J+M4uzWocwY047zz90mj09knDihZoDQ0s9O9SOAktTuRagLWv3On
+tknu6D3MGqA2uJQNLWabNQDZF9XKI6Ai3PmIN3ypLvtAeqlegi7VxmG7InSdha1GzMN9kLFZd+ui
+gjrWcDkc3TCMdDFzhv1tb4EknLEAxqt/Bh24/Jl65gP1ioRiRfX2/NLSgX8tncGzTDnsaF0VbCut
+24FzqzvsMk3pdDqttgb3qdJSSo/XJ2nCNMhKGsgCTJH8WWINhVwQf2pg8HIIV59qkdTVq+kCIQHH
+GCV2aADch2cHTxP2wgJAqa5vX10IpoHau6SBcQdNDEsiQU5dk0nKIzbM/uvznff9F891Rh9db0xh
+TsBJxIf6sdcrTAlrikhsssqmVPv111+hQ7XFDQ0Ns9qKUxMNZW0IxzKy9prUxap0Y45Zy0tfiegJ
+sUMRrCR6VWTPF2KF7xyd0Wx+3L7krSAwS9oyr3SOmdkbN8CCBLupD8A+ctlyagIptmSw8BzjZToF
+JhdYLrWIXg0kWAMp1kCSNZI0qyUrOjeZE1hgTXmSUpcDN+TKnKotUyusWS2DVSvCtoo7VAarVYIN
+Hj+5D8D0AuhG5zAJPQhLzrcYp0PwHKZeMaDyqKoHZD+GvEw8MA83HJwJu5b8j3luogr8CRWg3F6A
+qpEUu15q9sJv4ORMSXx76XhP9lg2/rdc5C88FsT/ep22mon/KR2ts4v/beOoFv+LFma4vgwK2mB2
+URzseBhkYm8l4a+FYbMKYbglommiKAqtPA0sW+bTWxz4i28UhRIL4pR3dGx4OA64vcy8VMRycEeD
+ouBm9iEfyG1fD6sVZaibBm61wnfU/+S5E2jLU8UoaxTALQg8Vow8Lh163MUetxZ7FFFHbpR61j34
+uyQcxISK83tuNL0VJiwfxzkbluLVlKHabJJTm1GHTCegIJ6IqwcUqGfiFAyocaxySCRuTf/rfVRj
+NrAoLsseM54MmyXNv29J83oXNMVjk0HTNaKmW4iHvmL/Yf14JanqOp5SXO9nURv4EA4UXJi3yVhV
+NZ9zaDnUjujpeiB5+DvDAPkEFRmygEeUEh3WiqW5woFIJ/aUBS448semCfMdsIDSI10/Mowj0zxi
+7Gg4rG2mgis6ZlLtGDTa7NKayOlwmroWWP8x8GjCxQiNGZjILyw/kNoX+6RzUV+rhnNTlWrd9bp8
+bmpSrbcuRkuqHayHkfL5VGU9rKkdWB89kA6hDPnwWAcxVFYJL5pLndBv52frdZ3HLBrqetKGVh6o
+9ON75oFqEJCa3FoLVCxe/jy1TEldDyoKE6glU2UVGG55SanYWqjaQhYZX1lwCkZcIKmdkkJIl0tG
+fZCyMfBSlO7W38brsWNTS5g6obVUWO2DZwVs4IYFJfHkPlGSk5FA8cNwwyfXt9AKlJScup4pZmGW
+gX32PqGtT2/6x4PrGxl8CDAMP8KkmK42NwGifyPlaB1h7+fucC8n/0B0JJwVqaZndDxMpsLzKdT2
+9Xxt82FRsycxMzq+Ml5KnycA1coQ5kyBJx5Pq3IN1HhVOJaeFEoxo+mhKq5lqgmsWFFx6+kchLy7
+DJY2H6u3DFZrPtZBdaxkHDHJS6U6QmZiSKDwKaIqziQzHWRFNTExVIX0QDMlYHA6qPxoTvWngHAS
+qArlxwo/SeHqACJunHy4XZ09sQ2aANCWYMtsCkg2oFO9AZmpIYnSLbDV4iuxhzDHRTDcyVP80taj
+jj9knn9s21EQOuEn7Ez4FZF3JvxqGDsTfg3wnQlfHeaC+sJYv6EPGIDypVkM7/c/8W0gvhLUvm3A
+T3gORyEqnTXaQblb3GRPaWgpAq1onocoO+N8Z5yXYu2M8/k4O+O8DGAt4/y5jeuKKHZu9kjgFM8j
+lez2b699h3vF9R+pFwTLrgGZv/5D6fQ0Lbv/q9XZrf/YylFt/cezb7zKJ0uxQHHTwPWihBfR74KV
+JCds6HrshVeewO3AGrO+c295roPqaL1FKqeubYev9otWqqDBsHh73g9vq67fyC/8SK0lyA3/cBfT
+jyHl99LxCJ1fnIUd1ng1mVjnixY+lxtJiI8MU5/u+kxcjV54px/5d1wGJK8fJjRJvtbMvfj0o+RX
+p3fM+IqLdC1/8VMZGeUzRvZaHIb58Rra7lkmE78F8ZCn78KnPpBRBJqO34g3+AnhkNl4gqtIwICc
+OQNizQT/zd8uR4GjJJv4Cpsb6oxmsSP/3LlhIwDlbvLEZufOvRumbfERAFoS3OFyF9J/NNiEJ/D5
+M08Q8cI7+vU+fXfWFb6A1IFWOAb76HrHcY4YKT+W5EQKmcgDE0s8LPSOwOishb0PewCEwpMqHKfw
+omSZ+ynSvYvNuQ8JMtYLkLQ8Uk1RjlT1SNOOWq2jjx+P+v1a1DQ9LSDllJZEO0WVqTUGaRBchQwQ
+zAwfjLdU7ZP007cY+1r4rBWA5cjFUnbAQUGYoqZcueviaavSRNsgTdbvxkZpPKNJSsRaWREjb0it
+Ac4vt62ry+2yhG6tRWhtkZZxJ8W17zRKRY3yLIKylppadShvXzILqy2TyI0p41VqXa+vSjQKl3U4
+l/L/Vkn+8d0i/6/d1dRc/g+ttcv/sZXjlfh/r3ynQLVl9Lz0UslQnj9zyvZW9O8W9D/zgv6sDt5l
+Ekkem84kkqaqoJwekXLg/hwRWEqug0/2M7wt1lIQXxcETF1O0rqIhBxU8AWuvHmTJaSvoyHLHFMw
+Vx7yjc9S7XtFe8TNmgjwH+v3uX0HkHjzZsVF6bdRgOKCwogI1tkZsOyugPze4vKNAYuTHqR6URsf
+aY3We2zRvnXUbqiHcNKUhqbiWWtorf3JkdZuaO1980jrNLTOzOfHI71HQDREbBEA6y3ahBA8TVBB
+mbFWHEJDxJZSzM074jtq96NWjosTM/BE0tf82dJ9ChXaAMITtyDVhNbCJvQdc+0GpLbSPuLduNpR
+aVKK8g28+RqtmRc0j+DtRG9jvylBZD+9m3fJmlNkTtarHhZWPCPtetXOkzClWo/VTfdYU6v0eNVq
+5/VYq9ZjbeM9blXp8VLVTsKd9HM6mxRo/op2NYURVlTetVw1qygFbmHM60wnUQsuplhvXPLqyruU
+raxoLFabJlGrJae9fKaPZWatzMQqmmhn6lCVOP6ZJ8bQ8sB2RIjE5jVVweRdSmQvKL9XNQPmbRBc
+4fUNHttPbYLhhuoGyHMaHtiSJQyPdDN2OVKKq97lSFkvR8pCJXBs2zBAj3l2JL5vKb0kdqcTinRC
+bfz0JST8FzSFa39NHSH6lzS/Yn3BBcLSbTTxs91NCnJeYjaeVesvI3dLOsOvzRXezUi7GelvlLUr
+0kLLWcEYXQ8TEN5OmGENcXtWuh9/Kc20cjLj59RNCs6EolU7/bTTT69KP1Vwm/sOxj79Arf59Y/s
+v7G9IajnsRFzcPUWM0/SwZbZwsxjE5RzYPl860GIz6/nwdgjzAKAxCPZmH0h3PaD+3avh3xFR9S0
+3n7qjU9OShNvmKOdToQm2yHYHgsuf/VKxyzM3wX9ajAUPJAH3OCQbNh+rtMrCjPMfH3TBMl0HTZg
+NrQr8J5eRMKVrtJSWpQOGX5RCM8aSrGmakpLbSltta21W22lo3a0Tut54jrJ4nL/7Oy328H1Vf/L
+4OLyy8Xxb9efB387GVbVBUK8OfktfB2bamm9pFBO1KvK+oUVBDa+9rKoE09UyN9sBvGXUeMo3iD0
+INQg/D3lAMwwquiKoZgKU4YqFFc1taW2YwNtS+4janNVaagdG//o/vXNM8tUE1C6xdOLg1SgQaM8
+JvmwSVvM5vKXrsoABlNg54HS26R9lutSRoT+YkZbEnJNoy2pBF6NAbfMyP8bj/jXasDFnJYnwM3A
+dqQK09cKAGVTW37YvNIJeLlYyymd4DA2S+Mr2zM2cTTil1KQrgwcpa6pd8zhUG8fmJoOg9JUhh3a
+U5XDLlOEO9WOQrirH39jZ2w5LV/TdUrhnFsI136szVH+lQWPE+8nGiTmOsy2cTN1fNzQ98mcXoj1
+ky/q6ihm6OqoCuspWrfXHcJ/va7RRUkzir8Y1e69tPTxV4hAQqTkEP6U+AflKwiqfwRTzPsho3Qf
+ZVZ7ryogmq1G66jRVrnsagWN3Nini/jHYwSYkEn8YkxSLlOzSqUFI589O2xmyUvUFxaquYbGgrsv
+qNKqSMr986uxzzcX5LzodWngTR0DJ0Rcpn4QsgfE5yBtZqsSmteJBUVpU6PaG9OkCtyCNps932yS
+KzdAo0KsxA/bLl7Y6AwGPrF8tNe74JIBAMUVWvhb34cLJt+v54zi58P0Ieim+MlK8LuEfIVTuBc9
+NGLwI29m8k11WCtfdOYvPzjA+u6+hhcjK2vO9ZY6v3Y9ykn2CYTVZmNcwi9ik5iCyPenTNMO/ymS
+vaopi0Yq0rzHD411ta7R63T17iH8jYaDKYSa/6NgfL06g/S5pNUtFNh5wrpAWk9pSIoLkW9h81GF
+ZjqHTy7J/6yg6ULbQH6hHcHUZADXOpAPW29zBcBQiUo0ej1Za5XPnDHD49yis8LRkUv2iFE09aCO
+Yn9DTWvqkysW8I1Xhc/ypJdqjZc3Gea0gpHx3ym4q/g1v7Ge2CmefkzL7p1RHr9XDvCjghJ2si5J
+ETHeHCr1H1DcFVmpF2SAinJeLsSLaPcG5o+FiFEArNE55J0bwJgXaa9AejDh69gK0DkPV2qDAkEt
+MWZ4yXKIeTLOw+aSniPu9dn1ERnTaOcexkbx6y3xmgqfUC8TgwS5JB9IW2gVCX6xe+bAJU3siCrR
+BYVqQM41tGwNnGLQVJCphWdQCz1QA+pBQz2Y83nMySoxoDvQ2Mw7qWIWiKBcQQuoeR8hzPbSJeNF
+bxK1iEuJPXZiWFOsDGNPUqL0PlH2Z/D8Rx4qH0yKofQCkDxCLrqVHfGh/juZqdm0ho2heYi3mpLN
+jCUuKmakWvh2z+/9jMmAwGXRqagN9WiJv2htPafgwrsXsR5E10yehGoakJJPh7a5JiVD37I/1f3w
+b01sX2wSMdRJgxzCqazOhGpdWGlrmUpBLrHWWbWoiAgP6KV6OlfvlTk2AiaeOWCQRIwZYywwH5vh
+ihGjM5kmZHhTRN3SZhSo/sQE7YdZRvF1RnzgspZ8fWq1+mbdTbxX0kFVEc8a3eHOkqjAfkaiYLTJ
+WHk58kwMSqGjEvtZyUmACxME/z/XAPkJfImsOvzoerNgxPY/OLRRM6LcZlC0brvb6XW7na7RHfaU
+LmYkFCZuaE7cBcHkqNkE0QJDfoKb5N2COXVbU/VmJtKlwyFrzaJpyf4Y70ECJ2jq2QkJBzJMxOdM
+SIu/vFO0aF+SFu9LKhdn02X4xedT6t/hQszIL8YtpACCm0dP3TEMF8t3nWsHPOfsV+345nrcjY1s
+94HvMKTupjoyPf4QalN8E7MRdrVhi23/FnqXfrOltXa+ZUlMsR35lv8ATzHpJqYCGuQBhAp1OZjQ
+bJb8Smchozz3wVk65BE7keEuCNwrfT08s4DcHrDvlucKSkn6Kf/qD6FRd8POPhtPUA9znqCVftA4
+AAYcNtQunMBkB/6YnD9pfkArfxJvCnHynthsZvu5YR4RoIMHGoPFOi+dJ/Md0uODePgszmSRSfMS
+F012CC8A4x7isWlMPaTmwBqzS8u2LT9ZPK5EpqYpwYPlN1FmLspvHx70UgL1KibDhZNeYYHE2vq4
+kwVF8xn2C19Ywz/8dhY4o+Se2qjxkalwg6dXIbiVFQhfcXG/kLFL9Hq58uM+0Sre3xy/T3fNp/WX
+IehZ1zHvoJE3cV0rOJD6qt5jVGcSpdB9zDQuw4WB98TpEyrBQoaUOJrztHSBq1kiYJOUcylsEiFu
+i6Qt60CUfwZ+I/Wiz8J9Q7g5BTUv1EmFdizKq7BcO7RsO0K9VaEdWmKDzbeXzoP2Tz2Wyv83WDbz
+X3igiz0n/5/Wbvcy+f+gfG+X/28bR7X8f8LXkV1f/sS/9LggNaBphVlY5UvwtuxwE5xlnImrp9Q2
+SpO586+Pv3iS94Ice3d0bHg4APi6Nualsu3hq/OixHzZh3yZf3KnWlHx/YlqhROfs3iO5IMDb8rS
+TF85meKCZPb8uuXK1/ofgH49DSbT4Jb7x2+Li5w75SVm5tlcnFmpeVDn17McxVvNq7hLrLidxIqD
+MKUi0mziWffob4a6LvHtXidMqoll4m8fzP36QWyyoiP0M/XMB+oxPvSgS30HChvMTK3ZiPx8rglz
++HwZbjZidWoz6pDpBBT1Ewm/LAxm3IQ3e1bOGhIJO0D+9T7qUjabYPRZYY8ZT8b/2/vS5rZxpOH9
+mvkVWFU9O/JElkjqsj2T1Co+Er/rI2UrczyzqSlKpGROZNEPSfnYrfz3txsASZAEL12WM2Ilsg6g
+ATQajUajD0wxHwqKX4vpIFgQkLj1mivBR/QkWyD5ZHdHvOUNUhRq/vtmtdJk76nnhiROpCSTY3tH
+PMF2UuokEleqB9pB86B10D7oQJMJDa1U28mGG/HpTfWnjbiGUMfbVOjXTENXCrwaA6+lg+/fWE5J
+6FoMejMdenHURG9jloYSLQ52KahoxqE2KztFI4YxAnVxJ8E0AxyvmNGV8430taR+k4spMkTtmxxi
+lM44BVANMfO9CNXvzAKDSoYBzan+G62opligsUA9DIgCCruwvSSRLeWyb0ujOUPc9DGGB4EYiRo+
+CRH0iUT6xJsOn0b/zuedHWf8nAZaYa87Oa1qabS6JbayQ1Q3cYyFiE1bE7E1t8S2it1X3ZQxFiK2
+5hzEVk7UO9eHWUJe5gEyy3JmS5gvdIipdEmFQvpyCzQjEwmXyQA5XWZwwC1pfsukSZ85+WaUSJfK
+Pf1rBLM3HM4cffiERIuIYecoHjRCSqvJmwiasjPntqLKbpHxVbxC5aa7Ou9FkJ6uPvQ76IOqUosh
+eEk9+vklBd2CYCA4IiyCieUKbvkusyXE+N11NN/m3UADULXoqk9F5XtqIISegdMNxmfSJpnRpASb
+sykmY5HjdAKED0t1rHvWPbW2mzLU1gnx8UIeAN8V8lpAc9DPn3ACFsb4GcZQ3mh0d0qg276fA9tR
+ZL8OUR128u1ScC0wisspBv93pvqE36JZpkxpvXTsF7HqitpYtcMNgH5IcGU+of4dLAAVDKH8qVwh
+B/IbXg4Hypmj3tTA+zVrOu4Bqelj2c3LnNhVJLgdBFQQbTWYjo2fhtx5mF6bjgUSHBqLpmVnxWeZ
+SsFsEWnFAlFE/rnAzL6Vx8cUU8c8UTBq7MjjBOkuTbuqKgosfQlNMes+10d7aNUGr2gbyKwM3aRd
+YELO5OEGd/ya6O7M6sahpxLeFbqWcH9JvFWOqJ5pCCDD9IHRG3+gt2aggBaT27g8O2lqU6gtBAoW
+ogslQafcjoUNxn/JaE2brzU1tbUMSzrUF8zVmpbaWkZ2ID+YWvEWg6BqkdbyQ605nO0UbIbF0Iu0
+kRNWL+CXxRsJuWmkIfFrdIZKd7QaxFZ1ibYTDCHah+TPK+0E5V4pPWC/5QQD85lkmcaj3DXWeuzH
+YsGdijcejeUUabpg4HghYLwS3U/z6S5p4RslwBIWwLJuUC8/Qu1q89utohHuDqGbTAGZa2ofUfnk
+F0e/uwM55nJ0/Og5ugh6u9cvf68X/FEm8DYiFCYmQCZ2xgshlJTjGID0wgBDfqpPJG2b2s1xCmf5
+wB6ADkiEypL08OYNEZrLFek/6O4NTgJK8ugHlRLMqiBxSKdItDCKTkCiuP+EVZhXNToho+l8ZaeW
+Wocd2pI9yFSI3fDhw2AF73QqUIcOXyHGheJv3/iZ6Ornpxd//Nw7+3RcBOnM3itIlXnI3WR6k4lk
+SY8sOEf5yLeB1dDP6Uek5GrQ9YPB4GA4PDCMA9M8GI0k66jII1mTvekTCb5aBGyUG6jzQ0pd6doZ
+yL9nEuooCjm+zqLgWwC+vQh4ylA7C+CQcuHuQgCAde8tACCyk6vKAoBmE886cYDEGGGwq4m5wX2M
+p62idMvdJU+PFhgxUyeoC9CrTD2havXm/BCvTQcDK3yaWUZVXQCOvxmrKYm8c2EkuK7PvdicoGvz
+oT2bwibcTimE6DhnXvnodMdLdyJ+YYHNLzeJZVa10mYfHMszad47KFjlNeHMIW4MHArnJB+5g3tV
+LBPhyIyXm0aojj28Ou71L6/qQ6qSx5N9tMHkNnSjS/ZBH3Byt6OeCekbp+BgkDysYAgP5q0g3Rcy
+9lY52AsWpiOAGdsQCsOL8H8BoFoYhBFwZqG6fAsoCtKMcvxUuD7vLwrXMlQBliDooO0+SBQg/5aA
+pWXD6paB1cyGtVcclnhOFOdTKQ4htgkIUOh2UBTOXYz7x8lV2AeKgkTligAGN4DCVRP8PgIIOX9R
+UG7I6EUMFwfAtVFi5VYJtAYMXATQLj6/McYuQulIBKnwmyIyNro7byVsAexWwt5K2AKgrYT9DUjY
+AONMd7ksfaU/sCukIOzE5/9ibCGMzKR93WQZPsKAgXFbVJwO2W/Vh1dQdGYgtoLzVnDOhLUVnLPh
+bAXnNAAbLTgXhDJJbBwCHPkWUlwmbzQIRgzwntAQ5sY23CAIGEYMitzUsQq+Jze3sYgZVLD4Afw6
+JDB2ERz9BWnec55IVRpOgAxsPyqT9Hdxm6NPMrIBwUBwDETyxyrA34l7akMFpndi5at8DNGW+J0P
+1I+mjEh6dYu44lhJmJCIUahkyKqRQ3Snv7C9EyAfIx+JQrQFMrASOBR+ZrGc5HgUoVjTCBYjEKwk
+Ejl+rGkdihgckzKf9283PFG5+D9hANMyoYCy4/8oHVVTY/F/tKaqbuP/rOMpF/8HvvRge8AgLx4I
+Yz/Gf2fhXOxxNFLMCuP0FI9HkwYXNjrr1jye3luOPcW9Lyt0TSxWDhvBCEUiDFsiD68jCxXT+OGH
+78gPPPymASyVsOgnGFat29C0htqq0zglxWLKyKKZRJdqLLAJ7z87ILEwBaTfew/dq0irV34s5jfk
+xzLksXaXakTCaY6Go8O/b0hy7ur63d3EYik0MmK6Fg6dSVU7fmqfXczts4vJfXYxu8+umN4nxYSE
++dem/tik5i3SHwsH7SwTfDN6SlJkSq+caNMD8YMsFKy0C6zIUlILciHEYGFcxe4UiqgJAmRkWAKd
+c2DiN+IAhe+rnARrkfaFTga5NIb69HvgjjCN+mTyxEM1iWHAb0wH49kO9ZlrEmGN0yDW1GDEnd1R
+ltP7eEo0NS1wJQ1rG5qKa34+DgwQD/I34JKiTBLKky1+LM3fAg+oCJeSIF9XLXSAhR+UH+HPTyIk
++OL167hYJQB7/SaZjlHDTCgI43frc0yki9askEpcFkuOvJeZvVR3g+StGPX/3THpHRLthGhN0mqR
+doscnpDOEWn1iHJCekfkRCMnLbKvEvUd6e2TE/iyQxSFKCp91chhG9/w5BKsq+VcK+Ms8sR2jg0D
++J09Nb8JdglHOs4wizLIWC6GlTLE1bO3RFx9JR5XP0hWs7/lbBLO9gJZEq5GowoSFPAYYYFzdoSe
+r5XXAqB0r59sNo5JzOVsfAGeCOwMmJrIE+UcUPynpnHAr98994Fm+5R6Cp7/DzmrmCsAcPb5X1W1
+TiL+r9rpbM//63jKnf+Da6Z6cKd0RNMtJTQBeZoCIZJwIR1CIsTwxB6PkYlDSZ5G6Mei5aGsu65A
+wiXUDgvH1o3G0S2joyhRhadlK1eHhU0tqQhpNdT9hqbMrQgReBZIAznC+ZHpAVCX13nGbNud0chQ
+28D/4G92Lm21SCrtzGelebaNzgjkXmVXOeigvKvtqt3Fk2srybv6IBkrnztB0kEpk0a8tUZ+1h13
+RgPUjuDbp3iCnaQgFQnyGeR2rfjzsosTs4szs4tTsyvOTWb40lxHTkmru3ua1IGz6PEzSuG/sOxD
+ySgTW2pfgNp3DzDbyJbY5yV2wC7xbObySFwWS4MRPyZxmZP4eT44Rv+iGoEdkyLUH0oT1AiKygpV
+LjLUofTAxvRa9FtxXOtaNGFyWcRFuZzz3wazlxF/kUTxjcZf8u6i0OJ9TjVZNt9cUCf2klVKi2h0
+VNRUK02itIjSJkqHKF2i7BFlnyg9orwjyiFRjohyjEpvddna7DNzrA+fThgitmtobWsolfluF9Ez
+LyK+dPhJOcgoKNnk+YBcEU2IUcAg4NRPmicJHmSEaS3pN1ihQbTP2bMDpfAN4E+LTwxDOoWBcYUQ
+6A6pVg9vdAekJyAdwxpbXtWtD+Gbnle1eLLxn34iKVbnr0l65dcqq56wvcKHW2lhj3y0frv2WOt+
+Cup/3+ue7+pTXgWMh690/a+mddSE/rertLb633U8C9p/rU1FmyiMak+3HiSnhzeY1RtdKqRp5f6q
+1mcbqdnVGp2G2kbFLuljJjOaNgz2ZjztuyxNeZCSGo6H4eGO/TZz8VKVIE8inz6dHs2rII4yNb4B
+5irQwlrLlG7nVDxEq/0cloN1dDzVB5Nk/O2w9fodSBveZFqt8AYIX4EHldcCYMuVw91JiiFF1X7N
+lqqh2g//KorZlVmMCJq7xXV/c2k/0gRuDBdUzrYjprzjjn5kNmNRe6iuLqLLQAVIpSbkihZ9AyXx
+Y8cBUS6est7vZUjopbSMYVcyAz9KVY1y0yERZikFI4Z8lLcjEpcEvlYMvuDwI2uHBZaKQ0+byeIX
+AZ1OHOa8lwHhFGvn+uMZP128RK42DwPqMAakKuZQUboghnZanf1uu9vsmJ12F4TRzgi+HXSb3SYI
+pJvJgNQ4A9KUe4nm9WXxBwFyGH6W8Az3woqgTmf8+0rSP03tJr+TcxLBNyqWmH6OlUTTudyABJUS
+8O7FrCmhiiFOCvUIADaKZErVFThYwvwPJYqneYSC/DW5+IrcrskVrEnd+BNO1NjCrT6ZsFjljDJo
+VFekFMlKZcu1k/JDiTVbpu+80zf6fcBKWCxMxLukk0wJhrLDHGzld+Xz4t1zWV5TzyboZZvdT5A+
+us15Oqq2ltDT/P4BHudhz7+r7c8Cby7GnAMDezgsvkxWXJKV6vrIRFaKf/F8hWJuwrhC/GYzWKn4
+c/346Oi36/7lxfEfMGt/nPV+u/zUTzJRM5hay1g2Mw3IZhd6UIqfJntVOAFDQp5AceJw+kKVDc8g
+Qih6IEIYitJBwcFchrCwQrovL0JE8fr4+IjI3KXPVtLIkjTaCx0J+BLOXsEbaU6yrLvwx1a71Wpr
+prbfbbabWtPYU4fS22/BuasDW0wLlqeW6tyV7qP6qLWlobfLO3oFrktT06QyFDomuTYGEkEOZHs3
+QEM0DRXG3jcOQJQxR9Yjc2TC21MdI0Ww/EOTJzI2p6ZDVds0av+qL/kVWJChztFA3gAcorXbAu7Q
+3lXxj9oGLrH1KCvrK6vux5ys9re+stwvTGuja1irTf3CNHKskf0uabZJUyPNI7KnkkOFGka0qZFE
+kxpMpLqG4Z9cseeTY73ku5VGo3LjeXfuQaMxtu36eNK4+b93vx6rlTSB5r8aEFyNtGgOJfjHz24a
+nIWD9+0WI0pNS/9dCT+2NApJVfBFVflLq+N/pezBpy6+QbgqfIX65D34tgONtPYpsHX8+7o8yWlk
+GntpNzKauoDkNPPpcXmCU0DipeSmoCOpYlMIN0tqGtqOA6tIpi1tJb8LWi2seOEcaeZMAhYpv6Ov
+z6ZD/qGa10z6mK/OhLEZpg8xib+UdVkLe1rohMZtyQ8d3b25nJ7rE2TVphGcFF8y8yp6Vrv1R734
+eY3qJ1pMT7GES941n9cEH//NPa9lHNaQ4TzcmFPKfgoe13B5bK0aw2eZVo3P4T1f0P4vvMpavv1f
+s9ntJOz/OtrW/m8dTzn7P8FrO2Yl5pdAOqqf247JzMTc0LaM7tlx47LQEq+A9VpKYYB9rd+aBUtj
+cq6o3WIBQ79ShoMpBofz+XSHSAh/QJs3qdFdMRu47xo/fPfh8hc4dpPr42NydPzu03tydnpxfE1O
+ri7PyW+Xn67Ip4vTPukfX/evD777Tq1TzzydTKypCS9fMF+35RLdY+kS6VHdHhHYHFk01gORV84p
+AGl1AkimDSBIl+AOSD+ClHcL9EZ7812zDpur/cXvCzUldEyKsZE1MTEkKO3WgzkgAwxZajo1YtbH
+dewilgCZsPEJvnUbzECxgVaOLqwLs9FjRP3RsR+tW8t7OrMGju48NahuqcFacSnrdBvW1DAf6zfe
+7eS7Vp0cP95hD7FH4Zjw/o6GpkV7xagpYpS/5poisvVxgWoCP97t6XgKq8491N1oGKkQsnAuUAHX
+yUR4xQLd/ZgNWpODPuGgD086R7utnnKy2zs60XZPEPS73v7JSY+CjkkvLJOekOUPqcywRiPTQQ3G
+UHeDBNm3uje8AYlFGGTdZMcEoXOFDaT63PrLx/GCmJ1v+P4xpxQCik1jFFEJW7fC+GFdZMZsz4Ib
+tKHkAiag5jRxK70YWj4F0MugBmux/vUjEDYaQcmBR4wgl4OZ4FBwyKJLU8pxV40ZH3TsdBodUBi7
+e3Tte54fTw0L9mrUUcQOy7HkyVCX6FgZ7564jiUwTGMN8mMOPRGkwQntT3CuqHnwkCEKT9vUtIIe
+y9BQloP9XflM/gFfnJxkmKlSs5FCYJs+WDUXbGDjkQdU7wRA2zGoc5NMzz2zPG9ishl6CQQ0AqRt
+EgWFs5JPQYWnOiTLpUz1B/Nx3qnFEJGhgcvmcYGiU3hjPjJoUnwr6pyTmAM2oI3kLJaexCNAI8hQ
+805kp93G7MybNn9aKhh2LjA5w02HJ3Yc72OhNMtitJMFPUodBsNt2jyOSuwSEfLIg2umbRPzrHLM
+ZFOWOILMPEgdW+Lg0Nl0uZh0Y6APv7C8K26YfJAG1knIeqcMbByV3yzd+SlN+O2SQHmcelj8IUHx
+/Jn8N7CqPTmphSa2vXfMzYfufW3hRrMoDTPbINogvRWl7wI6issMS6DuZZB3OpX4FV124ABqd0wX
+OqnzZPfyQyd1yYLz10DVotHeRS0A7ZzLSBogcTshfsTnCKTdTF4Xcg1hAAMD8rJkbv7QOOKLEhNe
+Y+oO3qId+WdxifOUSE3q2slJDelJzSMoWkqbo4v0vcpe87qrZXZXC7urJbqbQm0iKtDmjxsCUiMu
+od0Y3Q3p5Jl9O6IYqpFdNcORMBwENDTRnXGyHTXSjiZth94IlacypN4VEBh93RLbXMRGGQ+aEZYj
+NCQApQCdqel0VpSeC5NzyropSs+7hQmaXqiDtGHCqM71x9PpcDJzrfs0tap4Agi2BbGRqm+vhpMN
+Qxjrk54znqF1W5B9zL/1yOtPb2Dfm9CpAn3pyPqSP2BrWnTAyqoH+86c2A/QoZx+7Kqr7sgv+lPf
+tt9ZacpRvydNtdnstrRYdxo/sCo8jAT8i9iIxsGQB8eejidPRB9iN10aPMIlDywUqg/K0N0bFAgG
+M488QB19SmNSDkwqUj/oDio/YCV4FjDmOq/VKEYIwHEsI6Esx26AqDRCWyl4y0w9mGi02J1M5i1P
+WtTIpPzls43A3In1+EF3fasRwXS0TrlGoEGu4cBKLZcP5iPeYV7YH6n9dfrJUDo6fTA00kdwzVTe
+jBrwgg6OVsFJyYLZwUsV/wzCTgFoYUIZJJnObgdwuMK7hFZzf0/1B1pWC05HCSS/2ECZwU93bx9H
+bI5KjpnZtsPMoR4oHOjAGovDRP1SrJm0MRcY8v+aDh+qaXCd0AVtq5et55Or9xRVyR0zrFmPx5/R
+XabymjJEsOUdnjIpDcAq9+feZyGWF2yQiBC1swgCLuxpBg5y1WRyMiiLBT5COhplkdFEuk993v1D
+p0RSLTSQGtkrP6PRmeI2/NEIH/joKUNNtoRiIlDGDDhBxDZeDEe8R4FF9TLLwR0NHDA/AtNVQ1nE
+ECd35juVQSDzYU1bEGvAJZZFbdoo+aDvR7poXpoAU5pYHjpVZUF8IjPquVwSK8t/S7IdtNGMYkqn
+djw2c6oa06zXlQXpTaObGIfn5lHcNlnR3wrbf17CPjmCM0MPZrR0HMhs+0900dXi+X9b8PPW/nMN
+z2riPwppgsyI05nEUJJZZ77ofDxristYLMzikX4PPPt9nfxGwy22WRYdTZk3SqJ86RfOqEOrs9rG
+8r1jyntC+zVZX3ynDPQ7msJkTIfmie30wgq+/yp1AjkyB7Px3KE5VB1edWWomKNRawiMb6S0daXZ
+7Oh6e6SqiqK1B8pQbfFf1XZnZO51W/ub4fLCvevQu6W5q+75QfsXz/KQ6zA3KO8tNxBdVpLCQ0qm
+Ex/hu4i12EuAzAKZTqJhv/MXxOlUXGPb5ZG1PGQEvtiS2S6PZ10eW/+x5fmP4Z+M60Sd0e9HY+bK
+rhFfyA4WkyjJwP/CX6mxAmxNCRAk8li1wgl+ZE3hBf1FPh59whNkqxY2gDTNkFd3rf+YkdOpFOgJ
+tZkBSMJ6Gk30sUu8pzuToAZZlcOHd1WF/ulDyfyWrpmJb7Qp1ojCVQVpzaglmunfWE68lVuMmIIt
+oQkHhqfNGJJWoi2cBe9mgcaa0cb4Itmmjog8Bc//V+bYmjf9b67/Z1tpJ/L/qu3t+X8dT7Hz/wY4
+eUoyE2R6eBYqeoImHy/IG5Rl+E38dmhPJsy10I1Vtez65eBP+O1y5t3NvGt6WPhRXuR0ml4itC3M
+ghOUygJ1ehlYCchVGlsv1pfjxRrRFIWbRK4Dq3+89IY3psvq0Usd/dYUnB0jUqoscF1v4kfuC2LX
+BaHq1MpOEIRO8983q5Ume3/lulZVIpSHRzuUHA5tw6y2d8Rwcx12+vNVnD3DoDFsKuqBdtA8aB20
+DzrQQiL8HBskTCr9w7rPvoPD4xN7BwKN5F6vsiP7WpN/DaNLsZ+Nxv+gXn9+b9AChqCJQ2jY5bI1
+AfNRqfFi9Vs2XVyLxw+RRa0eCs24up1xf8bZ6R9f55xPZrAvxIJ6lgkF5qNtJzVnGS88y96D/Qxr
+N7B93y7g2KTiM8ciRs1dgYUc+P9D439f5VJGOxDTCcdHQ7L+9SZYEK/rGAFtAq1MKS6ky3zeDTgx
+z8zEHCUwl82EaJcxsWhUtlVOPx0qHry+XQoITlU/hWN8K7LSN3RAQam3YmWhWF03jGpsnUeo641I
+WyBq7TKMubsOpzIB2LLoh14CrIt8jmzTnXqUiEISOrOn49IMpAztbCjHWIUUT3UVxXaMW9sxfUJg
+4gCPas3wvPR5LzDrlKHYt5Sd/BUoINz5FxLvcmayhnd8+JHXEWVAdHLkaQRXLO4HODzXhy9qc1DU
+A0U7UJoHSutAaR8oi0y4DNicc64PVyPAH7HgtbHVilI8CpPbWZTM4r4kjaeUEa9xGnPXIJy5X6oS
+rdBcBuJYhN/xwcgEuiyhTS7ClymvlSwf3dwLEqY40mdnNvmGBtemY9GweUB93g0qrEmg9V+eedM6
+lDHcOML1B2Rc+a0NmfcQs5Jwq6wXaTOL/shV9s2OX/MkcEqOQ081zbmyxjced9HCu4rIhj9CGd8w
+fWB+zIWmP61a/VbgC0kbhljcuKn1fzPz1KAeIUAdqfA5zYxN7xOvwtz+WJORrzNMjtQS7YSjqCrR
+piK/ZLSmzdeamtqaKok6Qc2zLKOJbdGz2MAcoTxXsDGtCMjs7sd7WTz+pbiGcY9hQsGzL+WK+u5A
+05HxtQ4POscH+yeSyFAveK0q861VYOLF6Tmx60aJOvlzEZpxTLxCdrmLc1yEXJA4POcpZohXlFzo
+BS8PRmOxJEE6oV2kO5/Ohvh3kYhC7PLosyku7pG0lwPTnLLVgc3GA1+EVntDugFXU2GacYvD6Dwf
+O47tkFvoMtpspKTuSUhj+FT4zIjDPiDfF8TP9+R85tLE9B3m80ZNBV0Tw5Nwt4OhPUH9aErzJlLW
+Oet3NWnQmC9T9AMrUgFB67uMEfapAwJblaEdENhDjOZB7Ixd3h38EBnM1DKnQ+HerEftde2Y9P6M
+2icfAWpst5Ja+CarabFqWrFqzVi1ZoY9caNB0BjGeyKY0s02XGrciximxsMiO+QGyI51D9Tr7xqx
+LYLZxBCb/gl2PsF4RZgX5E9VqYkMGdj+yUT6ezXGeEjSWofYM9+0NfljFeDvxHkGVKg/OJZnsvJV
+PoZoS9x+GOpHc+0kl6aIK46VxKYomhDLkFUjh2gicmF7J/ZsauQjUbAgIgMrgUPh54R9r4BHEYo1
+jWAxAsFKIpHjx5rW0VGDY1LKuF60G2lB+8/r0k6fwpNt/4mZWrtx+09t6/+5nqec/6fo2MnfHZn3
+1jC0t8zIFLIia8jN8r5k1ncEOFu3oWkNtVVP2skJi6mwG+X18n0nS7h9qIPRSN1TVKWpthVM1AX/
+h21cpbGnKUrS1+nuVJGfqsk6hOue8CTGv9pZlsPUdVQnVshjinenrMtUJAxJM4TDpJkMwWfs2LM7
+GUg1AuM9FssAg65+MihaBEofSmUBYTpbGZzd9n4UElfvbl29JM/SXb0i3AQOgJ45BamXfwxH48tu
+HP0jGgmYI7rfe49JbDkMIYWsXwkRdosEIsRFvHNsjwWA87kSlqIkW/MBW0aN1kUK5O8YbbAPjuta
+NR4URLwmCOoPYlqI+PS4s7so48DnltMfDIm3Fvsd7yvgR2w99kv0tiJIl+x/ES8d6x2Wj30Vq3Fa
+8KZCiw/pNP0+wY+BTTG/U6IiO+dZRqIOTjQij863+Euj4d89MYfgiT1m3r5AQMDn0JLFc2aUJnQ6
+OpdfMdFLBnpcrsACyFBwfhXoi7ELSlQBj5OL55FRcqc5HtBatpKikBnfSwHcj+AgAYKTKefjBTun
+iqdX6dD/iZ7gjmWYsi4bpjt0rAEQJI3C4aa1q5QDTUUNel7s20xmq7I/2KDHVin1Wow3F6TuPr29
+mzBnzFtTOqEJhsEbsKZlYQqQI+yPCxlRJsi/nIcVsqqVHwvgjzPchFiCmmj+WWR6MckZkIx/ajRy
+FF150LnbuzhesD71UKGBj2C/iq7Phxv0EqmGJX56Q9pxGBy/1Fe9+QaTY9QsdFuH1+7uHmaQb+2q
++zXjQFV2VUwvv7+7X0lAABmpWkWOv+OP7veg2ddNFpZ9NNohb95gIokm+cc/pLshPqlgWjEwqnQs
+bDyZjMmPC6oH2yTnS7roIhxX/wrICvuksLCf0ycMiVXVuK4jvx7eJigagcXPotzfmLphOvn1mlgP
+5O2wrcJV21CVD7fPnGUVNb9WB8ND4L3BPSzUqlp4gF08X5jDGXCQJ0J3z7DHb96Sc/1PG+0NMVsP
+MWk8+nyY+wCz/0j4bv42eJ9fU1Wwqr+MSLUldsWaohCokbPrd/BNyT6prRCtp0ek2vEh775lAVHz
+4QVyEoqUErrfC+n+ByR7RYFNU1awGxSUUy42NJzYwy8pDanNREv4pLSmapLSaWXVomNQlQKD8AKJ
+Lo1X7H/+EeeJ3mTYU5NehFnjqWl8JwXqn3rpPJ4a4pmh81neD354pskDhvbdUzVk6yJ11AKg9B6v
+kzIqvt0Exx+UHZGO+jZGQfVBZFbmdjogZPnHafHrhE6ZP+4AQ70AdVaDtuvubMBuf6pKTdXi8mCs
+yzQUIJxpUZIDYDJRJj59g7hYLSOEJC2mUIwmEIx8dnlP8e7qDT3Sp3QN9jC275K/s3Jp+ws+DBor
+j3JccDEqB/5V+q3M8sqXhvjRCc9MdNHWwsMSkxnihyToUUrjvlqfK/Dy+xZi93W0eLQohxtFqS+O
+vWgN+F/7Kaj/NywW/akxTxu4W3Tb7bT4j/R9RP+vdrrt1t9Ie9mDlT1/cf1/2fk/B/4z4bF3h0f8
+20N9MpxNdM+WZ4fPvv9Rul01Hv+j0+m0tvc/63iy7n/q/qyXDAS6/vCd6TE5iwT6LBeuZP7E69uI
+Fc8csSLrum6voe3Jr+sKsLzceBd+cdP1ASzjJi+on9NFYiS/YhJoTsWq1IHpyIbRmQFQlI0TNetD
+f8TBgOllEbykXjT5JYWbJrWusAwcaNp4R0+COL8oFeNlWB3OWX7bcOiqF85EdG0iqt0jc6TPJh7F
+wguekBga2aDILYIScHlhPs5c0sZ7yfCtZObQUo8hRHhbErG0gdbl9PhRHzKHo2XeXHP+QLvGh8nv
+VIQfqpVWvVVHw7PKvy77rf0PlRofdwvenb0/juRMX8OE1VhXU+ctPlOtcKZac83UKzZNr/KZ0Ynt
+nNue/StwXDpPr14x1Tjf3okQIvawcCjZV6/mXUV+8wXnuV1X2Dyf/fpe0+qd7m63jnaKFRwT+ZXA
+qPDTr31VVWkesVevVjbdSUzFJ//Vq7Rpj3Y38qnE5L96NS9/blH+vCfpo4QzY/InxzSsYWD/a44A
+JRZeTKFQ0EQzTJ6Fod7pqKrWbnU6SXb9KotQ7elw5qBzIgwPEU7xGhgPclJdlMoWIvKytJrgSeIS
+97mSD9PXZmHVc/3u/7moOYJfX72q/PffFfq1++/Kwe/k3xUB/Sp8Bcjd29/vdmqRXzT8pVvvKvvt
+6A9NVgXWR61CXrMW/l3hqYTht3+zfv+7AtWoEPYHc2ugP7GR0N9ol+iXfFDwrQAQpMfZCDaEmcOr
+wnj/Xfla+6+s/y1N2W9K+t+p77dgYALY5EDarf19rVZ4BGcff+7ux7oaG0mbjU86APjBYHsuto7x
+r79+/loJp3EeZkP7sRyGA6DwHIJ5RFGyp2/89Jv+D3wpvQovOeFDxL9j5i+3V6+YOwa+e8XvHWnM
+b/+7VxJuQ1F+zumYxQgYfqmKhE3JHp6v9M9X31NCcI14DFoAgf8OVoZ37cHpte/oKE2z6rQ2vnyl
+4+7foPEu2iPDH3/M7MtqgApalRep0zNVlWEtNBb6Lhjp69doN4QXIOQf//ABIwOGvniIxr+/4Q3U
+6Tf1/vHV+elFr398xLsvwQ5GHQ4/0s0YEBNFE+0l8sqgq5jnxnFmd7S7r+bUwhbU/0zs8RhY0Vzq
+v3n0fx1V2er/1vGUnH/YTflN+xLz/3Tacf2f1mw1t/q/dTwNphGx754c6q6oKWqbXOmGBXvehelR
+nUyNnE6HdUk5FG2oC5Ll/Qd+xhJn1tCcogHtbGrwmIO9O30If/gvNfIz25RBLFRg54BfKvwnaobx
+A6qNyK3+RK1yMV0YVXlRnZJJNwNULaEpxsSiIim1MPPCBmhHf+Mw7IGnQ3HMNXb3hKoyoSBIqbzT
+8Nx43t1Bo/Hw8ADyHfa3jutgwkq6jbPTw+OL6+Nd6DOv82k6QcM/BxOHOkwE5lsx7rMT/QEOuUQf
+Oyb8hlmip9TECtZQjbj2yHvQHRPB4G7gWIOZF0GZ30MYuFgA7VampNK7JqfXFfKud316XUMgv5z2
+P1x+6pNfeldXvYv+6fE1ubwih5cXR6f908sL+HRCehe/kX+dXhzVCMzWDTWVuqOmi5gxDZFpGhRz
+16YZ6QJ1okJlIxdBYGjT8QxVxmMbZIUpCqh3pnNruTipLqpnEMwEFXdUKnGT4+JKtizVM2c4MsXy
+O+pFXSTI8i3snpZn18/hb+oP8LcXqI9dqTY4VrwO47ZGTz8G9v99picFTIX8EfA8dWdUfh/acIYZ
+ov0een1SYQaVWMxjk+MIo/XAganOqeuf+sy7AXixFRbTTEa5ceBLgN2k7+B3zB8+oX+4suOfDH0J
+5Y1rejEzyyRyQOSwPPzareKiFDQZYU8wrgdrt8ralWiOxAzSaJP/0aayTG726KE+vbC9a5Ma8vNG
+xB5LeyHoyjK1VzCpA9uN6mX5AczT0UqjgtX6+liwkvYPaNwhl5fxP4vWg0LX7qsAr+YXEpVQjK58
+vCULFh0DSo599MELRPulDcgvGIAnXihW+w2mjrtGig89UTZ39AY1/Fv5/BlF5y9RsNgINnP2jBKz
+JyubO3ZrOrJXP3lW0clLFCw0gM2cO6vE3MnK5g4dpJlp3Dl/JdP3UHT6EgWLjmEzZ/ChxAzKyuaO
+3sTIEqufP7Po/CUKFhvBZs6eWWL2ZGXZ2FdiZVf+/I+plcv5geec/1tqO+7/rXa1rf3PWp7t+X97
+/n9h5392zJcc02/026FDU1PR8IUOnleZrv1yJEsIlSyPZiZ+otOi2aZudC/UBBzjmd8MTvx+++x8
+z2yoYR6pRRXeI9lOEK2m9Mnf58OZtkdsV3GvaMvuz+x46I8wfnYOdQWwsfEW6vxI6Z+2hY0rHD/f
+vGokxHeVt8VvP1l1fq4vcZJl9Xj3r4XZSe+7mtV5aQ1tvuGiK77YIw6s0PCi83J8e+c9lZoVE2uU
+mA3aQulJMMNac09B0NNc1BcY0/JQ/guT9lnbpVD/INYsMQW8xXkXRKTZuWcj0fncWSkx3NzZ2fqJ
+bNxTUv6XcfXcw0C2/K+CuN+Jyf+tZkfdyv/reLby/1b+f5Hy/6Y5liSsDmVhy6QRy3yfGlbCHtep
+Z0j8+JEodXx1dXmVW+r04uQyt9DPx1fvLq+Pc8sBfV2UCp4W+MxEj0dIClzQ9uUr+OP6x6bJU+5h
+aF4XnMghKm0z44KUHywkojkcmx6NZMmsbi/0W9OXovzicbkRNYSylgJZKv8AZBz6iJGpNP3L1PNQ
+dfnBnExs8ovtTAxREcv65N8r8lL/gya6FVY2Kd6x9qucQrhmMtZixB+h9P3kMkbol8/SzTJ9bvA5
+MtYQMXyES8SNVwQx9OJvFXNtlJ9ryn4WnenkTeYGzbMx1zxn4qXQLOMN4be1oBN3nhs0y9Zcs4wb
+5kKTLB6YlzzPD+XnGbfsRSdZdjO6QfP8MNc8ZyGm0DzT+8ZVzLJZfpapLLjoNCcvUDdoks25JjkT
+L7FZ9uU3iosIFBqH6OkuDE5J4fkXxi68Fwbnv4uo4zDKY+iOBP9PPfP2LRN635DwlzG1WotElklU
+gwOYi6WgItangQXpG5YjhOwSVage8eNig+D16/gprSQdlV8QPqRC1IVy8CG1nI8WoXSAqa168Pme
+kvo/mRJ7cf1fs7XV/z3Ts9X/bfV/L0L/F1dG/SU1g8V0fnOr6QqZVLiX0xR7iqLWEUgJ/EzxnOq/
+tL1s+eo/WUvF1H8Xti+EivLkHMd+AdCcejp5V9arcSs3CqqDknc7dnrpx61CkxojoejqOrt6hJdU
+fZUbA2qDloPv+5XjO6G5Wgm6S+qgyg1hq2naapoWmuWtpmmrafpLaprSpkG+B7AoLougluYekuAX
+cHtAASTTYOA9BJmY9+aEFnvQXQyo7djGbMhOm73ry4+xOniIdeEU658IxrY9hlOqPXOGZh2OzI27
+ie5BX24bwUHAbQx012y8btwCskynATK4yfRAHEiDh/pswDGggbK953u1YKlIB6IGgXVGA/y8UPWN
+EWrEP6Kwd3ThyDLCbrWB63gK6v/wy7nbKB//pd1tq9v4L+t4Ssx/+GXJNsrPf7erbOd/Lc9c81+S
+DErPv6aqzW38p7U8i8y/a92yiGU5lFB+/pvwcTv/63iWM/8sj8m1/zl2I5h9/6e0up14/K8uksv2
+/m8NT+YljPTLYNYxFH6pyPnFbgycmRm920n0oDfx3vH8NoWKsVx+2YWLAAxGTkM7WsMY1Ze9WCp1
+UcUxNYIzGr2AkPzIAjul/Rr1mqUXT3iTV/cDfv6YvJMSkmzn3FcZ+uTe+iLeiTHVrgNn4VKJviU5
+tue42ZGwIz841jYVMT5LT0X8T4H4JHgWwsOLUcb8yiFZZ9U9nJj6NBajDNOFmrpj2A9TilWK+5nL
+NCR4z4i0z/JY5KsleQcZ9bjVHVEFKVnvvIPxb/2MbJLfJMTCWMu7EjnYsYY20pqtVrs1HHWMlq6M
+dGOkjVr7qjrQ90cjvUPNahRFG7aVfTG5pSwJWYxNVndiCdbDDopp1pNZ1sN8xgzcW95MMt8x/z2C
+DVaUJioexFOtS/GMEd78meK101SClXFQ1A9gfkujC9/rkxng3cTgc0Ay1JIkBFuppbQ8FmjEz83m
+FtF7RwnsmPk7r5TKFpqUZ8I7Me+BYz7cwAt1CV/1PGAwwRVPQy4mMxN6JNEoZOOr1IogJ3Iz81WQ
+/wrK/5gV1poz/dtc8Z81bXv+W8dTcv57zq1+5brWiTXxCseAzjn/qUon7v/d1NTu9vy3jifz/Mdn
+fXNN7QpmbCt2hJCcPSKniiTtBxF3UyxMLA9/UCMSaxQK2rV6gZ1Y9LfIBSL9BsWjc1NHIzrMRFLd
+bSupm8aJ5dDwdUFpIXcL1Kv418p1uhlfjqq8iSAvDHakugN7RwWK15VKuLFub+a+nack/+dSBvtU
+NApgnv6v04zH/2sqrS3/X8tTjv/7hgW2C5z2aTrs6+6XHGUdoxhuM5CtX+M232geUbY8hirKUd6x
+sdQxrTgy/cOn4cQ0zkw86B7qk8lAj8WILxtsft4NcGmbZJiZ1bEnE+gEX6aHwTelVHEJld8wyMZV
+ZxluPtr25PjRHM6YMrjcnpyVi7PbUBtqm3kJzLt3yxSCIdsKdu6UaPgD+vUycxaeyWLTn8mjzu2k
+Vfs5LAeEf0zzFxks+1JcySPUcuG9NUIN2o05/AIVjyw3UZMfmOm04PMD6aPfDe4LLEStBSd270b3
+yJ1jD00QDmCudF+VRH1scGmR6sONBUd8mkfJJRb8R90cy1m0QwwboACt+W3ooxHGSaQOJtZ/TN9D
+B2jOmvhWblARbZ/oD7fozcPt6EnAgur9D1fHvaM/Pl5env1x/Ovx4af+5ZXfxD+p+ZdLguwC/IdG
+hujGRiWyBpq2YIfEYSWsxBJr7qcI7fn6F/4xUZq8SehrBbpnabR4pWoEMF8IP37XaPgVs1uq656n
+DyP66wjAaHUg6hxwaByYUOj5nbOnbJ2LJWQMmAz9N7H2ELysQiQgXZIrEdN/84ZUkz/v5JBQ2FlU
+1utDz7o3GZRDYFUe4x3YHQDvt4Q97dGStEykg1zni+vkyhzajiFeE6jCBYGPBkAcGy9PI0pT6IbV
+ayRUw2Z3lWrYS/Q0epbox5anvwDZ4iR3gFLhdDGbDm/06Zgxdc4f6K4LHKNSS9B3BlprGQMRews0
+f8H97NyJad6RG9PBfsCuxZJTs35yHqIP7HuTh11ljoQmVW7b6Bb3YKFj4JS7GgbcgjWC/BAZwLRO
+yLn+BGN9MIGlTb/3YMYcCnnmMX/FoD66+2GxIVfc3WLjWKQeo9s67XpVVZRQUbf6g1ZJ+f/40XN0
+vBdgvAJz733J1QNly/9qB409Yv6/eCTYyv9reMrrf4pcna9Ldp5PebTITfcSLR0u7JLlYQtYQJkV
+EYjT1zGXaPhN4Ziaewc5T9m3EbHYv4qAbewdpwcUUuhFIsiep4ZaraiV5DU0vf2YzEzPBr7bMwz0
+Ra5WFPVA0Q6U5oHSOlDaB0pHVpNKQTEPqbC/70Gw2Yx+Qk0uvnyaWUYV9+oFRvPpzmAZRl/AmKAU
+VR+iglL6K5LeiWVODLc6jnzaKYghemd5Zk/Hb0kMQNwbhhWawNvEnSf9SZRJsRS9g1Ynsm818VuO
+/AllDwV6pi2pa01p11pFuiYjq4ATFKWsZ6Qmrb0iaspEjPYCMFN2nWlzoOZ8NvGsE3Qcekns1ZV0
+nKo9Fh0+48dH1mhkok7M78qn06MNoJd2p7u3cr68IGpL6N7g7NWbUEc41HuRBws+jG087117gEoH
+zmPHj3eYVDNUvREXZCNU0eChFQUbx6RCFh4STRp3dhmqvWw7ExSroMNJEcoP4G9ORpGBxg20UuSv
+kNXLBTnWcnCvKC+UVP3wasY7v3kOpk7/Jg2zoloCPibU+cGwKrUoNN9Ap4h9zjjJhE9dEJeveAIV
+GcrM6BgZ7qTb3PMgL9a/BBapFVIlCiPUqTBLn2gTc2Lyvekx1iVF40CKPclo58G3vKqWWldbwWTl
+kHTRSVvGgnGAFYt6MzYrlVocQaioY7fxMQoIf0htg4JiZrGWm92EyO0lDQWoDXYEQQOXiTYtgd8V
+I0xbA8a0OVFWYsmyWj0HQ5MstGTZ1QQqhm3HGuMHxEGgYw+REq8inFL8mkfMun0gJZsC9SlOIgAS
+WEqxV2YoiI/TPxY/L6MQe7hCLnFx2Y8Svjif5UmdEnkeaESSBLSErDPXUl4zdEJWtYaef88D4dPU
+PXk9sbhYLhTXw0uB5yLwBXdCcVjzUTriYCFmPqKUUHS/XQVnv40dlmRnRwavOMNPHsoLcM8yR9lv
+jq8GavccghObnkeeENqR0F9uc+sgwI+OPYZPeOnAnH96rmsPLXpbkk6cxZnpCyHOEUySuUEUmivu
+LkqaGXS5Gpr8mn8RuX2e5Sl5/39uTy3PRrtx9HmaFUsEnmP/2+124vG/m53uNv/3Wp757H+HLCYY
+3qh7IDwtzwT4yhxbeW74yzQT3iBDhSu0V7o1j6f3lmNP0WNjMZuGQ7TLoxrw5dvmdpZomytjKbEQ
+zLzb3MKS+eX3e+8BmpQfUbi4IV1jYHNTjNL8l7D3LWLuiw9fvWTI/74hSRqs86D2jI78mihMxVFf
+5WB2AP+m7sQve6QCqavfmy6rfjn6dNe32wrjAG6+ve38vY/3nNzGv3iTPUJBzSWJ5NDGv69fx6M4
+sIHBAZ/+YS2w76qVymuL+9ULr0Iz+MQ7idf+vD6DmagVhm1I1EXEx4d3OrqMSOi5aNKK4ykm2MLk
+2uj5zTouCp+YQBrGcTsAoV13KYGgJNqGs3+i+TqvjlfMNCJpEZKjxBnQHEY/+SZoTt3S3Nw0N7Wn
+JtDY0kjMMUcz13T79hVrk5PX6ahv2+ez4U0fCOaD7n7EDhrX1nRoXuv3GPTjBdPfN8LzGg1ybXr8
+CEwQs2gvAPRBgFown4udDp9VSkgkAKPKBQTuPoVfnVuTieWyIMpwBvqh2VGUybe2EPTJBCi5N0R3
+IVwNFAK14OcrY1XUHhGJuBrD//QmJjCBnHg6BQkTluGJ7fRCcBJMFllF8TKlGviW11aiEqfEBAVH
+RFT/EPMT69tb4tMvJycYuQQwp9W0NcBVV5Il4EPnMkessSjtp3bQ79ggTmh8qAG89B5GaZb3DzNi
+cXsyvxHLI4bl/zK2MIY3W8GOrMewWmNOJSX1P1f6FE8iqOQr6v2dn/+t1YrH/9TaSnOr/1nHs2H6
+n1MDwKKv6RLCNf6FdUnFk5PJtE6Z/jGSUADvZlNjYpbWMi1FexRjSHyP/Euoecq4dWfFQXMsfWL9
+h0kkK5LHQr+GcIG/JVbwPhmOTignbpJCFer2EBar3+ENZrXih0bcxdiIuxgccRejI+6K4RErO6VA
+qiXLa5HyWXIaTgB7D5u2AHhHhjpGAKUi+MXvZNPN84Omq2I3IgJj3iOYq8xRcUb9g3uwZIC+ubtH
+eTD9x4/2A4xKauCeV3k+0/tMqBG7d3yCnZWiSgjmxHywVWnRjyit8hKa9LTwhp8VVPlZgZOMPLxm
+KNYLzFSMYit87Yd89OVLkdboLkAG7M8bCqDu2exrEQXxVvAkK3xHw4/yWgxYjpCMrtU8vJWVEOJV
+EIVpI5GAiEk5Pn5Gpos1XApETYFfjN8IfeBLn+aPRK+YHcARu9KI9CcwG2MtBQYEkrFYIPOzgJP1
+KbDlvDPFMkcV7V7OkGLeAtfXp2hgK7S6q8og5tgwcI5BZPC0uiKFmOQ1O3BmqqcHU+v/StlKHH5b
+Ct7nQel9FpY9J94oYCkeErwiHT7jF1LQmgy0yF9SFTuNBrmcknN9+M62v3x0bKLV2+T9h/+AWOCY
+5LRbo4oshbiiQNEwTP6ZfiRDjOHhokuOyAWA6X4hmnYbCf8sl1DemdPhza3ufNmKKltRReyGKH2k
+CxRxGaHwtp/cyTdq853YmCwQ6FsNzykSbXNq739ii1fa/8Ibu2wUZTb3r8nhaAWHw8vYM69+BxuP
+NwGK/eGHH/ymCe1PhJHAtHBOckAqr6u0sV2KQYEDfvuRLsvq/xKrqkAk4Bz7r3Yi/rPW1lraVv+3
+jmeV8V82Q+O11hjBWetjnmjBafCicYPTSm1qBOF0LDg0cBh3j7BNdITwE9Rc62jMdfx4Zzl0ntkm
+YEJBw+3Tc4+INwEO9Y3PqFzVkAuJYlAKOksDKi7TsOgISSFj7q40I2FCRHQQZyCIFv63uc7daYTo
++r1wJN0QL66AavQJS/gweELB3PWc2dDD3VnsCJAV9L2WPvJxzsgLmmiMUdSDulR5Knbg0L69tbwS
+xPdtEt4cFLMkYnUGmKsY5kBgVOk3pQl93ApIFTsjIdRE00i4iS/nJ+QAVBGKnphjffh0nQ3zF8z4
+/O0yyzLj2DJIer4pKf9j5E00sigc+x2fHPm/CYJ//P5fU7f+H2t5Csr/2R4BTaWhdplLQPx6WEwJ
+SNMB9u6sH3PNCWR3zLDYNzPU/Abd+y/Hh2QTI7hHGM82enupa/6IRn6VRsbBJNF4z+wdz5Dmf57T
+qLKgpWvQLHWDiZePw02reKa7Hu+wI+obaYQ5aR39PqIIleCBKjKDCvwKJtdWl0bspqH0mS2yzE4x
+IXCG/Rqnj2WnJvQts+DWifdbfkrKfzx7Srk8gNTJt1T+d0VrN7f5/9bxzDn/sAfBwWTIb46PTA+2
+1UTed//Jkf9brcT8d5rtbfz3tTxF5H8/Z9IqEpJv9u3ACUYGKZe4XnJDMEcG8/T1FbVwXVvC7aLG
+pKhiOJox2dBkvaehO/0BZYue8mET487PlCIvIMpeULZuufx3v1HJjX4tzLzymfxXeVTUGoFX7ato
+gWfbiALCNCdXpjuboDi8zCYEOqtWWDs0+wtPiozesHfMmieqKTJ4u5gcWehdcatfrHNhTxNztZ0o
+AN6kTbSSE4WLXDJPhh+dKDZZS5gooAA2gBPbCYIgnevDv8pMRf6VWFKRmeKzEpurW324nImiPuV4
+MqfIQ7erjw4mMfeCOQp+eVGThbDo2MKBVZ+DPaasOpE76rijsYkoM6d/+TPtnPI/agrYdcMnz5rk
+hIHK8f9rKy0tbv+jNLf+f2t5ysn/CfX+wLedrE/MekgU+Rr+TG17b8LN21lUwiKugIW0+MWBFvVD
+jGeVja2LDT0xvcTUWhROqXxZZZNxsfxaJVJxlTgWChi8tYdfLM+un7O/SzsySlgynts2+LT43vSC
+lR72PltCWvAeR+QA5I794cbpUZ6TNE0vHmALXSWmNoiXrJSQzdaaEqHz4TUR2sTH5k9gJWi8/Jaq
+68PPrnCxItSq7tSH9D4uWhvODpHBsZEnAjxELx/CBsUACfaIDG3Hway96ETFvFVifUu6V2UPjrgj
+FHDjUDClbLp54q2QF0W8GLHGNyjvoTyp7tUQdF0smgHP/UIm5nSMkmUCnOZDcr/UWaEEIIFDcWhJ
+MKLEW8U3O8rjaFQj4fuvYUPZLXAL0GJtDMywDX3I22AQClhlssUKjMcaPvs6TVukrBD156AlzvQn
+ewbnjtsDbbf5RoWnZh20dju1uwOttau1KtsF/uIXuNIabu4C52uPiAucrG6FA32HjaiqbImHzbBk
+Q26YMCyZaghrCwUKcoljw4DVbE9j5PkyeIVYvH58dPTbdf/y4viPT6dHf5z1frv81N+yjA1nGXKK
+FpcNJqOpwio0dX0nnchzqPx/Tce+HI3QxPTlbYcK3Q41rdlstbZb4sui7xe+Ja5X5m02wzZaLbnM
+m3f7EswOHsZF1+NNWO1pwq6iqW26stV9+KMpuxrKvpq2qzVlSz1kFR90x3jQHbPnurA6xcSTh7Zh
+ulXsgjX1uLoeSO3rOjnGOj3zT7hn/uFJ52i31VNOdntHJ9ruCXrmv+vtn5z0ynrm43lU0cpXaiqt
+SKVn45tyn/8t+0xnn2vjn3+196vZLxQtbAMYaPBeOxHeR/aU8H1beH8olO8cCeV74XtFKNMTypwI
+fTgRYO6rQt/eCXX3hfIizI7QllBXHKMijEVJ2x+//QgIf+2n4P0vXte45ax+w6e0/a/aaWra1v53
+HU+p+Q+0O31zYt6anvPEYnunWv6yJzf+RyL/U7vZ6mzv/9fxZN7/z9gddnBxS283R5ia78F2vvB7
+ztil79T06uf6ZGQ7t6bx6eosOB9J7n+z7obpb+7SQo8UuOWe+2Z9YVe6cjfUkvviOa6Ls9eyf4cb
+vevlqZdQZqDT07c/mI880h+XpvCPKzresZ+5BzdxfdfqyNfywFRhBHwKlIvQ0hBV7gAd0sypUeUh
+SZD8dDgQ/4+iPWIiQwTwu/VZPF+E0aZ4SHUAEsYtLKgg6EUyHASofIfthToC6XoQhhCeWFmubM+H
+wxIpJs61tFQkp2q0Aj1NouA3YcfseziPQYt5xTVV4xUGugdS4BOcbe7NSV61ptrk1Tzz9g5jUc64
+T2ZGpZba0lrNFq94Z8xYtMK8am21DZtDm1eb3aFX3HcxFQQPIYDrIZiQvHgC7HSOh23cjpSusqfs
+K3qFF9CSBSqxUHL79HM8A2ZsFJKYBXzZeBHK8dOVpi5RFj40Rm6SYUND8ZbMxzvgD6bhN/RfONQo
+7LqcmV/iq0pfmRm0yo2h6Xv6qtHXJn1V2vR7+qrR12b7a8p5Wco3oiPfqcm5S6TXYjaDMsvzne6a
+ndbxdGgbprFdq9u1urFrlW+0poxUCzYoJ/aUhqPLlUsa8aW59QP+Bp9S579PzoStSnhzaN/eOfln
+P3yyz39aq6N2Yue/VqutbM9/63hKnf/mOt+5spPVyzifRWx3i8aRXMbhLH2h+Qczlgv3zrE9Khf5
+vRve6A5sUTfmI8U99KCiYNiKdqe7t997d3h0fFIhcMw5hHK0RNXfdmg0F3x+IDCrLqa9Q55w4H/5
+013jrf/+xvPuDhqNh4eHuqMb1swFokCNgIuB28RCbqFSUCgfzDwlGgWK3KsNa2qYj/Ub73YSL6/f
+WfV7teAg8wo3coRVf6IB/cXFUS4pYH0ogfOdOTmVhDQjOQ8ocB743vkeXnR8MfDFwpcZvrj4MsUX
+E188fHnAF/t7v9oXvxzA6iZOA9Sbi7GGuslOBpFO1FLIH/tP31b5aHcKhXoUUfsBp2sJ+E2n62II
+Vr9VBFPB0tGtCQbZAVZ2swRKHtv2eGLSxQqsrBiC4fz6/TjAGX2hHyc+WjmVq/hZw5fm95uGR3vm
+9c+OloDAx8fH4lh7/D582TSMXM8Ghn2rW9MS5/VMBgk1Z7duPaSw4vxxFF2RdOXeBsu3/n0BAty4
+lRvidxXrWIrwxloxrmwaxs9tx1wVVRuoELLvMCLoHBy0IMaNYJ+6D95Ngmp3wXdO8TnacLYcTldv
+atC1Ybqn04+6t7o1ApPWABF+vUslNg3w0sCXFr608aWzcVNzZHuH+nL2TB/7+pLkDYb0IZP5NhBv
+p9ORvVTMWQBwebLaYANRRkmNcoQlC7p6wU2xHNHRBbyJaFwu3Q2XRXUC8mwRb7wDN+ajD47eLtPb
+qmphZG3YPFzf2I5nTinWMUYDbG8wyEP9bhkyCcxMfTxpHGofDlt7c89OPTpFdDM6DDaoD8FHukHt
+ffszNrwxb83T6aJz9KHf/7ido1VxN5QTF58jvo7eX17W359t52i56kCQ4n/55ZflLKRrmCUAttUL
+xjF9PPUsx4Sqy8XzVe/o9NP1xXH/l8urf13XDy/Pt3gW8YxMaNGTaTa+S3GjZaJdKcy2nm1Sjsyh
+XNRdTJrFwkuRZCPGWbwLqWiYTSOIiBtilcEEp8glqP5Lo6KIfmkdCPkUVBaupJZ56xTHzGo53vOg
+TKaknh+HkkP3KpGYVEWvF4mrv2GSLc7M26X1I+A5LpTiaFnZZdJzohOE6ue6PloRfjdhvW7S1cOq
+0Fyb49ph/TOxPo35PCJOUlu+PAzdOdY9zWyUcAniioA0R6DQNA2Nz3wzZvqt6N9DfiDaZ4k70J/M
+HejPhDvQn0l3ICx/76snfv/zM/kHQffoHyOF/I78/idtEor7VnO/35O3b9+S1uesCuQ1UWOVsBXl
+RKiVcDEKPZ+qPjTBl+E5fK1z7X/9AL/zOv/+bR7/33a3pWz9f9fxFJ//dxOzZ9wDL7FcmpIXOWWx
+DKA5/r/NTqsZz//ZVbb+v2t5Uuy//VkvZLu9jMQ9Ja2sS1h6zx1dOWqSLSN/vu1EnWT5/nfj+671
+7Xe+Rxv3TiWRfRE3K9jLMJgN39MkPkcGhrx5E4YtwQoN+UYp+M1CKXzzGoYd3yIR4O8WhQHleeDI
+ahW3JH2IWYQNa2x5VTgZo6W4V7V2akTt7JCffiKtnQgk/3lN0iu/Vln1LPdb7FFRbafOghN9NGbu
+iWPfBrGbl5nyU5Rj2D6fnM+Koimqqqv6aKTuKSquHm3EQkcNRx2jpSsj3RhpIwwbNdD3RyO9gxkP
+0Otl2Fb2lYWeSLi+GHWSgf+F700XK1AdCD5d+EQjG/WmYUBsojNAPIrOjX5vEu/BJh+PPrmYjLoW
+NoaOZzgp6K0nxnMqPaOX3o3pSOa08KQoHaWpNHV9ZKpttYN/FcXs+pMTmxD/UenrUNlvax0Vdiyt
+04a/zc6oY2oKbFDPPyl2iJfYtIysKbzYM8efl1aBeUm2cWI5wNcAhBA0aTTRxy7xnu5MorLgXTLA
+LPQW9XWEkhlNsNxTsTZ4FE7eTDOdrrAZtUgz/RvLkbRi3Q9N1ojyqHZo1C+1k96UVqQpRDucXGJt
+Ye5WOErd2VOXt7gPze2nt9WMtsVXzmrdLSPyH/QWRgKzsICwL3lwXZST/7Wm0t7K/+t4Uub/1jbM
+yS6mT9KnQ3N3qE+GswkVrNz6n649LdUGTnCG/K92tbj/p9IGctnK/2t4cGut0Nl2K+jr9zvlOv6G
+Wxna5mhkDS3YnNTKAVHqe/v73U5N8rMGP3frXdg7Zb82aWUMwu//yOMcVA4qrXqrrgV5rCvU7f6P
+6ex2YDrw678u+639D+HPtK/w/YX5OHNJS/hBiNgIv5+9P64wDlrLGVJLU/abaUPq1Pdb8gGzIbVb
++/ta6UGdffy5u582pnbmmILfDHOkzyYe9ALjqRYb6n5LUeH/fltNH68Kcs5+q93JmEdFMuB2Xcka
+8K/vNa3e6e5262py3Oe2Z5NfyUfHTh36r30gnrZs9CPMnVls+OpeBwW77p6WNvy9utZsNzvdVjN1
++LtAMe2m1mqr+xI0dOpKKhLOPx5rQBf7u+peEgcwQGVfSx0/osixJ3oOBuD18zZm4/bZPttn+2yf
+7bN9ts/22T7bZ/tsn8Tz/wFI0lMWACADAA==
+TESTS_BASE_B64_EOF
+
+if base64 -d "$TEST_TREE_B64" > "$TEST_TREE_TGZ" 2>/dev/null \
+   || base64 --decode "$TEST_TREE_B64" > "$TEST_TREE_TGZ" 2>/dev/null; then
+  rm -rf "$TEST_TREE"
+  if ! tar -xzf "$TEST_TREE_TGZ" -C . >>"$STDERR_LOG" 2>&1; then
+    echo "ERROR: could not unpack the base test tree" | tee -a "$STDERR_LOG"
+    echo '{"success": false, "infrastructure_error": "base test tree did not unpack", "reward": 0.0}' > "$REPORT"
+    echo "0" > "$REWARD"
+    exit 2
+  fi
+else
+  echo "ERROR: could not decode the base test tree payload" | tee -a "$STDERR_LOG"
+  echo '{"success": false, "infrastructure_error": "base test tree did not decode", "reward": 0.0}' > "$REPORT"
+  echo "0" > "$REWARD"
+  exit 2
+fi
+
+if [ -f /tests/tests.patch ]; then
+  APPLIED=0
+  if command -v git >/dev/null 2>&1; then
+    if git apply /tests/tests.patch 2>>"$STDERR_LOG"; then
+      APPLIED=1
+    fi
+  fi
+  if [ "$APPLIED" != "1" ] && command -v patch >/dev/null 2>&1; then
+    if patch -p1 --forward < /tests/tests.patch >>"$STDERR_LOG" 2>&1; then
+      APPLIED=1
+    fi
+  fi
+  if [ "$APPLIED" != "1" ]; then
+    echo "ERROR: failed to apply tests/tests.patch" | tee -a "$STDERR_LOG"
+    echo '{"success": false, "infrastructure_error": "tests.patch did not apply", "reward": 0.0}' > "$REPORT"
+    echo "0" > "$REWARD"
+    exit 2
+  fi
+fi
+
+# Build the test command(s) from config (expands ${TEST_FILES}; language default
+# from grading.parser.framework when execution.commands is empty).
+python3 - <<'PY' > /tmp/run_tests.sh
+import ast, json, shlex
+cfg = json.load(open("/tests/config.json"))
+execution = cfg.get("execution", {}) or {}
+
+def parse_list(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        for p in (json.loads, ast.literal_eval):
+            try:
+                v = p(value)
+                if isinstance(v, list):
+                    return v
+            except Exception:
+                pass
+    return []
+
+test_files = parse_list(execution.get("selected_test_files_to_run") or [])
+commands = execution.get("commands", [])
+if isinstance(commands, str):
+    commands = [commands]
+if not commands:
+    fw = ((cfg.get("grading") or {}).get("parser") or {}).get("framework", "").lower()
+    # Output MUST be parseable by grade.py: pytest -v (per-test lines),
+    # jest/go JSON modes. `pytest -q` prints no per-test lines -> reward 0.
+    if fw == "pytest":
+        commands = ["python -m pytest -v ${TEST_FILES}"]
+    elif fw == "jest":
+        commands = ["npx jest --json ${TEST_FILES}"]
+    elif fw == "go-test":
+        commands = ["go test -json ./..."]
+    else:
+        raise SystemExit("No execution.commands configured and no framework default")
+
+files_arg = " ".join(shlex.quote(str(x)) for x in test_files)
+for cmd in commands:
+    print(cmd.replace("${TEST_FILES}", files_arg))
+PY
+chmod +x /tmp/run_tests.sh
+
+# Wrap with timeout(1) if available + configured.
+TIMEOUT_SEC="$(python3 -c "import json;print((json.load(open('/tests/config.json')).get('execution') or {}).get('timeout_sec',''))" 2>/dev/null || true)"
+RUNNER=(bash /tmp/run_tests.sh)
+if [ -n "${TIMEOUT_SEC:-}" ] && command -v timeout >/dev/null 2>&1; then
+  RUNNER=(timeout "${TIMEOUT_SEC}" bash /tmp/run_tests.sh)
+fi
+
+set +e
+"${RUNNER[@]}" > "$STDOUT_LOG" 2> "$STDERR_LOG"
+TEST_EXIT_CODE=$?
+set -e
+
+# Grade via the embedded grader (grade.py inlined at the marker below; written to
+# /tmp at runtime and invoked with the same CLI it has always used).
+cat > /tmp/grade.py <<'GRADE_PY_EOF'
+#!/usr/bin/env python3
+"""Compact SWE-bench/Harborized verifier — parser + evaluator (`grade.py`).
+
+This is a **generic, task-agnostic** grader and the single source of grading
+truth (see ``agents/difflection`` TEST_DESIGN.md). It is NOT shipped as its own
+``tests/`` file: ``config_builder.assemble_test_sh`` embeds this file's source
+into the self-contained ``test.sh`` at materialize time. It does NOT run the
+tests — ``test.sh`` runs them + captures logs; this grader only parses those logs
+against ``config.json``'s required-test lists and writes the reward.
+
+Division of responsibility (compact = config.json + tests.patch + test.sh):
+    config.json = declarative {execution, grading, artifacts} metadata (per-task)
+    tests.patch = the eval tests, applied by test.sh at verify time (per-task)
+    test.sh     = self-contained verifier (runs tests + this grader, embedded)
+
+CLI (called by test.sh)::
+
+    python3 /tests/grade.py \
+      --config /tests/config.json \
+      --stdout /logs/verifier/test-stdout.txt \
+      --stderr /logs/verifier/test-stderr.txt \
+      --raw-exit-code <int> \
+      --output /logs/verifier/output.json \
+      --report /logs/verifier/report.json \
+      --reward /logs/verifier/reward.txt
+
+Exit codes: 0 = success (reward 1), 1 = grading failure (reward 0),
+2 = infrastructure/parser error (reward 0). reward.txt is ALWAYS written.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import sys
+from typing import Any
+
+# Normalized statuses; only exact PASSED counts as passed for grading.
+PASSED, FAILED, ERROR, SKIPPED, UNKNOWN = (
+    "PASSED",
+    "FAILED",
+    "ERROR",
+    "SKIPPED",
+    "UNKNOWN",
+)
+
+
+# ---------------------------------------------------------------------------
+# Robust helpers
+# ---------------------------------------------------------------------------
+def parse_list(value: Any) -> list[str]:
+    """Coerce a JSON array OR a string-encoded list into ``list[str]``.
+
+    SWE-bench-style datasets often store list fields as strings, e.g.
+    ``'["a", "b"]'`` or ``"['a', 'b']"``. All forms normalize to the same list.
+    """
+    if isinstance(value, list):
+        return [str(x) for x in value]
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return []
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                parsed = parser(value)
+                if isinstance(parsed, list):
+                    return [str(x) for x in parsed]
+            except Exception:
+                pass
+    return []
+
+
+def normalize_name(name: str) -> str:
+    """Backslash→slash, collapse duplicate slashes, strip leading ./ and space."""
+    n = name.strip().replace("\\", "/")
+    n = re.sub(r"/+", "/", n)
+    if n.startswith("./"):
+        n = n[2:]
+    return n
+
+
+def _read(path: str | None) -> str:
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Framework parsers — text/JSON logs → [{name, status, raw_name, source}]
+# ---------------------------------------------------------------------------
+_PYTEST_RE = re.compile(
+    r"^(?P<name>[\w./\-\[\]]+::[^\s]+)\s+(?P<status>PASSED|FAILED|ERROR|SKIPPED)",
+    re.MULTILINE,
+)
+# unittest verbose: "test_name (module.TestClass) ... ok|FAIL|ERROR|skipped"
+_UNITTEST_RE = re.compile(
+    r"^(?P<test>\w+)\s+\((?P<cls>[\w.]+)\)\s+\.\.\.\s+"
+    r"(?P<status>ok|FAIL|ERROR|skipped)",
+    re.MULTILINE,
+)
+_STATUS_MAP = {
+    "passed": PASSED,
+    "pass": PASSED,
+    "ok": PASSED,
+    "failed": FAILED,
+    "fail": FAILED,
+    "error": ERROR,
+    "skipped": SKIPPED,
+    "skip": SKIPPED,
+}
+
+
+def _entry(name: str, status: str, source: str) -> dict[str, str]:
+    return {
+        "name": normalize_name(name),
+        "status": status,
+        "raw_name": name,
+        "source": source,
+    }
+
+
+def parse_pytest(stdout: str, stderr: str) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for m in _PYTEST_RE.finditer(stdout + "\n" + stderr):
+        out.append(_entry(m.group("name"), m.group("status").upper(), "pytest"))
+    return out
+
+
+def parse_unittest(stdout: str, stderr: str) -> list[dict[str, str]]:
+    # unittest writes verbose results to stderr by default.
+    out: list[dict[str, str]] = []
+    for m in _UNITTEST_RE.finditer(stdout + "\n" + stderr):
+        status = _STATUS_MAP.get(m.group("status").lower(), UNKNOWN)
+        out.append(_entry(f"{m.group('cls')}.{m.group('test')}", status, "unittest"))
+    return out
+
+
+def _find_json(text: str) -> Any:
+    """Best-effort: parse the largest JSON object/array embedded in *text*."""
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except Exception:
+            return None
+    return None
+
+
+def parse_jest(stdout: str, stderr: str) -> list[dict[str, str]]:
+    data = _find_json(stdout) or _find_json(stderr)
+    out: list[dict[str, str]] = []
+    if not isinstance(data, dict):
+        return out
+    for suite in data.get("testResults", []):
+        for a in suite.get("assertionResults", []):
+            status = _STATUS_MAP.get(str(a.get("status", "")).lower(), UNKNOWN)
+            title = a.get("fullName") or a.get("title") or ""
+            out.append(_entry(title, status, "jest"))
+    return out
+
+
+def parse_mocha(stdout: str, stderr: str) -> list[dict[str, str]]:
+    data = _find_json(stdout) or _find_json(stderr)
+    out: list[dict[str, str]] = []
+    if not isinstance(data, dict):
+        return out
+    for key, status in (("passes", PASSED), ("failures", FAILED), ("pending", SKIPPED)):
+        for t in data.get(key, []):
+            title = t.get("fullTitle") or t.get("title") or ""
+            out.append(_entry(title, status, "mocha"))
+    return out
+
+
+def parse_go_test(stdout: str, stderr: str) -> list[dict[str, str]]:
+    # `go test -json` emits one JSON object per line with Action/Test/Package.
+    out: list[dict[str, str]] = []
+    for line in (stdout + "\n" + stderr).splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except Exception:
+            continue
+        test = ev.get("Test")
+        action = ev.get("Action")
+        if not test or action not in ("pass", "fail", "skip"):
+            continue
+        status = {"pass": PASSED, "fail": FAILED, "skip": SKIPPED}[action]
+        out.append(_entry(f"{ev.get('Package', '')}::{test}", status, "go-test"))
+    return out
+
+
+def parse_custom(stdout: str, stderr: str, parser_cfg: dict) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    text = stdout + "\n" + stderr
+    pass_re = parser_cfg.get("pass_regex")
+    fail_re = parser_cfg.get("fail_regex")
+    for rx, status in ((pass_re, PASSED), (fail_re, FAILED)):
+        if not rx:
+            continue
+        for m in re.finditer(rx, text, re.MULTILINE):
+            name = m.groupdict().get("name") or (m.group(1) if m.groups() else "")
+            if name:
+                out.append(_entry(name, status, "custom"))
+    return out
+
+
+_PARSERS = {
+    "pytest": parse_pytest,
+    "unittest": parse_unittest,
+    "jest": parse_jest,
+    "mocha": parse_mocha,
+    "go-test": parse_go_test,
+}
+
+
+def parse_results(
+    framework: str, stdout: str, stderr: str, parser_cfg: dict
+) -> list[dict[str, str]]:
+    if framework == "custom":
+        return parse_custom(stdout, stderr, parser_cfg)
+    fn = _PARSERS.get(framework)
+    return fn(stdout, stderr) if fn else []
+
+
+# ---------------------------------------------------------------------------
+# Matching: required name → parsed result (controlled, no broad fuzzy match)
+# ---------------------------------------------------------------------------
+def matched_passed(required: str, results: list[dict[str, str]]) -> bool:
+    """True iff *required* maps to a parsed test whose status is exactly PASSED."""
+    req = normalize_name(required)
+    by_name: dict[str, str] = {}
+    for r in results:
+        # Last status wins; an exact PASSED is what we ultimately check.
+        by_name[r["name"]] = r["status"]
+    # 1) exact / whitespace / path-normalized (all folded into normalize_name).
+    if req in by_name:
+        return by_name[req] == PASSED
+    # 2) unambiguous suffix match only.
+    suffix_hits = [
+        name
+        for name in by_name
+        if name.endswith("/" + req) or name.endswith("::" + req.split("::")[-1])
+    ]
+    if len(set(suffix_hits)) == 1:
+        return by_name[suffix_hits[0]] == PASSED
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+def _write(path: str, content: str) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+    except OSError as exc:  # pragma: no cover - disk failure
+        sys.stderr.write(f"grade.py: could not write {path}: {exc}\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Compact verifier grader")
+    ap.add_argument("--config", required=True)
+    ap.add_argument("--stdout", default="")
+    ap.add_argument("--stderr", default="")
+    ap.add_argument("--raw-exit-code", type=int, default=0)
+    ap.add_argument("--output", required=True)
+    ap.add_argument("--report", required=True)
+    ap.add_argument("--reward", required=True)
+    args = ap.parse_args(argv)
+
+    def finish(reward: float, report: dict, exit_code: int) -> int:
+        report.setdefault("reward", reward)
+        _write(args.output, json.dumps({"tests": report.pop("_tests", [])}, indent=2))
+        _write(args.report, json.dumps(report, indent=2))
+        _write(args.reward, f"{1 if reward >= 1.0 else 0}\n")
+        return exit_code
+
+    # --- load config (infra error if unreadable) ---
+    try:
+        with open(args.config, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        return finish(
+            0.0,
+            {
+                "success": False,
+                "infrastructure_error": f"could not read config.json: {exc}",
+                "raw_exit_code": args.raw_exit_code,
+            },
+            2,
+        )
+
+    instance_id = (cfg.get("instance") or {}).get("instance_id", "")
+    grading = cfg.get("grading") or {}
+    parser_cfg = grading.get("parser") or {}
+    framework = (parser_cfg.get("framework") or "").lower()
+
+    # --- required tests: required_pass, else fail_to_pass ∪ pass_to_pass ---
+    f2p = parse_list(grading.get("fail_to_pass"))
+    p2p = parse_list(grading.get("pass_to_pass"))
+    required_explicit = parse_list(grading.get("required_pass"))
+    required = required_explicit if required_explicit else [*f2p, *p2p]
+    # De-dup, preserve order.
+    seen: set[str] = set()
+    required = [r for r in required if not (r in seen or seen.add(r))]
+
+    stdout, stderr = _read(args.stdout), _read(args.stderr)
+    results = parse_results(framework, stdout, stderr, parser_cfg)
+
+    base_report: dict[str, Any] = {
+        "instance_id": instance_id,
+        "raw_exit_code": args.raw_exit_code,
+        "parser_framework": framework or "unknown",
+        "infrastructure_error": None,
+        "_tests": results,
+    }
+
+    # Fail closed when no required tests are configured.
+    if not required:
+        return finish(
+            0.0,
+            {
+                **base_report,
+                "success": False,
+                "infrastructure_error": "no required tests configured",
+                "required_tests_count": 0,
+                "passed_tests_count": 0,
+                "required_tests": [],
+                "passed_required_tests": [],
+                "missing_required_tests": [],
+                "unexpected_failures": [],
+            },
+            2,
+        )
+
+    passed_required = [r for r in required if matched_passed(r, results)]
+    missing_required = [r for r in required if r not in passed_required]
+
+    allow_extra = bool(grading.get("allow_extra_failures", True))
+    unexpected: list[str] = []
+    if not allow_extra:
+        req_norm = {normalize_name(r) for r in required}
+        unexpected = [
+            r["name"]
+            for r in results
+            if r["status"] in (FAILED, ERROR) and r["name"] not in req_norm
+        ]
+
+    # Fail closed: a nonzero test-command exit means the run did not earn a reward, even if
+    # every required test name happens to appear in the results. Gated here inside the
+    # success expression rather than as an early infrastructure_error exit, so a
+    # non-compiling agent stays an ordinary grading failure instead of an invalid trial.
+    success = not missing_required and not unexpected and args.raw_exit_code == 0
+    reward = 1.0 if success else 0.0
+    return finish(
+        reward,
+        {
+            **base_report,
+            "success": success,
+            "required_tests_count": len(required),
+            "passed_tests_count": len(passed_required),
+            "required_tests": required,
+            "passed_required_tests": passed_required,
+            "missing_required_tests": missing_required,
+            "unexpected_failures": unexpected,
+        },
+        0 if success else 1,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
+
+GRADE_PY_EOF
+
+python3 /tmp/grade.py \
+  --config "$CONFIG" \
+  --stdout "$STDOUT_LOG" \
+  --stderr "$STDERR_LOG" \
+  --raw-exit-code "$TEST_EXIT_CODE" \
+  --output "$OUTPUT" \
+  --report "$REPORT" \
+  --reward "$REWARD"
+GRADE_EXIT_CODE=$?
+
+write_zero_reward_if_missing
+exit "$GRADE_EXIT_CODE"

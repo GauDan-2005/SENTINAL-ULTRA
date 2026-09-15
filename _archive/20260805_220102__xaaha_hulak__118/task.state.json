@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260805_220102__xaaha_hulak__118",
+  "submission_id": "24d6d443",
+  "repo": "xaaha/hulak",
+  "pr": "118",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-06",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2 remainder: read instruction.md and tests/tests.patch in full, page the PR 118 file list through the GitHub API, then Step 3"
+}

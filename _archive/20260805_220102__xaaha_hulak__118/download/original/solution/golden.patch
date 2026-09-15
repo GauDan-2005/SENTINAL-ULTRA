@@ -1,0 +1,707 @@
+diff --git a/go.mod b/go.mod
+index 74b9fcc..4c832c7 100644
+--- a/go.mod
++++ b/go.mod
+@@ -11,6 +11,7 @@ require (
+ 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260223200540-d6a276319c45
+ 	github.com/fatih/color v1.16.0
+ 	github.com/goccy/go-yaml v1.12.0
++	github.com/lrstanley/bubblezone v1.0.0
+ 	github.com/wundergraph/graphql-go-tools/v2 v2.0.0-rc.246
+ 	golang.org/x/net v0.46.0
+ )
+@@ -21,7 +22,7 @@ require (
+ 	github.com/buger/jsonparser v1.1.1 // indirect
+ 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+ 	github.com/charmbracelet/colorprofile v0.3.2 // indirect
+-	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
++	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
+ 	github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91 // indirect
+ 	github.com/charmbracelet/x/term v0.2.1 // indirect
+ 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+diff --git a/go.sum b/go.sum
+index 65ee65e..5da0680 100644
+--- a/go.sum
++++ b/go.sum
+@@ -18,8 +18,8 @@ github.com/charmbracelet/lipgloss v1.1.0 h1:vYXsiLHVkK7fp74RkV7b2kq9+zDLoEU4MZoF
+ github.com/charmbracelet/lipgloss v1.1.0/go.mod h1:/6Q8FR2o+kj8rz4Dq0zQc3vYf7X+B0binUUBwA0aL30=
+ github.com/charmbracelet/x/ansi v0.10.1 h1:rL3Koar5XvX0pHGfovN03f5cxLbCF2YvLeyz7D2jVDQ=
+ github.com/charmbracelet/x/ansi v0.10.1/go.mod h1:3RQDQ6lDnROptfpWuUVIUG64bD2g2BgntdxH0Ya5TeE=
+-github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd h1:vy0GVL4jeHEwG5YOXDmi86oYw2yuYUGqz6a8sLwg0X8=
+-github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd/go.mod h1:xe0nKWGd3eJgtqZRaN9RjMtK7xUYchjzPr7q6kcvCCs=
++github.com/charmbracelet/x/cellbuf v0.0.13 h1:/KBBKHuVRbq1lYx5BzEHBAFBP8VcQzJejZ/IA3iR28k=
++github.com/charmbracelet/x/cellbuf v0.0.13/go.mod h1:xe0nKWGd3eJgtqZRaN9RjMtK7xUYchjzPr7q6kcvCCs=
+ github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91 h1:payRxjMjKgx2PaCWLZ4p3ro9y97+TVLZNaRZgJwSVDQ=
+ github.com/charmbracelet/x/exp/golden v0.0.0-20241011142426-46044092ad91/go.mod h1:wDlXFlCrmJ8J+swcL/MnGUuYnqgQdW9rhSD61oNMb6U=
+ github.com/charmbracelet/x/exp/teatest v0.0.0-20260223200540-d6a276319c45 h1:e16SHyKEgYNcnp7n4GITbjfxOVvh9qj45ivpZIwRQgg=
+@@ -46,6 +46,8 @@ github.com/jensneuse/diffview v1.0.0 h1:4b6FQJ7y3295JUHU3tRko6euyEboL825ZsXeZZM4
+ github.com/jensneuse/diffview v1.0.0/go.mod h1:i6IacuD8LnEaPuiyzMHA+Wfz5mAuycMOf3R/orUY9y4=
+ github.com/leodido/go-urn v1.2.0 h1:hpXL4XnriNwQ/ABnpepYM/1vCLWNDfUNts8dX3xTG6Y=
+ github.com/leodido/go-urn v1.2.0/go.mod h1:+8+nEpDfqqsY+g338gtMEUOtuK+4dEMhiQEgxpxOKII=
++github.com/lrstanley/bubblezone v1.0.0 h1:bIpUaBilD42rAQwlg/4u5aTqVAt6DSRKYZuSdmkr8UA=
++github.com/lrstanley/bubblezone v1.0.0/go.mod h1:kcTekA8HE/0Ll2bWzqHlhA2c513KDNLW7uDfDP4Mly8=
+ github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=
+ github.com/lucasb-eyer/go-colorful v1.2.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
+ github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=
+diff --git a/pkg/tui/dropdown.go b/pkg/tui/dropdown.go
+index 2733404..d94cd71 100644
+--- a/pkg/tui/dropdown.go
++++ b/pkg/tui/dropdown.go
+@@ -65,10 +65,7 @@ func (d Dropdown) Update(msg tea.Msg) (Dropdown, tea.Cmd) {
+ func (d Dropdown) updateCollapsed(msg tea.KeyMsg) (Dropdown, tea.Cmd) {
+ 	switch msg.String() {
+ 	case KeyEnter, KeySpace:
+-		if len(d.Options) > 0 {
+-			d.expanded = true
+-			d.cursor = d.Selected
+-		}
++		d.Expand()
+ 	}
+ 	return d, nil
+ }
+@@ -151,3 +148,31 @@ func (d Dropdown) Value() string {
+ 	}
+ 	return d.Options[d.Selected]
+ }
++
++// Expand opens the dropdown and aligns the cursor with the selected option.
++func (d *Dropdown) Expand() {
++	if len(d.Options) == 0 {
++		return
++	}
++	d.expanded = true
++	d.cursor = d.Selected
++}
++
++// Select chooses the option at index and collapses the dropdown.
++func (d *Dropdown) Select(index int) {
++	if len(d.Options) == 0 {
++		d.Selected = 0
++		d.cursor = 0
++		d.expanded = false
++		return
++	}
++	if index < 0 {
++		index = 0
++	}
++	if index >= len(d.Options) {
++		index = len(d.Options) - 1
++	}
++	d.Selected = index
++	d.cursor = index
++	d.expanded = false
++}
+diff --git a/pkg/tui/gqlexplorer/formitem.go b/pkg/tui/gqlexplorer/formitem.go
+index db45714..137d772 100644
+--- a/pkg/tui/gqlexplorer/formitem.go
++++ b/pkg/tui/gqlexplorer/formitem.go
+@@ -2,6 +2,7 @@ package gqlexplorer
+ 
+ import (
+ 	"fmt"
++	"strconv"
+ 	"strings"
+ 
+ 	tea "github.com/charmbracelet/bubbletea"
+@@ -881,9 +882,86 @@ func (df *DetailForm) hasExpandedDropdown() bool {
+ 	return false
+ }
+ 
++func (df *DetailForm) itemZoneID(prefix string, index int) string {
++	return prefix + ":item:" + strconv.Itoa(index)
++}
++
++func (df *DetailForm) HandleMouse(prefix string, msg tea.MouseMsg) bool {
++	for i := range df.items {
++		id := df.itemZoneID(prefix, i)
++		if !tui.Hit(id, msg) {
++			continue
++		}
++
++		df.cursor = i
++		df.FocusCurrent()
++		item := &df.items[i]
++
++		switch item.kind {
++		case formItemToggle:
++			_ = item.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
++			if !item.isField {
++				df.setArgEnabled(item.argName, item.toggle.Value)
++			}
++			if item.expandable {
++				df.toggleExpand(i)
++			}
++		case formItemTextInput:
++			if !item.isField {
++				item.enabled = true
++			}
++			item.input.Model.Focus()
++			if item.listItem {
++				df.syncListArgRows(item.argName)
++			}
++		case formItemDropdown:
++			if !item.dropdown.Expanded() {
++				if !item.isField {
++					item.enabled = true
++				}
++				item.dropdown.Focus()
++				item.dropdown.Expand()
++				return true
++			}
++
++			_, relY := tui.ZonePos(id, msg)
++			optionIndex := relY
++			if optionIndex < 0 || optionIndex >= len(item.dropdown.Options) {
++				return true
++			}
++			item.dropdown.Select(optionIndex)
++			item.dropdown.Focus()
++			if !item.isField {
++				item.enabled = true
++			}
++			if item.listItem {
++				df.syncListArgRows(item.argName)
++			}
++		}
++		return true
++	}
++	return false
++}
++
+ // View renders all form items in a single flat list.
+ // Returns the rendered string and the line number of the focused item.
+ func (df *DetailForm) View(op *UnifiedOperation) (string, int) {
++	return df.viewMarked(op, "", func(_ string, s string) string { return s })
++}
++
++func (df *DetailForm) ViewMarked(
++	op *UnifiedOperation,
++	zonePrefix string,
++	mark func(id, view string) string,
++) (string, int) {
++	return df.viewMarked(op, zonePrefix, mark)
++}
++
++func (df *DetailForm) viewMarked(
++	op *UnifiedOperation,
++	zonePrefix string,
++	mark func(id, view string) string,
++) (string, int) {
+ 	var lines []string
+ 
+ 	focused := df.items[df.cursor].Focused()
+@@ -905,17 +983,20 @@ func (df *DetailForm) View(op *UnifiedOperation) (string, int) {
+ 		pad := basePad + depth*depthIndent
+ 		itemPad := strings.Repeat(tui.KeySpace, pad)
+ 
+-		prefix := itemPad
++		linePrefix := itemPad
+ 		if i == df.cursor {
+ 			if focused {
+-				prefix = strings.Repeat(tui.KeySpace, pad-2) + utils.ChevronRight
++				linePrefix = strings.Repeat(tui.KeySpace, pad-2) + utils.ChevronRight
+ 			}
+ 			cursorLine = len(lines)
+ 		}
+ 		view := df.items[i].View()
++		if zonePrefix != "" {
++			view = mark(df.itemZoneID(zonePrefix, i), view)
++		}
+ 		for j, line := range strings.Split(view, "\n") {
+ 			if j == 0 {
+-				lines = append(lines, prefix+line)
++				lines = append(lines, linePrefix+line)
+ 			} else {
+ 				lines = append(lines, itemPad+line)
+ 			}
+diff --git a/pkg/tui/gqlexplorer/model.go b/pkg/tui/gqlexplorer/model.go
+index 3fd3843..37a1552 100644
+--- a/pkg/tui/gqlexplorer/model.go
++++ b/pkg/tui/gqlexplorer/model.go
+@@ -50,6 +50,7 @@ type Model struct {
+ 	filtered   []UnifiedOperation
+ 	cursor     int
+ 	filterHint string
++	mouse      tui.MouseZone
+ 	search     tui.TextInput
+ 	viewport   viewport.Model
+ 	ready      bool
+@@ -118,6 +119,7 @@ func NewModel(
+ 		objectTypes:     objectTypes,
+ 		unionTypes:      unionTypes,
+ 		interfaceTypes:  interfaceTypes,
++		mouse:           tui.NewMouseZone(),
+ 		search: tui.NewFilterInput(tui.TextInputOpts{
+ 			Prompt:      "[1] Search: ",
+ 			Placeholder: searchPlaceholderText,
+@@ -312,6 +314,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+ 		m.updateBadgeCache()
+ 		m.syncViewport()
+ 		return m, nil
++	case tea.MouseMsg:
++		return m.handleMouse(msg)
+ 	case tea.KeyMsg:
+ 		return m.handleKey(msg)
+ 	}
+@@ -324,6 +328,112 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+ 	return m, tea.Batch(cmds...)
+ }
+ 
++func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
++	if tui.IsLeftClick(msg) {
++		if m.handleLeftPanelClick(msg) {
++			return m, nil
++		}
++		if m.handleDetailFormClick(msg) {
++			return m, nil
++		}
++	}
++
++	var cmds []tea.Cmd
++	_, cmd := m.search.Update(msg)
++	cmds = append(cmds, cmd)
++	cmd = m.updateFocusedViewport(msg)
++	cmds = append(cmds, cmd)
++	return m, tea.Batch(cmds...)
++}
++
++func (m *Model) handleLeftPanelClick(msg tea.MouseMsg) bool {
++	if !m.ready {
++		return false
++	}
++
++	if tui.Hit(m.searchZoneID(), msg) {
++		m.focus.FocusByNumber(1)
++		m.focus.SetTyping(true)
++		m.syncSearchFocus()
++		m.syncViewport()
++		return true
++	}
++
++	if m.isEndpointMode() {
++		eps := m.filteredEndpoints()
++		for i := range eps {
++			if !tui.Hit(m.endpointZoneID(i), msg) {
++				continue
++			}
++			m.focus.FocusByNumber(1)
++			m.focus.SetTyping(false)
++			m.endpointCursor = i
++			m.syncSearchFocus()
++			if m.isNegatedEndpointSearch() {
++				keep := make(map[string]bool, len(eps))
++				for _, ep := range eps {
++					keep[ep] = true
++				}
++				m.activeEndpoints = keep
++			} else {
++				ep := eps[i]
++				if m.activeEndpoints[ep] {
++					delete(m.activeEndpoints, ep)
++				} else {
++					m.activeEndpoints[ep] = true
++				}
++			}
++			m.updateBadgeCache()
++			m.applyFilter()
++			m.syncViewport()
++			return true
++		}
++		return false
++	}
++
++	for i := range m.filtered {
++		if !tui.Hit(m.operationZoneID(i), msg) {
++			continue
++		}
++		m.focus.FocusByNumber(1)
++		m.focus.SetTyping(false)
++		m.syncSearchFocus()
++		m.cursor = i
++		m.syncViewport()
++		return true
++	}
++	return false
++}
++
++func (m *Model) handleDetailFormClick(msg tea.MouseMsg) bool {
++	if m.detailForm == nil || m.isEndpointMode() {
++		return false
++	}
++	if !m.detailForm.HandleMouse(m.detailMousePrefix(), msg) {
++		return false
++	}
++	m.focus.FocusByNumber(m.detailPanel.Number)
++	m.syncSearchFocus()
++	m.syncViewport()
++	return true
++}
++
++func (m *Model) operationZoneID(index int) string {
++	return m.mouse.ID("operation", strconv.Itoa(index))
++}
++
++func (m *Model) endpointZoneID(index int) string {
++	return m.mouse.ID("endpoint", strconv.Itoa(index))
++}
++
++func (m *Model) detailMousePrefix() string {
++	return m.mouse.ID("detail")
++}
++
++func (m *Model) searchZoneID() string {
++	return m.mouse.ID("search")
++}
++
+ var vimToArrowMap = map[string]tea.KeyType{
+ 	tui.KeyJ: tea.KeyDown,
+ 	tui.KeyK: tea.KeyUp,
+@@ -716,7 +826,7 @@ func (m *Model) syncViewport() {
+ 			} else {
+ 				m.detailForm.BlurAll()
+ 			}
+-			content, cursorLine := m.detailForm.View(op)
++			content, cursorLine := m.detailForm.ViewMarked(op, m.detailMousePrefix(), m.mouse.Mark)
+ 			m.detailPanel.SyncContent(content, cursorLine)
+ 			m.detailPanel.Footer = m.detailForm.SearchFooter()
+ 		} else {
+@@ -777,7 +887,7 @@ func (m *Model) View() string {
+ 			Height(max(m.height-_containerStyle.GetVerticalFrameSize(), 1)).
+ 			Render(body)
+ 
+-		return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, box)
++		return tui.ScanMouseZones(lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, box))
+ 	}
+ 
+ 	rightW := m.rightPanelWidth()
+@@ -816,7 +926,7 @@ func (m *Model) View() string {
+ 		Height(boxH).
+ 		Render(body)
+ 
+-	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, box)
++	return tui.ScanMouseZones(lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, box))
+ }
+ 
+ func RunExplorer(
+diff --git a/pkg/tui/gqlexplorer/render.go b/pkg/tui/gqlexplorer/render.go
+index 6709391..f63efda 100644
+--- a/pkg/tui/gqlexplorer/render.go
++++ b/pkg/tui/gqlexplorer/render.go
+@@ -38,17 +38,6 @@ func truncateToWidth(s string, width int) string {
+ 	return ansi.Truncate(s, width, utils.Ellipsis)
+ }
+ 
+-func appendWrappedHelpLines(lines []string, text string, width int, prefix string) []string {
+-	if text == "" {
+-		return lines
+-	}
+-	wrapped := lipgloss.NewStyle().Width(width).Render(text)
+-	for line := range strings.SplitSeq(wrapped, "\n") {
+-		lines = append(lines, tui.HelpStyle.Render(prefix+line))
+-	}
+-	return lines
+-}
+-
+ func (m *Model) renderList() (string, int) {
+ 	if len(m.filtered) == 0 {
+ 		return tui.HelpStyle.Render(
+@@ -71,17 +60,26 @@ func (m *Model) renderList() (string, int) {
+ 		}
+ 		if i == m.cursor {
+ 			cursorLine = len(lines)
++			var row strings.Builder
+ 			if focused {
+-				lines = append(lines, tui.SubtitleStyle.Render(selectedPrefix+op.Name))
++				row.WriteString(tui.SubtitleStyle.Render(selectedPrefix + op.Name))
+ 			} else {
+-				lines = append(lines, selectedPrefix+op.Name)
++				row.WriteString(selectedPrefix + op.Name)
+ 			}
+ 			wrapW := max(m.leftPanelWidth()-detailPadding, 1)
+-			lines = appendWrappedHelpLines(lines, op.Description, wrapW, detailPrefix)
+-			// Full URL shown intentionally; badges/filters use shortened form.
+-			lines = appendWrappedHelpLines(lines, op.Endpoint, wrapW, detailPrefix)
++			for _, text := range []string{op.Description, op.Endpoint} {
++				if text == "" {
++					continue
++				}
++				wrapped := lipgloss.NewStyle().Width(wrapW).Render(text)
++				for line := range strings.SplitSeq(wrapped, "\n") {
++					row.WriteString("\n")
++					row.WriteString(tui.HelpStyle.Render(detailPrefix + line))
++				}
++			}
++			lines = append(lines, m.mouse.Mark(m.operationZoneID(i), row.String()))
+ 		} else {
+-			lines = append(lines, itemPrefix+op.Name)
++			lines = append(lines, m.mouse.Mark(m.operationZoneID(i), itemPrefix+op.Name))
+ 		}
+ 	}
+ 	return strings.Join(lines, "\n"), cursorLine
+@@ -109,7 +107,7 @@ func (m *Model) renderEndpointPicker() (string, int) {
+ 		}
+ 
+ 		styledChevron := lipgloss.NewStyle().Foreground(chevronColor).Render(chevron)
+-		lines = append(lines, styledChevron+tui.KeySpace+toggle.View())
++		lines = append(lines, m.mouse.Mark(m.endpointZoneID(i), styledChevron+tui.KeySpace+toggle.View()))
+ 	}
+ 	return strings.Join(lines, "\n"), cursorLine
+ }
+@@ -357,6 +355,7 @@ func (m *Model) renderLeftContent() string {
+ 	search := searchStyle.
+ 		Width(max(panelW-searchStyle.GetHorizontalFrameSize(), 1)).
+ 		Render(m.search.Model.View())
++	search = m.mouse.Mark(m.searchZoneID(), search)
+ 
+ 	content := ""
+ 	if m.isEndpointMode() {
+diff --git a/pkg/tui/mouse.go b/pkg/tui/mouse.go
+new file mode 100644
+index 0000000..d973630
+--- /dev/null
++++ b/pkg/tui/mouse.go
+@@ -0,0 +1,75 @@
++package tui
++
++import (
++	"strings"
++	"sync"
++
++	tea "github.com/charmbracelet/bubbletea"
++	zone "github.com/lrstanley/bubblezone"
++)
++
++var mouseZoneOnce sync.Once
++
++// MouseZone provides stable, collision-free zone IDs for one component or model.
++// Actionable views should mark click targets with IDs derived from the same zone.
++type MouseZone struct {
++	prefix string
++}
++
++// NewMouseZone initializes the shared zone manager and returns a unique prefix
++// that can be used to create stable IDs for one component instance.
++func NewMouseZone() MouseZone {
++	ensureMouseZoneManager()
++	return MouseZone{prefix: zone.NewPrefix()}
++}
++
++func ensureMouseZoneManager() {
++	mouseZoneOnce.Do(zone.NewGlobal)
++}
++
++// ID builds a stable namespaced ID for a clickable/focusable region.
++func (z MouseZone) ID(parts ...string) string {
++	if len(parts) == 0 {
++		return z.prefix
++	}
++	return z.prefix + strings.Join(parts, ":")
++}
++
++// Mark wraps an actionable view region with a zone marker.
++func (z MouseZone) Mark(id, view string) string {
++	ensureMouseZoneManager()
++	return zone.Mark(id, view)
++}
++
++// Scan registers all marked regions at the root view without affecting layout.
++func ScanMouseZones(view string) string {
++	ensureMouseZoneManager()
++	return zone.Scan(view)
++}
++
++// IsLeftClick reports whether msg is a left-button release event.
++func IsLeftClick(msg tea.MouseMsg) bool {
++	return msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionRelease
++}
++
++// Hit reports whether the given mouse event landed inside the provided zone.
++func Hit(id string, msg tea.MouseMsg) bool {
++	ensureMouseZoneManager()
++	return zone.Get(id).InBounds(msg)
++}
++
++// ZoneBounds returns the stored bounds for the given zone ID.
++func ZoneBounds(id string) (startX, startY, endX, endY int, ok bool) {
++	ensureMouseZoneManager()
++	info := zone.Get(id)
++	if info == nil || info.IsZero() {
++		return 0, 0, 0, 0, false
++	}
++	return info.StartX, info.StartY, info.EndX, info.EndY, true
++}
++
++// ZonePos reports the mouse position relative to the given zone.
++func ZonePos(id string, msg tea.MouseMsg) (int, int) {
++	ensureMouseZoneManager()
++	return zone.Get(id).Pos(msg)
++}
+diff --git a/pkg/tui/selector.go b/pkg/tui/selector.go
+index 2983dff..88b965d 100644
+--- a/pkg/tui/selector.go
++++ b/pkg/tui/selector.go
+@@ -1,6 +1,7 @@
+ package tui
+ 
+ import (
++	"strconv"
+ 	"strings"
+ 
+ 	"github.com/charmbracelet/bubbles/viewport"
+@@ -23,6 +24,7 @@ type SelectorModel struct {
+ 	FilterableList
+ 	Selected    string
+ 	Cancelled   bool
++	mouse       MouseZone
+ 	viewport    viewport.Model
+ 	vpReady     bool
+ 	width       int
+@@ -43,6 +45,7 @@ func NewSelector(items []string, prompt string, customHelp ...string) SelectorMo
+ 	m := SelectorModel{
+ 		FilterableList: NewFilterableList(items, prompt, placeholder, false),
+ 		helpMessage:    help,
++		mouse:          NewMouseZone(),
+ 	}
+ 	m.resizeViewport()
+ 	m.syncViewport()
+@@ -80,6 +83,10 @@ func (m *SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+ 		return m, nil
+ 	}
+ 
++	if msg, ok := msg.(tea.MouseMsg); ok {
++		return m.handleMouse(msg)
++	}
++
+ 	if msg, ok := msg.(tea.KeyMsg); ok {
+ 		return m.handleKey(msg)
+ 	}
+@@ -97,6 +104,39 @@ func (m *SelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+ 	return m, tea.Batch(cmdInput, cmdVP)
+ }
+ 
++func (m *SelectorModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
++	if IsLeftClick(msg) {
++		if Hit(m.searchZoneID(), msg) {
++			m.TextInput.Model.Focus()
++			return m, nil
++		}
++		for i := range m.Filtered {
++			if !Hit(m.itemZoneID(i), msg) {
++				continue
++			}
++			m.Cursor = i
++			m.syncViewport()
++			val, ok := m.SelectCurrent()
++			if !ok {
++				return m, nil
++			}
++			m.Selected = val
++			return m, tea.Quit
++		}
++	}
++
++	prev := m.TextInput.Model.Value()
++	cmdInput := m.UpdateInput(msg)
++	var cmdVP tea.Cmd
++	if m.vpReady {
++		m.viewport, cmdVP = m.viewport.Update(msg)
++	}
++	if m.TextInput.Model.Value() != prev {
++		m.syncViewport()
++	}
++	return m, tea.Batch(cmdInput, cmdVP)
++}
++
+ func (m *SelectorModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+ 	switch msg.String() {
+ 	case KeyQuit:
+@@ -141,14 +181,15 @@ func (m *SelectorModel) View() string {
+ 	if m.width > 0 {
+ 		title = lipgloss.NewStyle().MaxWidth(max(m.width-selectorHorizontalPad, 1)).Render(title)
+ 	}
++	title = m.mouse.Mark(m.searchZoneID(), title)
+ 	list := ""
+ 	if m.vpReady {
+ 		vp := m.viewport
+-		content, cursorLine := m.RenderItemsWidth(vp.Width)
++		content, cursorLine := m.renderItemsWidthMarked(vp.Width)
+ 		SyncViewport(&vp, content, cursorLine, DefaultScrollMargin)
+ 		list = vp.View()
+ 	} else {
+-		list, _ = m.RenderItems()
++		list, _ = m.renderItemsWidthMarked(0)
+ 	}
+ 	help := HelpBarStyle.Render(m.helpMessage)
+ 	if m.width > 0 {
+@@ -156,7 +197,15 @@ func (m *SelectorModel) View() string {
+ 	}
+ 
+ 	content := title + "\n\n" + list + "\n" + help
+-	return "\n" + content + "\n"
++	return ScanMouseZones("\n" + content + "\n")
++}
++
++func (m *SelectorModel) itemZoneID(index int) string {
++	return m.mouse.ID("item", strconv.Itoa(index))
++}
++
++func (m *SelectorModel) searchZoneID() string {
++	return m.mouse.ID("search")
+ }
+ 
+ func (m *SelectorModel) resizeViewport() {
+@@ -190,10 +239,44 @@ func (m *SelectorModel) syncViewport() {
+ 	if !m.vpReady {
+ 		return
+ 	}
+-	content, cursorLine := m.RenderItemsWidth(m.viewport.Width)
++	content, cursorLine := m.renderItemsWidthMarked(m.viewport.Width)
+ 	SyncViewport(&m.viewport, content, cursorLine, DefaultScrollMargin)
+ }
+ 
++func (m *SelectorModel) renderItemsWidthMarked(maxWidth int) (string, int) {
++	if len(m.Filtered) == 0 {
++		if m.requireInput && !m.HasFilterValue() {
++			return "", 0
++		}
++		return HelpStyle.Render(listPadding + "(no matches)"), 0
++	}
++
++	selectedPrefix := utils.ChevronRight + KeySpace
++	selectedAvail := maxWidth - lipgloss.Width(selectedPrefix)
++	listAvail := maxWidth - lipgloss.Width(listPadding)
++
++	cursorLine := 0
++	lines := make([]string, 0, len(m.Filtered))
++	for i, item := range m.Filtered {
++		display := item
++		if maxWidth > 0 {
++			avail := listAvail
++			if i == m.Cursor {
++				avail = selectedAvail
++			}
++			display = truncateWithEllipsis(item, avail)
++		}
++
++		line := listPadding + display
++		if i == m.Cursor {
++			cursorLine = len(lines)
++			line = SubtitleStyle.Render(selectedPrefix + display)
++		}
++		lines = append(lines, m.mouse.Mark(m.itemZoneID(i), line))
++	}
++	return strings.Join(lines, "\n"), cursorLine
++}
++
+ /*
+ RunSelector runs a generic selector TUI with the given items and prompt.
+ Returns the selected item, or empty string if cancelled.
+@@ -209,7 +292,7 @@ func RunSelector(
+ 		return "", emptyErr
+ 	}
+ 	model := NewSelector(items, prompt, helpMessage...)
+-	m, err := tea.NewProgram(&model).Run()
++	m, err := tea.NewProgram(&model, tea.WithMouseCellMotion()).Run()
+ 	if err != nil {
+ 		return "", err
+ 	}

@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260804_160342__connectrpc_connect-rust__239",
+  "submission_id": "8dc1922a-5dd5-4816-a273-cd91f063b0f7_submission_2026-08-18T19_40_06.421Z",
+  "repo": "",
+  "pr": "",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-19",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2: read the bundle and cross-check the platform data block"
+}

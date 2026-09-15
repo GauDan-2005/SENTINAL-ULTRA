@@ -1,0 +1,1439 @@
+diff --git a/tests/lwa_http_regression.rs b/tests/lwa_http_regression.rs
+new file mode 100644
+index 0000000..675b026
+--- /dev/null
++++ b/tests/lwa_http_regression.rs
+@@ -0,0 +1,358 @@
++//! Plain-HTTP behaviour of the adapter. Every option is built with
++//! `..Default::default()`, so this file compiles against the crate as it stands
++//! today and against the crate once the TLS options exist. It must pass in both
++//! states: with TLS off, nothing here is allowed to move.
++
++#[path = "lwa_support/mod.rs"]
++mod lwa_support;
++
++use std::io;
++use std::io::prelude::*;
++
++use flate2::read::GzDecoder;
++use flate2::write::GzEncoder;
++use flate2::Compression;
++use http::{Method, Response};
++use httpmock::{
++    Method::{DELETE, GET, POST, PUT},
++    MockServer,
++};
++use hyper::{body, Body};
++use lambda_web_adapter::{Adapter, AdapterOptions, Protocol};
++use lwa_support::{LambdaEventBuilder, PATIENCE};
++use tower::Service;
++
++fn options_for(server: &MockServer) -> AdapterOptions {
++    AdapterOptions {
++        host: server.host(),
++        port: server.port().to_string(),
++        readiness_check_port: server.port().to_string(),
++        readiness_check_path: "/healthcheck".to_string(),
++        readiness_check_protocol: Protocol::Http,
++        async_init: false,
++        base_path: None,
++        compression: false,
++        ..Default::default()
++    }
++}
++
++async fn body_to_string(res: Response<Body>) -> String {
++    let body_bytes = body::to_bytes(res.into_body()).await.unwrap();
++    String::from_utf8_lossy(&body_bytes).to_string()
++}
++
++fn decode_reader(bytes: &[u8]) -> io::Result<String> {
++    let mut gz = GzDecoder::new(bytes);
++    let mut s = String::new();
++    gz.read_to_string(&mut s)?;
++    Ok(s)
++}
++
++async fn compressed_body_to_string(res: Response<Body>) -> String {
++    let body_bytes = body::to_bytes(res.into_body()).await.unwrap();
++    decode_reader(&body_bytes).unwrap()
++}
++
++#[test]
++fn regression_protocol_default_and_parsing() {
++    assert_eq!(Protocol::Http, Protocol::default());
++    assert_eq!(Protocol::Tcp, Protocol::from("tcp"));
++    assert_eq!(Protocol::Tcp, Protocol::from("TCP"));
++    assert_eq!(Protocol::Http, Protocol::from("http"));
++    assert_eq!(Protocol::Http, Protocol::from("something-else"));
++}
++
++#[test]
++fn regression_options_build_from_defaults() {
++    let options = AdapterOptions {
++        host: "127.0.0.1".to_string(),
++        port: "8080".to_string(),
++        ..Default::default()
++    };
++    assert_eq!("127.0.0.1", options.host);
++    assert_eq!("8080", options.port);
++    assert_eq!(Protocol::Http, options.readiness_check_protocol);
++    assert_eq!(None, options.base_path);
++    assert!(!options.async_init);
++    assert!(!options.compression);
++}
++
++#[tokio::test]
++async fn regression_readiness_check_calls_configured_path() {
++    let app_server = MockServer::start();
++    let healthcheck = app_server.mock(|when, then| {
++        when.method(GET).path("/healthcheck");
++        then.status(200).body("OK");
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++    tokio::time::timeout(PATIENCE, adapter.check_init_health())
++        .await
++        .expect("the readiness regression never finished");
++
++    healthcheck.assert();
++}
++
++#[tokio::test]
++async fn regression_basic_request_is_proxied() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("Hello World");
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++    let req = LambdaEventBuilder::new().with_path("/hello").build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("content-length").unwrap(), "11");
++    assert_eq!("Hello World", body_to_string(response).await);
++}
++
++#[tokio::test]
++async fn regression_request_and_response_headers_survive() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET)
++            .path("/hello")
++            .header("foo", "bar")
++            .header_exists("x-amzn-request-context");
++        then.status(200).header("fizz", "buzz").body("Hello World");
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello")
++        .with_header("foo", "bar")
++        .build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("fizz").unwrap(), "buzz");
++    assert_eq!("Hello World", body_to_string(response).await);
++}
++
++#[tokio::test]
++async fn regression_encoded_path_is_forwarded_verbatim() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello%20world");
++        then.status(200).body("Hello Encoded World");
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++    let req = LambdaEventBuilder::new().with_path("/hello%20world").build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!("Hello Encoded World", body_to_string(response).await);
++}
++
++#[tokio::test]
++async fn regression_query_parameters_are_forwarded() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET)
++            .path("/hello")
++            .query_param("name", "adapter")
++            .query_param("greeting", "hi");
++        then.status(200).body("Hello Query");
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello")
++        .with_query("name", "adapter")
++        .with_query("greeting", "hi")
++        .build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!("Hello Query", body_to_string(response).await);
++}
++
++#[tokio::test]
++async fn regression_post_put_delete_reach_the_app() {
++    let app_server = MockServer::start();
++    let post = app_server.mock(|when, then| {
++        when.method(POST).path("/resource");
++        then.status(201).body("created");
++    });
++    let put = app_server.mock(|when, then| {
++        when.method(PUT).path("/resource");
++        then.status(200).body("updated");
++    });
++    let delete = app_server.mock(|when, then| {
++        when.method(DELETE).path("/resource");
++        then.status(204);
++    });
++
++    let mut adapter = Adapter::new(&options_for(&app_server));
++
++    let created = adapter
++        .call(
++            LambdaEventBuilder::new()
++                .with_method(Method::POST)
++                .with_path("/resource")
++                .build()
++                .into(),
++        )
++        .await
++        .expect("POST failed");
++    let updated = adapter
++        .call(
++            LambdaEventBuilder::new()
++                .with_method(Method::PUT)
++                .with_path("/resource")
++                .build()
++                .into(),
++        )
++        .await
++        .expect("PUT failed");
++    let removed = adapter
++        .call(
++            LambdaEventBuilder::new()
++                .with_method(Method::DELETE)
++                .with_path("/resource")
++                .build()
++                .into(),
++        )
++        .await
++        .expect("DELETE failed");
++
++    post.assert();
++    put.assert();
++    delete.assert();
++    assert_eq!(201, created.status());
++    assert_eq!(200, updated.status());
++    assert_eq!(204, removed.status());
++}
++
++#[tokio::test]
++async fn regression_base_path_is_stripped_before_proxying() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("Hello Stripped");
++    });
++
++    let options = AdapterOptions {
++        base_path: Some("/prod".to_string()),
++        ..options_for(&app_server)
++    };
++    let mut adapter = Adapter::new(&options);
++    let req = LambdaEventBuilder::new().with_path("/prod/hello").build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!("Hello Stripped", body_to_string(response).await);
++}
++
++#[tokio::test]
++async fn regression_gzip_applied_when_compression_enabled() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200)
++            .header("content-type", "text/plain")
++            .body("Hello World Hello World Hello World Hello World Hello World");
++    });
++
++    let options = AdapterOptions {
++        compression: true,
++        ..options_for(&app_server)
++    };
++    let mut adapter = Adapter::new(&options);
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello")
++        .with_header("accept-encoding", "gzip")
++        .build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("content-encoding").unwrap(), "gzip");
++    assert_eq!(
++        "Hello World Hello World Hello World Hello World Hello World",
++        compressed_body_to_string(response).await
++    );
++}
++
++#[tokio::test]
++async fn regression_gzip_skipped_for_uncompressable_type() {
++    let app_server = MockServer::start();
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200)
++            .header("content-type", "application/octet-stream")
++            .body("Hello World Hello World Hello World Hello World Hello World");
++    });
++
++    let options = AdapterOptions {
++        compression: true,
++        ..options_for(&app_server)
++    };
++    let mut adapter = Adapter::new(&options);
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello")
++        .with_header("accept-encoding", "gzip")
++        .build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("content-length").unwrap(), "59");
++    assert!(!response.headers().contains_key("content-encoding"));
++    assert_eq!(
++        "Hello World Hello World Hello World Hello World Hello World",
++        body_to_string(response).await
++    );
++}
++
++#[tokio::test]
++async fn regression_already_compressed_body_is_left_alone() {
++    let app_server = MockServer::start();
++    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
++    encoder
++        .write_all(b"Hello World Hello World Hello World Hello World Hello World")
++        .unwrap();
++    let gzipped = encoder.finish().unwrap();
++    let gzipped_len = gzipped.len();
++
++    let hello = app_server.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200)
++            .header("content-type", "text/plain")
++            .header("content-encoding", "gzip")
++            .body(gzipped);
++    });
++
++    let options = AdapterOptions {
++        compression: true,
++        ..options_for(&app_server)
++    };
++    let mut adapter = Adapter::new(&options);
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello")
++        .with_header("accept-encoding", "gzip")
++        .build();
++    let response = adapter.call(req.into()).await.expect("Request failed");
++
++    hello.assert();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("content-encoding").unwrap(), "gzip");
++    assert_eq!(
++        response.headers().get("content-length").unwrap(),
++        &gzipped_len.to_string()
++    );
++    assert_eq!(
++        "Hello World Hello World Hello World Hello World Hello World",
++        compressed_body_to_string(response).await
++    );
++}
+diff --git a/tests/lwa_support/mod.rs b/tests/lwa_support/mod.rs
+new file mode 100644
+index 0000000..b1978c8
+--- /dev/null
++++ b/tests/lwa_support/mod.rs
+@@ -0,0 +1,484 @@
++use std::collections::HashMap;
++use std::str::FromStr;
++
++use http::header::HeaderName;
++use http::{HeaderMap, HeaderValue, Method};
++use lambda_http::aws_lambda_events::alb::{AlbTargetGroupRequest, AlbTargetGroupRequestContext, ElbContext};
++use lambda_http::aws_lambda_events::query_map::QueryMap;
++use lambda_http::request::LambdaRequest;
++
++#[derive(Debug)]
++pub enum LambdaEventType {
++    ALB,
++    // TODO: Add other event types
++}
++
++impl Default for LambdaEventType {
++    fn default() -> Self {
++        LambdaEventType::ALB
++    }
++}
++
++/// Makes it easy to construct events for testing purposes.
++///
++/// Example:
++///
++/// ```rs
++/// LambdaEventBuilder::new()
++///  .with_method(http::Method::POST)
++///  .with_path("/hello")
++///  .with_query("foo", "bar")
++///  .with_query("fizz", "buzz")
++///  .with_header("ContentType", "application/json")
++///  .build()
++///
++///  let req: http::Request<Body> = req.into();
++// ```
++#[derive(Debug, Default)]
++pub struct LambdaEventBuilder {
++    path: String,
++    method: Method,
++    query: HashMap<String, String>,
++    headers: HeaderMap,
++    event_type: LambdaEventType,
++    body: Option<String>,
++}
++
++impl LambdaEventBuilder {
++    pub fn new() -> Self {
++        Self {
++            path: "/".into(),
++            method: Method::GET,
++            query: HashMap::new(),
++            headers: HeaderMap::new(),
++            event_type: LambdaEventType::ALB,
++            body: None,
++        }
++    }
++
++    pub fn with_path(mut self, path: &str) -> Self {
++        self.path = path.into();
++        self
++    }
++
++    pub fn with_query(mut self, key: &str, value: &str) -> Self {
++        self.query.insert(key.into(), value.into());
++        self
++    }
++
++    pub fn with_method(mut self, method: Method) -> Self {
++        self.method = method;
++        self
++    }
++
++    pub fn with_header(mut self, key: &str, value: &str) -> Self {
++        let value = HeaderValue::from_str(value).unwrap();
++        let key = HeaderName::from_str(key).unwrap();
++        self.headers.insert(key, value);
++        self
++    }
++
++    pub fn with_event_type(mut self, event_type: LambdaEventType) -> Self {
++        self.event_type = event_type;
++        self
++    }
++
++    pub fn build(self) -> LambdaRequest {
++        match self.event_type {
++            LambdaEventType::ALB => LambdaRequest::Alb(AlbTargetGroupRequest {
++                http_method: self.method,
++                path: Some(self.path),
++                query_string_parameters: QueryMap::from(self.query.clone()),
++                multi_value_query_string_parameters: QueryMap::from(self.query),
++                headers: self.headers.clone(),
++                multi_value_headers: self.headers,
++                is_base64_encoded: false,
++                body: self.body,
++                request_context: AlbTargetGroupRequestContext {
++                    elb: ElbContext {
++                        target_group_arn: Some("arn:aws:us-east-1:123456789:elb/Foo".into()),
++                    },
++                },
++            }),
++        }
++    }
++}
++
++/// Remove every environment variable `AdapterOptions::from_env` reads, so a
++/// test's expectations never depend on what ran before it.
++pub fn clear_adapter_env() {
++    for key in [
++        "HOST",
++        "PORT",
++        "READINESS_CHECK_PORT",
++        "READINESS_CHECK_PATH",
++        "READINESS_CHECK_PROTOCOL",
++        "REMOVE_BASE_PATH",
++        "ASYNC_INIT",
++        "AWS_LWA_ENABLE_COMPRESSION",
++        "AWS_LWA_ENABLE_TLS",
++        "AWS_LWA_TLS_SERVER_NAME",
++        "AWS_LWA_TLS_CERT_FILE",
++        "AWS_LWA_TLS_CLIENT_CERT_FILE",
++        "AWS_LWA_TLS_CLIENT_KEY_FILE",
++        // An implementation is free to hand its trust bundle to the TLS stack
++        // through the usual OpenSSL variable. That is process-wide state, so it
++        // has to be cleared between tests or the bundle one test configures
++        // silently keeps the next one trusting it.
++        "SSL_CERT_FILE",
++    ] {
++        std::env::remove_var(key);
++    }
++}
++
++/// A raw loopback socket that records the first bytes a client actually sends.
++///
++/// Nothing here parses or terminates TLS. It only captures what went on the
++/// wire, which is what keeps the assertions independent of whichever TLS stack
++/// a solution picks: every TLS implementation opens with a handshake record,
++/// and every HTTP client opens with a request line.
++pub struct WireTap {
++    pub port: u16,
++    rx: std::sync::mpsc::Receiver<Vec<u8>>,
++}
++
++impl WireTap {
++    pub fn start() -> Self {
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
++        let port = listener.local_addr().expect("local addr").port();
++        let (tx, rx) = std::sync::mpsc::channel();
++        std::thread::spawn(move || {
++            for stream in listener.incoming() {
++                let mut stream = match stream {
++                    Ok(s) => s,
++                    Err(_) => break,
++                };
++                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
++                // One read is right: a client writes its opening bytes in a
++                // single go and then waits for us. Reading again would block.
++                let mut buf = vec![0u8; 4096];
++                let n = std::io::Read::read(&mut stream, &mut buf).unwrap_or(0);
++                buf.truncate(n);
++                if tx.send(buf).is_err() {
++                    break;
++                }
++            }
++        });
++        WireTap { port, rx }
++    }
++
++    /// The first non-empty bytes any client put on the wire, or None if nothing
++    /// ever connected — which is itself a failure worth asserting on.
++    pub fn first_bytes(&self, timeout: std::time::Duration) -> Option<Vec<u8>> {
++        // The deadline is fixed once. A client that keeps reconnecting without
++        // sending anything hands this loop an endless supply of empty buffers, and
++        // a per-recv timeout would be reset by every one of them — the wait would
++        // never end and the test would hang instead of reporting a failure.
++        let deadline = std::time::Instant::now() + timeout;
++        loop {
++            let left = deadline.checked_duration_since(std::time::Instant::now())?;
++            match self.rx.recv_timeout(left) {
++                Ok(b) if b.is_empty() => continue,
++                Ok(b) => return Some(b),
++                Err(_) => return None,
++            }
++        }
++    }
++}
++
++/// TLS record layer: content type 0x16 (handshake) followed by a legacy version
++/// whose major byte is 0x03. True of TLS 1.0 through 1.3, in every stack.
++pub fn looks_like_tls_handshake(bytes: &[u8]) -> bool {
++    bytes.len() >= 3 && bytes[0] == 0x16 && bytes[1] == 0x03
++}
++
++/// An HTTP/1.x request opens with a method token.
++pub fn looks_like_http_request(bytes: &[u8]) -> bool {
++    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(16)]).to_string();
++    ["GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "PATCH ", "OPTIONS "]
++        .iter()
++        .any(|m| head.starts_with(m))
++}
++
++/// Does the captured handshake carry this name in the clear?
++pub fn carries_ascii(bytes: &[u8], needle: &str) -> bool {
++    let n = needle.as_bytes();
++    !n.is_empty() && bytes.windows(n.len()).any(|w| w == n)
++}
++
++// ---------------------------------------------------------------------------
++// A web application that only speaks TLS.
++//
++// The wire tap answers "what did the adapter put on the socket". It cannot
++// answer "did the adapter complete a TLS session and bring the app's response
++// back", and an implementation that writes handshake-shaped bytes and then gives
++// up looks identical through that lens. This runs a real TLS listener so the
++// round trip itself is what gets graded.
++// ---------------------------------------------------------------------------
++
++use std::io::{Read, Write};
++use std::process::{Child, Command, Stdio};
++use std::sync::OnceLock;
++
++/// The name on the application's certificate.
++pub const APP_SERVER_NAME: &str = "app.internal.test";
++/// A second name the authority will sign for, so "certificate for the wrong
++/// name" can be told apart from "certificate from an unknown authority".
++pub const OTHER_SERVER_NAME: &str = "somebody-else.internal.test";
++pub const APP_PAGE: &str = "hello from the tls-only application";
++
++/// Bound every call into the adapter, so a wrong implementation reports a named
++/// failure instead of wedging the suite.
++pub const PATIENCE: std::time::Duration = std::time::Duration::from_secs(30);
++
++/// A private authority and the certificates it issues. Generated here, never
++/// committed: a private key in a repository is a liability whatever it was
++/// minted for, and nothing below depends on which bytes the key has — only on
++/// who signed what, and for which name.
++pub struct TlsMaterial {
++    pub ca: String,
++    pub key: String,
++    pub app_cert: String,
++    pub other_cert: String,
++    pub htdocs: String,
++    /// A certificate this authority issued for a client, and the key that goes
++    /// with it. An app that demands a client certificate accepts this pair.
++    pub client_cert: String,
++    pub client_key: String,
++}
++
++pub fn tls_material() -> &'static TlsMaterial {
++    static MATERIAL: OnceLock<TlsMaterial> = OnceLock::new();
++    MATERIAL.get_or_init(|| {
++        let dir = std::env::temp_dir().join(format!("lwa-tls-{}", std::process::id()));
++        let htdocs = dir.join("htdocs");
++        std::fs::create_dir_all(&htdocs).expect("create certificate directory");
++        std::fs::write(htdocs.join("hello.txt"), format!("{APP_PAGE}\n")).unwrap();
++        std::fs::write(htdocs.join("other.txt"), "the other page served over tls\n").unwrap();
++        let at = |n: &str| dir.join(n).to_str().unwrap().to_string();
++
++        let openssl = |args: &[&str]| {
++            let out = Command::new("openssl")
++                .args(args)
++                .output()
++                .expect("openssl is needed to build the test certificates");
++            assert!(
++                out.status.success(),
++                "openssl {:?} failed: {}",
++                args,
++                String::from_utf8_lossy(&out.stderr)
++            );
++        };
++
++        let (ca, ca_key) = (at("ca.pem"), at("ca-key.pem"));
++        openssl(&[
++            "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "3650", "-nodes",
++            "-keyout", &ca_key, "-out", &ca, "-subj", "/CN=LWA Test Root CA",
++            "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0",
++            "-addext", "keyUsage=critical,keyCertSign,cRLSign",
++        ]);
++
++        let (key, csr) = (at("server-key.pem"), at("server.csr"));
++        openssl(&[
++            "req", "-newkey", "rsa:2048", "-nodes", "-keyout", &key, "-out", &csr,
++            "-subj", "/CN=server",
++        ]);
++
++        let mut issue = |name: &str, out_name: &str| {
++            let ext = dir.join(format!("{out_name}.ext"));
++            std::fs::write(
++                &ext,
++                format!(
++                    "subjectAltName=DNS:{name}\nbasicConstraints=critical,CA:FALSE\n\
++                     keyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n"
++                ),
++            )
++            .unwrap();
++            let out = at(out_name);
++            openssl(&[
++                "x509", "-req", "-in", &csr, "-CA", &ca, "-CAkey", &ca_key, "-CAcreateserial",
++                "-out", &out, "-days", "3650", "-sha256", "-extfile", ext.to_str().unwrap(),
++            ]);
++            out
++        };
++        let app_cert = issue(APP_SERVER_NAME, "app.pem");
++        let other_cert = issue(OTHER_SERVER_NAME, "other.pem");
++
++        // A client identity from the same authority: its own key, and a certificate
++        // marked for client authentication rather than for serving.
++        let (client_key, client_csr) = (at("client-key.pem"), at("client.csr"));
++        openssl(&["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", &client_key]);
++        openssl(&[
++            "req", "-new", "-key", &client_key, "-out", &client_csr, "-subj", "/CN=lambda-web-adapter",
++        ]);
++        let client_ext = dir.join("client.ext");
++        std::fs::write(
++            &client_ext,
++            "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\n",
++        )
++        .unwrap();
++        let client_cert = at("client.pem");
++        openssl(&[
++            "x509", "-req", "-in", &client_csr, "-CA", &ca, "-CAkey", &ca_key, "-CAcreateserial",
++            "-out", &client_cert, "-days", "3650", "-sha256", "-extfile", client_ext.to_str().unwrap(),
++        ]);
++
++        TlsMaterial {
++            ca,
++            key,
++            app_cert,
++            other_cert,
++            htdocs: htdocs.to_str().unwrap().to_string(),
++            client_cert,
++            client_key,
++        }
++    })
++}
++
++pub struct TlsApp {
++    pub port: u16,
++    child: Child,
++}
++
++/// A one-request TLS application that exposes the HTTP request it received.
++///
++/// The certificate and listener are verifier-owned; the implementation under
++/// test may use any client or TLS stack. This fixture observes only the bytes
++/// delivered after a successful TLS session.
++pub struct TlsRequestRecorder {
++    pub port: u16,
++    rx: std::sync::mpsc::Receiver<String>,
++}
++
++impl TlsRequestRecorder {
++    pub fn start() -> Self {
++        let material = tls_material();
++        let identity_file = std::path::Path::new(&material.ca)
++            .parent()
++            .unwrap()
++            .join("server.p12");
++        if !identity_file.exists() {
++            let out = Command::new("openssl")
++                .args([
++                    "pkcs12",
++                    "-export",
++                    "-out",
++                    identity_file.to_str().unwrap(),
++                    "-inkey",
++                    &material.key,
++                    "-in",
++                    &material.app_cert,
++                    "-passout",
++                    "pass:lwa-test",
++                ])
++                .output()
++                .expect("openssl is needed to build the TLS server identity");
++            assert!(
++                out.status.success(),
++                "openssl pkcs12 failed: {}",
++                String::from_utf8_lossy(&out.stderr)
++            );
++        }
++
++        let identity = hyper_tls::native_tls::Identity::from_pkcs12(
++            &std::fs::read(identity_file).unwrap(),
++            "lwa-test",
++        )
++        .expect("read TLS server identity");
++        let acceptor = hyper_tls::native_tls::TlsAcceptor::new(identity).unwrap();
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind TLS recorder");
++        let port = listener.local_addr().unwrap().port();
++        let (tx, rx) = std::sync::mpsc::channel();
++
++        std::thread::spawn(move || {
++            let (stream, _) = listener.accept().expect("accept TLS recorder connection");
++            stream
++                .set_read_timeout(Some(std::time::Duration::from_secs(30)))
++                .unwrap();
++            let mut stream = acceptor.accept(stream).expect("complete TLS handshake");
++            let mut request = Vec::new();
++            let mut chunk = [0u8; 2048];
++            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
++                let n = stream.read(&mut chunk).expect("read HTTP request over TLS");
++                if n == 0 {
++                    break;
++                }
++                request.extend_from_slice(&chunk[..n]);
++            }
++            tx.send(String::from_utf8_lossy(&request).into_owned())
++                .unwrap();
++            stream
++                .write_all(
++                    b"HTTP/1.1 200 OK\r\ncontent-length: 8\r\nx-app-reply: secured\r\nconnection: close\r\n\r\nrecorded",
++                )
++                .unwrap();
++            stream.flush().unwrap();
++        });
++
++        Self { port, rx }
++    }
++
++    pub fn request(self) -> String {
++        self.rx
++            .recv_timeout(PATIENCE)
++            .expect("the TLS application did not receive an HTTP request")
++    }
++}
++
++impl Drop for TlsApp {
++    fn drop(&mut self) {
++        let _ = self.child.kill();
++        let _ = self.child.wait();
++    }
++}
++
++impl TlsApp {
++    /// Serves `hello.txt` over TLS and nothing else — there is no cleartext
++    /// listener to fall back to.
++    pub fn start() -> Self {
++        Self::presenting(&tls_material().app_cert)
++    }
++
++    /// Serves the same page, but refuses the handshake unless the client proves
++    /// who it is with a certificate this authority issued.
++    pub fn demanding_a_client_certificate() -> Self {
++        Self::spawn(&tls_material().app_cert, true)
++    }
++
++    pub fn presenting(cert: &str) -> Self {
++        Self::spawn(cert, false)
++    }
++
++    fn spawn(cert: &str, demand_client_cert: bool) -> Self {
++        let material = tls_material();
++        let port = std::net::TcpListener::bind("127.0.0.1:0")
++            .unwrap()
++            .local_addr()
++            .unwrap()
++            .port();
++        let mut args: Vec<String> = vec![
++            "s_server".into(), "-accept".into(), port.to_string(), "-cert".into(), cert.into(),
++            "-key".into(), material.key.clone(), "-WWW".into(), "-quiet".into(),
++        ];
++        if demand_client_cert {
++            // -Verify, not -verify: the capital form makes the certificate mandatory.
++            args.extend(["-Verify".to_string(), "1".to_string(), "-CAfile".to_string(), material.ca.clone()]);
++        }
++        let child = Command::new("openssl")
++            .args(&args)
++            .current_dir(&material.htdocs)
++            .stdout(Stdio::null())
++            .stderr(Stdio::null())
++            .spawn()
++            .expect("could not start the TLS test application");
++        let app = TlsApp { port, child };
++        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
++        while std::time::Instant::now() < deadline {
++            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
++                return app;
++            }
++            std::thread::sleep(std::time::Duration::from_millis(50));
++        }
++        panic!("the TLS test application never accepted a connection on port {port}");
++    }
++}
+diff --git a/tests/lwa_tls_contract.rs b/tests/lwa_tls_contract.rs
+new file mode 100644
+index 0000000..1985cde
+--- /dev/null
++++ b/tests/lwa_tls_contract.rs
+@@ -0,0 +1,579 @@
++//! What turning TLS on actually does to the traffic.
++//!
++//! Everything here drives the adapter the way an operator drives it: through the
++//! environment. Nothing names an internal field or type, so any arrangement of
++//! the code that produces the right behaviour passes.
++//!
++//! Two kinds of observation. Where the question is what went out on the wire, a
++//! bare socket records the first bytes the adapter wrote. Where the question is
++//! whether the exchange actually worked, a real TLS-only application answers —
++//! handshake-shaped bytes are not enough to get a page back from it.
++
++#[path = "lwa_support/mod.rs"]
++mod lwa_support;
++
++use std::env;
++use std::time::Duration;
++
++use flate2::read::GzDecoder;
++use std::io::Read;
++
++use http::{HeaderValue, Method};
++use httpmock::{Method::GET, MockServer};
++use lambda_web_adapter::{Adapter, AdapterOptions};
++use lwa_support::{
++    carries_ascii, clear_adapter_env, looks_like_http_request, looks_like_tls_handshake,
++    tls_material, LambdaEventBuilder, TlsApp, TlsRequestRecorder, WireTap, APP_PAGE,
++    APP_SERVER_NAME, PATIENCE,
++};
++use tower::Service;
++
++fn adapter_from_env() -> Adapter {
++    Adapter::new(&AdapterOptions::from_env())
++}
++
++async fn call(adapter: &mut Adapter, path: &str) -> Result<hyper::Response<hyper::Body>, lambda_http::Error> {
++    let req = LambdaEventBuilder::new().with_path(path).build();
++    tokio::time::timeout(PATIENCE, adapter.call(req.into()))
++        .await
++        .expect("the adapter never finished the request")
++}
++
++async fn call_with(
++    adapter: &mut Adapter,
++    path: &str,
++    header: (&'static str, &str),
++) -> Result<hyper::Response<hyper::Body>, lambda_http::Error> {
++    let req = LambdaEventBuilder::new()
++        .with_path(path)
++        .with_header(header.0, header.1)
++        .build();
++    tokio::time::timeout(PATIENCE, adapter.call(req.into()))
++        .await
++        .expect("the adapter never finished the request")
++}
++
++async fn body_text(res: hyper::Response<hyper::Body>) -> String {
++    String::from_utf8_lossy(&hyper::body::to_bytes(res.into_body()).await.unwrap()).to_string()
++}
++
++/// Point the adapter at a TLS application, TLS on, its authority trusted.
++fn aim_at_tls_app(port: u16) {
++    clear_adapter_env();
++    env::set_var("HOST", "127.0.0.1");
++    env::set_var("PORT", port.to_string());
++    env::set_var("READINESS_CHECK_PORT", port.to_string());
++    env::set_var("READINESS_CHECK_PATH", "/hello.txt");
++    env::set_var("AWS_LWA_ENABLE_TLS", "true");
++    env::set_var("AWS_LWA_TLS_SERVER_NAME", APP_SERVER_NAME);
++    env::set_var("AWS_LWA_TLS_CERT_FILE", &tls_material().ca);
++}
++
++/// Name the identity the adapter should prove itself with.
++fn present_the_client_identity() {
++    let material = tls_material();
++    env::set_var("AWS_LWA_TLS_CLIENT_CERT_FILE", &material.client_cert);
++    env::set_var("AWS_LWA_TLS_CLIENT_KEY_FILE", &material.client_key);
++}
++
++fn aim_at_socket(port: u16, tls: Option<&str>) {
++    clear_adapter_env();
++    env::set_var("HOST", "127.0.0.1");
++    env::set_var("PORT", port.to_string());
++    env::set_var("READINESS_CHECK_PORT", port.to_string());
++    env::set_var("READINESS_CHECK_PATH", "/healthcheck");
++    if let Some(v) = tls {
++        env::set_var("AWS_LWA_ENABLE_TLS", v);
++        env::set_var("AWS_LWA_TLS_SERVER_NAME", APP_SERVER_NAME);
++    }
++}
++
++// -- the switch, observed on the wire ---------------------------------------
++
++async fn assert_wire_is_cleartext(setting: Option<&str>) {
++    let tap = WireTap::start();
++    aim_at_socket(tap.port, setting);
++    let mut adapter = adapter_from_env();
++    let _ = call(&mut adapter, "/hello").await;
++
++    let wire = tap
++        .first_bytes(Duration::from_secs(10))
++        .expect("the adapter must still contact the app");
++    assert!(
++        looks_like_http_request(&wire),
++        "the app must receive a plain HTTP request; first bytes were {:?}",
++        &wire[..wire.len().min(12)]
++    );
++}
++
++#[tokio::test]
++async fn requests_stay_cleartext_when_nothing_asks_for_tls() {
++    assert_wire_is_cleartext(None).await;
++}
++
++#[tokio::test]
++async fn requests_stay_cleartext_when_tls_is_switched_off() {
++    assert_wire_is_cleartext(Some("false")).await;
++}
++
++#[tokio::test]
++async fn a_value_that_is_not_a_bool_leaves_tls_off() {
++    assert_wire_is_cleartext(Some("sure-why-not")).await;
++}
++
++#[tokio::test]
++async fn an_empty_value_leaves_tls_off() {
++    assert_wire_is_cleartext(Some("")).await;
++}
++
++#[tokio::test]
++async fn requests_are_encrypted_when_tls_is_switched_on() {
++    let tap = WireTap::start();
++    aim_at_socket(tap.port, Some("true"));
++    let mut adapter = adapter_from_env();
++    let _ = call(&mut adapter, "/hello").await;
++
++    let wire = tap.first_bytes(Duration::from_secs(10)).expect("the app must still be contacted");
++    assert!(
++        looks_like_tls_handshake(&wire),
++        "the app was spoken to in cleartext; first bytes were {:?}",
++        &wire[..wire.len().min(12)]
++    );
++    assert!(!looks_like_http_request(&wire));
++}
++
++#[tokio::test]
++async fn the_readiness_probe_is_encrypted_when_tls_is_switched_on() {
++    let tap = WireTap::start();
++    aim_at_socket(tap.port, Some("true"));
++    // The tap records bytes and never answers, so the probe would retry until the
++    // suite times out. Async init bounds it: the probe gets its window, then returns.
++    env::set_var("ASYNC_INIT", "true");
++    let mut adapter = adapter_from_env();
++    let _ = tokio::time::timeout(PATIENCE, adapter.check_init_health()).await;
++
++    let wire = tap.first_bytes(Duration::from_secs(10)).expect("the probe must reach the app socket");
++    assert!(
++        looks_like_tls_handshake(&wire),
++        "the readiness probe went out in cleartext; first bytes were {:?}",
++        &wire[..wire.len().min(12)]
++    );
++}
++
++#[tokio::test]
++async fn the_readiness_probe_stays_cleartext_when_tls_is_off() {
++    let tap = WireTap::start();
++    aim_at_socket(tap.port, None);
++    env::set_var("ASYNC_INIT", "true"); // same bound as the encrypted case
++    let mut adapter = adapter_from_env();
++    let _ = tokio::time::timeout(PATIENCE, adapter.check_init_health()).await;
++
++    let wire = tap.first_bytes(Duration::from_secs(10)).expect("the probe must reach the app socket");
++    assert!(looks_like_http_request(&wire), "the readiness probe must stay plain HTTP");
++}
++
++#[tokio::test]
++async fn the_configured_name_travels_in_the_handshake() {
++    let tap = WireTap::start();
++    aim_at_socket(tap.port, Some("true"));
++    let mut adapter = adapter_from_env();
++    let _ = call(&mut adapter, "/hello").await;
++
++    let wire = tap.first_bytes(Duration::from_secs(10)).expect("the app must be contacted");
++    assert!(
++        carries_ascii(&wire, APP_SERVER_NAME),
++        "the configured name must be the name used for the TLS session"
++    );
++
++    // With no name configured the session still has to be opened for something,
++    // and what it is decides which certificates can ever verify.
++    let bare = WireTap::start();
++    clear_adapter_env();
++    env::set_var("HOST", "127.0.0.1");
++    env::set_var("PORT", bare.port.to_string());
++    env::set_var("AWS_LWA_ENABLE_TLS", "true");
++    let mut adapter = adapter_from_env();
++    let _ = call(&mut adapter, "/hello").await;
++
++    let wire = bare.first_bytes(Duration::from_secs(10)).expect("the app must be contacted");
++    assert!(
++        carries_ascii(&wire, "localhost"),
++        "with no name configured the session should be opened for localhost"
++    );
++}
++
++#[tokio::test]
++async fn a_plaintext_app_is_out_of_reach_once_tls_is_on() {
++    let app = MockServer::start();
++    let endpoint = app.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("plaintext");
++    });
++    clear_adapter_env();
++    env::set_var("HOST", app.host());
++    env::set_var("PORT", app.port().to_string());
++    env::set_var("AWS_LWA_ENABLE_TLS", "true");
++    env::set_var("AWS_LWA_TLS_SERVER_NAME", APP_SERVER_NAME);
++
++    let mut adapter = adapter_from_env();
++    let result = call(&mut adapter, "/hello").await;
++
++    assert!(result.is_err(), "a cleartext app answered while TLS was on");
++    endpoint.assert_hits(0);
++}
++
++// -- against an application that only speaks TLS ------------------------------
++
++#[tokio::test]
++async fn a_request_is_proxied_to_a_tls_only_app() {
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/hello.txt")
++        .await
++        .expect("the adapter could not complete a TLS request to the app");
++    assert_eq!(200, response.status());
++    assert!(body_text(response).await.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn the_readiness_probe_completes_against_a_tls_only_app() {
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    let mut adapter = adapter_from_env();
++
++    tokio::time::timeout(PATIENCE, adapter.check_init_health())
++        .await
++        .expect("the readiness probe never finished against a TLS app");
++    let response = call(&mut adapter, "/hello.txt").await.unwrap();
++    assert_eq!(200, response.status());
++}
++
++#[tokio::test]
++async fn the_request_path_selects_what_the_tls_app_returns() {
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/other.txt").await.unwrap();
++    assert_eq!(200, response.status());
++    let body = body_text(response).await;
++    assert!(body.contains("the other page"), "wrong page came back: {body:?}");
++    assert!(!body.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn the_query_string_reaches_a_tls_app() {
++    let app = TlsRequestRecorder::start();
++    aim_at_tls_app(app.port);
++    let mut adapter = adapter_from_env();
++
++    let req = LambdaEventBuilder::new()
++        .with_path("/hello.txt")
++        .with_query("page", "2")
++        .with_method(Method::DELETE)
++        .with_header("x-lwa-probe", "retained")
++        .build();
++    let response = tokio::time::timeout(PATIENCE, adapter.call(req.into()))
++        .await
++        .expect("the adapter never finished the request")
++        .unwrap();
++    assert_eq!(200, response.status());
++    assert_eq!(
++        Some(&HeaderValue::from_static("secured")),
++        response.headers().get("x-app-reply")
++    );
++    assert_eq!("recorded", body_text(response).await);
++
++    let request = app.request();
++    assert!(
++        request.starts_with("DELETE /hello.txt?page=2 HTTP/1.1\r\n"),
++        "method, path or query changed on the encrypted hop: {request:?}"
++    );
++    assert!(
++        request.to_ascii_lowercase().contains("\r\nx-lwa-probe: retained\r\n"),
++        "the request header did not reach the TLS application: {request:?}"
++    );
++}
++
++#[tokio::test]
++async fn the_base_path_is_stripped_when_proxying_to_a_tls_app() {
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    env::set_var("REMOVE_BASE_PATH", "/prod");
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/prod/hello.txt").await.unwrap();
++    assert_eq!(200, response.status());
++    assert!(body_text(response).await.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn a_response_from_a_tls_app_is_still_compressed_on_request() {
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    env::set_var("AWS_LWA_ENABLE_COMPRESSION", "true");
++    let mut adapter = adapter_from_env();
++
++    let response = call_with(&mut adapter, "/hello.txt", ("accept-encoding", "gzip"))
++        .await
++        .unwrap();
++    assert_eq!(200, response.status());
++    assert_eq!(response.headers().get("content-encoding").unwrap(), "gzip");
++
++    let bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
++    let mut out = String::new();
++    GzDecoder::new(&bytes[..]).read_to_string(&mut out).unwrap();
++    assert!(out.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn the_readiness_probe_and_the_request_can_use_different_tls_ports() {
++    let app = TlsApp::start();
++    let probe = TlsApp::start();
++    aim_at_tls_app(app.port);
++    env::set_var("READINESS_CHECK_PORT", probe.port.to_string());
++    let mut adapter = adapter_from_env();
++
++    tokio::time::timeout(PATIENCE, adapter.check_init_health())
++        .await
++        .expect("the readiness probe never finished");
++    let response = call(&mut adapter, "/hello.txt").await.unwrap();
++    assert_eq!(200, response.status());
++    assert!(body_text(response).await.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn verification_refuses_a_certificate_it_should_not_accept() {
++    // A positive control has to come first. An adapter that cannot speak TLS at all
++    // also fails to reach these apps, so the refusals below only mean something once
++    // the same app has been shown reachable while its authority is configured.
++    // Each case gets its own app: the test server takes one connection at a time, and
++    // an adapter that is still holding a live one would keep the next case waiting.
++    let trusted = TlsApp::start();
++    aim_at_tls_app(trusted.port);
++    let mut adapter = adapter_from_env();
++    let reachable = call(&mut adapter, "/hello.txt")
++        .await
++        .expect("the app must be reachable while the authority that issued it is configured");
++    assert_eq!(200, reachable.status());
++    drop(adapter);
++
++    // Nothing to chain it to.
++    let unvouched = TlsApp::start();
++    aim_at_tls_app(unvouched.port);
++    env::remove_var("AWS_LWA_TLS_CERT_FILE");
++    let mut adapter = adapter_from_env();
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "a certificate from an authority the adapter was never given was accepted anyway"
++    );
++
++    // A chain that checks out, under somebody else's name.
++    drop(adapter);
++    let other = TlsApp::presenting(&tls_material().other_cert);
++    aim_at_tls_app(other.port);
++    let mut adapter = adapter_from_env();
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "the app's certificate names somebody else and was accepted anyway"
++    );
++}
++
++#[tokio::test]
++async fn a_client_identity_gets_a_request_into_an_app_that_demands_one() {
++    let app = TlsApp::demanding_a_client_certificate();
++    aim_at_tls_app(app.port);
++    present_the_client_identity();
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/hello.txt")
++        .await
++        .expect("the app demanded a client certificate and the configured one did not get in");
++    assert_eq!(200, response.status());
++    assert!(body_text(response).await.contains(APP_PAGE));
++}
++
++#[tokio::test]
++async fn an_app_that_demands_a_client_certificate_stays_out_of_reach_without_one() {
++    // Control first: the same kind of app, reachable while an identity is named.
++    // Without it the refusal below would also hold for an adapter that cannot
++    // present anything at all, which proves nothing about the identity.
++    let reachable = TlsApp::demanding_a_client_certificate();
++    aim_at_tls_app(reachable.port);
++    present_the_client_identity();
++    let mut adapter = adapter_from_env();
++    assert_eq!(
++        200,
++        call(&mut adapter, "/hello.txt")
++            .await
++            .expect("the configured identity should have got in")
++            .status()
++    );
++    drop(adapter);
++
++    let closed = TlsApp::demanding_a_client_certificate();
++    aim_at_tls_app(closed.port);
++    let mut adapter = adapter_from_env();
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "an app that demands a client certificate answered an adapter that offered none"
++    );
++}
++
++#[tokio::test]
++async fn the_readiness_probe_proves_who_it_is_as_well() {
++    let app = TlsApp::demanding_a_client_certificate();
++    let probe = TlsApp::demanding_a_client_certificate();
++    aim_at_tls_app(app.port);
++    env::set_var("READINESS_CHECK_PORT", probe.port.to_string());
++    present_the_client_identity();
++    let mut adapter = adapter_from_env();
++
++    // The probe retries until the app answers, so returning at all means the
++    // handshake on the readiness port succeeded.
++    tokio::time::timeout(PATIENCE, adapter.check_init_health())
++        .await
++        .expect("the readiness probe never got past an app that demands a client certificate");
++    assert_eq!(200, call(&mut adapter, "/hello.txt").await.unwrap().status());
++}
++
++#[tokio::test]
++async fn half_an_identity_is_not_an_identity() {
++    // Control: this app asks nothing of its callers, so it answers an adapter
++    // carrying no identity at all. Without that, the refusal below would also
++    // hold for an adapter that cannot reach a TLS app in the first place.
++    let open = TlsApp::start();
++    aim_at_tls_app(open.port);
++    let mut adapter = adapter_from_env();
++    assert_eq!(
++        200,
++        call(&mut adapter, "/hello.txt")
++            .await
++            .expect("an app that demands nothing should answer")
++            .status()
++    );
++    drop(adapter);
++
++    // A certificate with no key cannot prove anything. The adapter must not
++    // shrug and connect as though nothing had been configured.
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    env::set_var("AWS_LWA_TLS_CLIENT_CERT_FILE", &tls_material().client_cert);
++    let mut adapter = adapter_from_env();
++
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "a half-configured identity was quietly ignored and the request went out anyway"
++    );
++    drop(adapter);
++
++    // The mirror of the same mistake: a key with nothing to present it for.
++    let other_half = TlsApp::start();
++    aim_at_tls_app(other_half.port);
++    env::set_var("AWS_LWA_TLS_CLIENT_KEY_FILE", &tls_material().client_key);
++    let mut adapter = adapter_from_env();
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "a key with no certificate to go with it was quietly ignored"
++    );
++}
++
++#[tokio::test]
++async fn an_identity_that_cannot_be_used_does_not_become_an_anonymous_one() {
++    // Control first, for the same reason: this app accepts anonymous callers.
++    let open = TlsApp::start();
++    aim_at_tls_app(open.port);
++    let mut adapter = adapter_from_env();
++    assert_eq!(
++        200,
++        call(&mut adapter, "/hello.txt")
++            .await
++            .expect("an app that demands nothing should answer")
++            .status()
++    );
++    drop(adapter);
++
++    // The key file here holds a certificate, not a key: named, readable, useless.
++    // The app on the other end would happily accept an anonymous client, so only
++    // an adapter that fails closed refuses this request.
++    let app = TlsApp::start();
++    aim_at_tls_app(app.port);
++    let material = tls_material();
++    env::set_var("AWS_LWA_TLS_CLIENT_CERT_FILE", &material.client_cert);
++    env::set_var("AWS_LWA_TLS_CLIENT_KEY_FILE", &material.ca);
++    let mut adapter = adapter_from_env();
++
++    assert!(
++        call(&mut adapter, "/hello.txt").await.is_err(),
++        "an identity that cannot be used was dropped and the request went out anonymously"
++    );
++}
++
++#[tokio::test]
++async fn a_client_identity_changes_nothing_while_tls_is_off() {
++    let app = MockServer::start();
++    let endpoint = app.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("plaintext");
++    });
++    clear_adapter_env();
++    env::set_var("HOST", app.host());
++    env::set_var("PORT", app.port().to_string());
++    present_the_client_identity();
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/hello").await.expect("the plaintext app must still answer");
++    assert_eq!(200, response.status());
++    endpoint.assert();
++}
++
++#[tokio::test]
++async fn half_an_identity_changes_nothing_while_tls_is_off() {
++    // A certificate with no key beside it is half an identity, and half an identity
++    // is a configuration error — inside a TLS session. With the switch off there is
++    // no session to prove anything in, so the variable is inert and the plaintext
++    // app answers exactly as it did before anyone set it.
++    let app = MockServer::start();
++    let endpoint = app.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("plaintext");
++    });
++    clear_adapter_env();
++    env::set_var("HOST", app.host());
++    env::set_var("PORT", app.port().to_string());
++    env::set_var("AWS_LWA_TLS_CLIENT_CERT_FILE", &tls_material().client_cert);
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/hello")
++        .await
++        .expect("a client certificate named while TLS is off must not stop a cleartext request");
++    assert_eq!(200, response.status());
++    endpoint.assert();
++}
++
++#[tokio::test]
++async fn an_unusable_identity_changes_nothing_while_tls_is_off() {
++    // Both files named, and the key file holds a certificate rather than a key.
++    // Nothing here is usable as an identity, and with TLS on that is fatal. With the
++    // switch off nothing asks for an identity in the first place.
++    let app = MockServer::start();
++    let endpoint = app.mock(|when, then| {
++        when.method(GET).path("/hello");
++        then.status(200).body("plaintext");
++    });
++    clear_adapter_env();
++    env::set_var("HOST", app.host());
++    env::set_var("PORT", app.port().to_string());
++    let material = tls_material();
++    env::set_var("AWS_LWA_TLS_CLIENT_CERT_FILE", &material.client_cert);
++    env::set_var("AWS_LWA_TLS_CLIENT_KEY_FILE", &material.ca);
++    let mut adapter = adapter_from_env();
++
++    let response = call(&mut adapter, "/hello")
++        .await
++        .expect("an unusable identity named while TLS is off must not stop a cleartext request");
++    assert_eq!(200, response.status());
++    endpoint.assert();
++}

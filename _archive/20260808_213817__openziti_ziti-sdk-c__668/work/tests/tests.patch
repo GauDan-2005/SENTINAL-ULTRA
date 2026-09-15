@@ -1,0 +1,978 @@
+diff --git a/tests/integ/ctrl_tests.cpp b/tests/integ/ctrl_tests.cpp
+index 82b798a..220e879 100644
+--- a/tests/integ/ctrl_tests.cpp
++++ b/tests/integ/ctrl_tests.cpp
+@@ -19,7 +19,7 @@ TEST_CASE("ctrl-token-auth", "[integ]") {
+     auto ctrlTLS = default_tls_context(cfg.id.ca, strlen(cfg.id.ca));
+ 
+     ziti_controller ctrl = {0};
+-    REQUIRE(ziti_ctrl_init(l, &ctrl, cfg.controller_url, ctrlTLS) == ZITI_OK);
++    REQUIRE(ziti_ctrl_init(l, &ctrl, &cfg.controllers, ctrlTLS) == ZITI_OK);
+ 
+     ziti_version v = {0};
+     std::string err;
+diff --git a/tests/integ/legacy-auth.cpp b/tests/integ/legacy-auth.cpp
+index b8d0584..0d78bda 100644
+--- a/tests/integ/legacy-auth.cpp
++++ b/tests/integ/legacy-auth.cpp
+@@ -15,6 +15,10 @@
+ #include "../catch2_includes.hpp"
+ 
+ #include <iostream>
++#include <set>
++#include <string>
++#include <arpa/inet.h>
++#include <tlsuv/http.h>
+ #include <zt_internal.h>
+ #include <ziti_ctrl.h>
+ #include <utils.h>
+@@ -107,7 +111,11 @@ TEST_CASE("invalid_controller", "[controller][GH-44]") {
+     resp_capture<ziti_version> version;
+ 
+     PREP(ziti);
+-    TRY(ziti, ziti_ctrl_init(loop, &ctrl, "https://not.a.ziti.controll.er", nullptr));
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void*)"https://not.a.ziti.controll.er");
++    TRY(ziti, ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr));
++    model_list_clear(&endpoints, nullptr);
++
+     WHEN("get version") {
+         ziti_ctrl_get_version(&ctrl, resp_cb, &version);
+         uv_run(loop, UV_RUN_DEFAULT);
+@@ -142,7 +150,7 @@ TEST_CASE("controller_test","[integ]") {
+     PREP(ziti);
+     TRY(ziti, ziti_load_config(&config, conf));
+     TRY(ziti, load_tls(&config, &tls));
+-    TRY(ziti, ziti_ctrl_init(loop, &ctrl, config.controller_url, tls));
++    TRY(ziti, ziti_ctrl_init(loop, &ctrl, &config.controllers, tls));
+ 
+     WHEN("get version and login") {
+         auto v = do_get(ctrl, ziti_ctrl_get_version);
+@@ -244,4 +252,912 @@ TEST_CASE("ztx-legacy-auth", "[integ]") {
+     uv_run(l, UV_RUN_DEFAULT);
+ 
+     free_ziti_config(&cfg);
+-}
+\ No newline at end of file
++}
++
++
++// ---------------------------------------------------------------------------
++// HA controller endpoint set and failover coverage.
++// Every endpoint below is a name that cannot resolve, so each request fails at
++// the transport level and the whole block runs with no network available.
++// ---------------------------------------------------------------------------
++
++namespace {
++
++    const char *const SENTINEL_EP1 = "https://ctrl1.sentinel.invalid:1280";
++    const char *const SENTINEL_EP2 = "https://ctrl2.sentinel.invalid:1280";
++    const char *const SENTINEL_EP3 = "https://ctrl3.sentinel.invalid:1280";
++
++    const char *const SENTINEL_IDENTITY =
++            R"("id": { "key": "pem:key", "cert": "pem:cert", "ca": "pem:ca" })";
++
++    struct sentinel_version_capture {
++        bool called;
++        int err;
++        std::string code;
++    };
++
++    void sentinel_version_cb(const ziti_version *v, const ziti_error *err, void *ctx) {
++        auto *c = static_cast<sentinel_version_capture *>(ctx);
++        c->called = true;
++        if (err != nullptr) {
++            c->err = err->err;
++            c->code = err->code != nullptr ? err->code : "";
++        }
++    }
++
++    std::set<std::string> sentinel_endpoint_keys(const ziti_controller *ctrl) {
++        std::set<std::string> keys;
++        MODEL_MAP_FOR(it, ctrl->endpoints) {
++            keys.insert(model_map_it_key(it));
++        }
++        return keys;
++    }
++
++    // drive one version request to completion and report the error it produced
++    sentinel_version_capture sentinel_failed_request(ziti_controller *ctrl, uv_loop_t *loop) {
++        sentinel_version_capture cap = {false, 0, ""};
++        ziti_ctrl_get_version(ctrl, sentinel_version_cb, &cap);
++        uv_run(loop, UV_RUN_DEFAULT);
++        return cap;
++    }
++}
++
++TEST_CASE("sentinel_ctrl_init_rejects_empty_endpoints", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_INVALID_CONFIG);
++    model_list_clear(&endpoints, nullptr);
++}
++
++TEST_CASE("sentinel_ctrl_init_populates_endpoint_map", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++    model_list_append(&endpoints, (void *) SENTINEL_EP3);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    std::set<std::string> expected = {SENTINEL_EP1, SENTINEL_EP2, SENTINEL_EP3};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++
++    REQUIRE(ctrl.url != nullptr);
++    CHECK(expected.count(ctrl.url) == 1);
++
++    // and with one endpoint there is nothing to choose between
++    ziti_controller one;
++    model_list single = {nullptr};
++    model_list_append(&single, (void *) SENTINEL_EP1);
++    REQUIRE(ziti_ctrl_init(loop, &one, &single, nullptr) == ZITI_OK);
++    CHECK(model_map_size(&one.endpoints) == 1);
++    REQUIRE(one.url != nullptr);
++    CHECK_THAT(one.url, Equals(SENTINEL_EP1));
++    model_list_clear(&single, nullptr);
++    ziti_ctrl_close(&one);
++
++    // and the client is brought up against that endpoint, not another of the set
++    REQUIRE(ctrl.client != nullptr);
++    REQUIRE(ctrl.client->host != nullptr);
++    CHECK(std::string(ctrl.url).find(std::string(ctrl.client->host)) != std::string::npos);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_ctrl_init_dedupes_repeated_endpoints", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    std::set<std::string> expected = {SENTINEL_EP1, SENTINEL_EP2};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++    CHECK(model_map_size(&ctrl.endpoints) == 2);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_ctrl_close_frees_endpoints", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    REQUIRE(model_map_size(&ctrl.endpoints) == 2);
++
++    ziti_ctrl_close(&ctrl);
++    CHECK(model_map_size(&ctrl.endpoints) == 0);
++
++    model_list_clear(&endpoints, nullptr);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_ctrl_active_reqs_settles_to_zero", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    // init puts its own version request on the wire, so let the loop drain
++    // before measuring: the counter has to come back to zero on its own
++    uv_run(loop, UV_RUN_DEFAULT);
++    CHECK(ctrl.active_reqs == 0);
++
++    sentinel_version_capture cap = sentinel_failed_request(&ctrl, loop);
++    CHECK(cap.called);
++    CHECK(ctrl.active_reqs == 0);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_ctrl_failover_switches_endpoint", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++    model_list_append(&endpoints, (void *) SENTINEL_EP3);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    REQUIRE(ctrl.url != nullptr);
++
++    std::set<std::string> expected = {SENTINEL_EP1, SENTINEL_EP2, SENTINEL_EP3};
++    std::string start = ctrl.url;
++    bool switched = false;
++    for (int i = 0; i < 50; i++) {
++        sentinel_version_capture cap = sentinel_failed_request(&ctrl, loop);
++        REQUIRE(cap.called);
++        REQUIRE(cap.err != 0);
++        REQUIRE(ctrl.url != nullptr);
++        if (start != std::string(ctrl.url)) { switched = true; }
++        // whatever it moves to is one it already knew about, and moving does
++        // not change the set it is choosing from
++        CHECK(expected.count(ctrl.url) == 1);
++        CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++    }
++    CHECK(switched);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++
++TEST_CASE("sentinel_ctrl_single_endpoint_stays_selected", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    for (int i = 0; i < 5; i++) {
++        sentinel_version_capture cap = sentinel_failed_request(&ctrl, loop);
++        REQUIRE(cap.called);
++        CHECK(cap.err != 0);
++        CHECK_THAT(cap.code, Equals("CONTROLLER_UNAVAILABLE"));
++        REQUIRE(ctrl.url != nullptr);
++        CHECK_THAT(ctrl.url, Equals(SENTINEL_EP1));
++    }
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_config_migrates_legacy_ztapi", "[sentinel][config]") {
++    std::string cfg_json = std::string(R"({ "ztAPI": "https://legacy.sentinel.invalid:1280", )")
++                           + SENTINEL_IDENTITY + " }";
++
++    ziti_config cfg;
++    REQUIRE(ziti_load_config(&cfg, cfg_json.c_str()) == ZITI_OK);
++
++    CHECK(model_list_size(&cfg.controllers) == 1);
++    CHECK(cfg.controller_url == nullptr);
++
++    auto *url = (const char *) model_list_head(&cfg.controllers);
++    REQUIRE(url != nullptr);
++    CHECK_THAT(url, Equals("https://legacy.sentinel.invalid:1280"));
++
++    free_ziti_config(&cfg);
++}
++
++TEST_CASE("sentinel_config_keeps_controllers_list", "[sentinel][config]") {
++    std::string cfg_json = std::string(R"({ "ztAPIs": [")") + SENTINEL_EP1 + "\", \"" + SENTINEL_EP2
++                           + "\"], " + SENTINEL_IDENTITY + " }";
++
++    ziti_config cfg;
++    REQUIRE(ziti_load_config(&cfg, cfg_json.c_str()) == ZITI_OK);
++
++    CHECK(model_list_size(&cfg.controllers) == 2);
++    CHECK(cfg.controller_url == nullptr);
++
++    std::set<std::string> loaded;
++    for (model_list_iter it = model_list_iterator(&cfg.controllers);
++         it != nullptr; it = model_list_it_next(it)) {
++        loaded.insert((const char *) model_list_it_element(it));
++    }
++    std::set<std::string> expected = {SENTINEL_EP1, SENTINEL_EP2};
++    CHECK(loaded == expected);
++
++    free_ziti_config(&cfg);
++}
++
++TEST_CASE("sentinel_config_rejects_no_controller", "[sentinel][config]") {
++    std::string cfg_json = std::string("{ ") + SENTINEL_IDENTITY + " }";
++
++    ziti_config cfg;
++    CHECK(ziti_load_config(&cfg, cfg_json.c_str()) == ZITI_INVALID_CONFIG);
++    free_ziti_config(&cfg);
++}
++
++TEST_CASE("sentinel_ztx_init_accepts_controllers_only", "[sentinel][config]") {
++    ziti_config cfg;
++    memset(&cfg, 0, sizeof(cfg));
++    model_list_append(&cfg.controllers, strdup(SENTINEL_EP1));
++    model_list_append(&cfg.controllers, strdup(SENTINEL_EP2));
++    cfg.id.key = strdup("pem:key");
++    cfg.id.cert = strdup("pem:cert");
++    cfg.id.ca = strdup("pem:ca");
++
++    ziti_context ztx = nullptr;
++    CHECK(ziti_context_init(&ztx, &cfg) == ZITI_OK);
++    CHECK(ztx != nullptr);
++
++    // a config naming no controller at all is the one shape it rejects
++    ziti_config none;
++    memset(&none, 0, sizeof(none));
++    none.id.key = strdup("pem:key");
++    ziti_context no_ztx = nullptr;
++    CHECK(ziti_context_init(&no_ztx, &none) == ZITI_INVALID_CONFIG);
++    free_ziti_config(&none);
++
++    // and the legacy single URL is still accepted
++    ziti_config legacy;
++    memset(&legacy, 0, sizeof(legacy));
++    legacy.controller_url = strdup(SENTINEL_EP1);
++    legacy.id.key = strdup("pem:key");
++    ziti_context legacy_ztx = nullptr;
++    CHECK(ziti_context_init(&legacy_ztx, &legacy) == ZITI_OK);
++    free_ziti_config(&legacy);
++
++    // ziti_context_init only allocates; the context is released by ziti_shutdown
++    // once it has been run on a loop, which this case deliberately does not do.
++    free_ziti_config(&cfg);
++}
++
++
++// ---------------------------------------------------------------------------
++// Peer discovery and endpoint-state coverage.
++//
++// These cases need a controller that answers, and the verifier has no network.
++// Airgapped means no egress, not no sockets, so the controller under test talks
++// to a throwaway HTTP server bound to 127.0.0.1 on an ephemeral port, running on
++// the same loop and inside the same process. It answers /version, /authenticate,
++// /controllers and /current-identity/edge-routers with canned payloads, and it
++// refuses /controllers to a caller that has not presented a session, the way a
++// real controller does.
++// ---------------------------------------------------------------------------
++
++namespace {
++
++    const char *const SENTINEL_PEER_UP = "http://ctrl-up.sentinel.invalid:1280";
++    const char *const SENTINEL_PEER_DOWN = "http://ctrl-down.sentinel.invalid:1280";
++    const char *const SENTINEL_PEER_OLD_API = "http://ctrl-oldapi.sentinel.invalid:1280";
++
++    std::string sentinel_envelope(const std::string &data) {
++        return "{\"data\":" + data + "}";
++    }
++
++    std::string sentinel_paged(const std::string &data, int total) {
++        return "{\"data\":" + data +
++               ",\"meta\":{\"pagination\":{\"limit\":25,\"offset\":0,\"totalCount\":" +
++               std::to_string(total) + "}}}";
++    }
++
++    std::string sentinel_version_payload(bool ha) {
++        return std::string("{\"version\":\"v1.1.1\",\"revision\":\"sentinel\",")
++               + "\"buildDate\":\"2024-06-07 00:00:00\",\"capabilities\":"
++               + (ha ? "[\"HA_CONTROLLER\"]" : "[]") + "}";
++    }
++
++    std::string sentinel_peer(const std::string &id, const std::string &url, bool online) {
++        return "{\"id\":\"" + id + "\",\"name\":\"" + id +
++               "\",\"apiAddresses\":{\"edge-client\":[{\"url\":\"" + url +
++               "\",\"version\":\"v1\"}]},\"isOnline\":" + (online ? "true" : "false") + "}";
++    }
++
++    struct fake_ctrl {
++        uv_tcp_t server{};
++        uv_loop_t *loop = nullptr;
++        std::string url;
++        bool advertise_ha = true;
++        std::string peers_payload;
++        int version_reqs = 0;
++        int authenticate_reqs = 0;
++        int controller_reqs = 0;
++        int edge_router_reqs = 0;
++        int unauthorized_controller_reqs = 0;
++        std::string redirect_to;
++        bool listening = false;
++    };
++
++    struct fake_conn {
++        uv_tcp_t handle{};
++        fake_ctrl *srv = nullptr;
++        std::string in;
++        std::string out;
++        uv_write_t wr{};
++    };
++
++    bool sentinel_header_present(const std::string &req, const std::string &name) {
++        std::string lower;
++        lower.reserve(req.size());
++        for (size_t i = 0; i < req.size(); i++) {
++            lower.push_back((char) tolower((unsigned char) req[i]));
++        }
++        return lower.find("\r\n" + name + ":") != std::string::npos;
++    }
++
++    std::string sentinel_reply(fake_ctrl *srv, const std::string &req) {
++        size_t sp = req.find(' ');
++        size_t sp2 = sp == std::string::npos ? std::string::npos : req.find(' ', sp + 1);
++        std::string path = (sp == std::string::npos || sp2 == std::string::npos)
++                           ? std::string() : req.substr(sp + 1, sp2 - sp - 1);
++
++        int status = 200;
++        std::string body;
++        if (path.compare(0, 8, "/version") == 0) {
++            srv->version_reqs++;
++            body = sentinel_envelope(sentinel_version_payload(srv->advertise_ha));
++        } else if (path.compare(0, 13, "/authenticate") == 0) {
++            srv->authenticate_reqs++;
++            body = sentinel_envelope("{\"id\":\"sentinel-session\",\"token\":\"sentinel-token\"}");
++        } else if (path.compare(0, 12, "/controllers") == 0) {
++            // a real controller will not list its peers to an unauthenticated caller
++            if (!sentinel_header_present(req, "zt-session")) {
++                srv->unauthorized_controller_reqs++;
++                status = 401;
++                body = "{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"no api session\"}}";
++            } else {
++                srv->controller_reqs++;
++                body = sentinel_paged(srv->peers_payload, 4);
++            }
++        } else if (path.find("/current-identity/edge-routers") == 0) {
++            srv->edge_router_reqs++;
++            body = sentinel_paged("[]", 0);
++        } else {
++            status = 404;
++            body = "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"no\"}}";
++        }
++
++        std::string extra;
++        if (!srv->redirect_to.empty()) {
++            // the header a controller uses to hand its callers a different address
++            extra = "ziti-ctrl-address: " + srv->redirect_to + "\r\n";
++        }
++        return "HTTP/1.1 " + std::to_string(status) + (status == 200 ? " OK" : " ERR") +
++               "\r\nContent-Type: application/json\r\n" + extra + "Content-Length: " +
++               std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
++    }
++
++    bool sentinel_request_complete(const std::string &in) {
++        size_t head = in.find("\r\n\r\n");
++        if (head == std::string::npos) { return false; }
++        std::string lower;
++        lower.reserve(head);
++        for (size_t i = 0; i < head; i++) { lower.push_back((char) tolower((unsigned char) in[i])); }
++        size_t cl = lower.find("content-length:");
++        if (cl == std::string::npos) { return true; }
++        size_t len = (size_t) strtoul(in.c_str() + cl + strlen("content-length:"), nullptr, 10);
++        return in.size() >= head + 4 + len;
++    }
++
++    void sentinel_on_conn_closed(uv_handle_t *h) {
++        delete (fake_conn *) h->data;
++    }
++
++    void sentinel_on_written(uv_write_t *w, int) {
++        uv_close((uv_handle_t *) w->handle, sentinel_on_conn_closed);
++    }
++
++    void sentinel_alloc(uv_handle_t *, size_t suggested, uv_buf_t *buf) {
++        buf->base = (char *) malloc(suggested);
++        buf->len = suggested;
++    }
++
++    void sentinel_on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
++        auto *c = (fake_conn *) stream->data;
++        if (nread > 0) {
++            c->in.append(buf->base, (size_t) nread);
++            if (sentinel_request_complete(c->in)) {
++                uv_read_stop(stream);
++                c->out = sentinel_reply(c->srv, c->in);
++                uv_buf_t out = uv_buf_init((char *) c->out.data(), (unsigned int) c->out.size());
++                c->wr.data = c;
++                uv_write(&c->wr, stream, &out, 1, sentinel_on_written);
++            }
++        } else if (nread < 0) {
++            uv_read_stop(stream);
++            uv_close((uv_handle_t *) stream, sentinel_on_conn_closed);
++        }
++        free(buf->base);
++    }
++
++    void sentinel_on_connection(uv_stream_t *server, int status) {
++        if (status < 0) { return; }
++        auto *srv = (fake_ctrl *) server->data;
++        auto *c = new fake_conn();
++        c->srv = srv;
++        uv_tcp_init(srv->loop, &c->handle);
++        c->handle.data = c;
++        if (uv_accept(server, (uv_stream_t *) &c->handle) == 0) {
++            uv_read_start((uv_stream_t *) &c->handle, sentinel_alloc, sentinel_on_read);
++        } else {
++            uv_close((uv_handle_t *) &c->handle, sentinel_on_conn_closed);
++        }
++    }
++
++    bool sentinel_start_ctrl(fake_ctrl *srv, uv_loop_t *loop) {
++        srv->loop = loop;
++        if (uv_tcp_init(loop, &srv->server) != 0) { return false; }
++        srv->server.data = srv;
++        struct sockaddr_in addr{};
++        uv_ip4_addr("127.0.0.1", 0, &addr);
++        if (uv_tcp_bind(&srv->server, (const struct sockaddr *) &addr, 0) != 0) { return false; }
++        if (uv_listen((uv_stream_t *) &srv->server, 16, sentinel_on_connection) != 0) { return false; }
++
++        struct sockaddr_in bound{};
++        int len = sizeof(bound);
++        if (uv_tcp_getsockname(&srv->server, (struct sockaddr *) &bound, &len) != 0) { return false; }
++        srv->url = "http://127.0.0.1:" + std::to_string(ntohs(bound.sin_port));
++        // the listener must not keep uv_run alive once the controller is idle
++        uv_unref((uv_handle_t *) &srv->server);
++        srv->listening = true;
++        return true;
++    }
++
++    void sentinel_stop_ctrl(fake_ctrl *srv) {
++        if (!srv->listening) { return; }
++        srv->listening = false;
++        uv_close((uv_handle_t *) &srv->server, nullptr);
++        uv_run(srv->loop, UV_RUN_NOWAIT);
++    }
++
++    struct login_capture {
++        bool called = false;
++        int err = 0;
++    };
++
++    void sentinel_login_cb(ziti_api_session *s, const ziti_error *err, void *ctx) {
++        auto *c = (login_capture *) ctx;
++        c->called = true;
++        if (err) { c->err = err->err; }
++        free_ziti_api_session_ptr(s);
++    }
++
++    void sentinel_routers_cb(ziti_edge_router_array ers, const ziti_error *err, void *ctx) {
++        auto *c = (login_capture *) ctx;
++        c->called = true;
++        if (err) { c->err = err->err; }
++        free_ziti_edge_router_array(&ers);
++    }
++
++    // one endpoint list holding just the fake controller
++    void sentinel_only(model_list *l, const std::string &url) {
++        model_list_append(l, (void *) url.c_str());
++    }
++
++    // a peer that only publishes an older edge API, which is not the one to use
++    std::string sentinel_peer_old_api(const std::string &id, const std::string &url) {
++        return "{\"id\":\"" + id + "\",\"name\":\"" + id +
++               "\",\"apiAddresses\":{\"edge-client\":[{\"url\":\"" + url +
++               "\",\"version\":\"v2\"}]},\"isOnline\":true}";
++    }
++
++    // a peer list that does not mention the endpoint currently in use
++    std::string sentinel_peers_without_self() {
++        return "[" + sentinel_peer("ctrl-up", SENTINEL_PEER_UP, true) + "," +
++               sentinel_peer("ctrl-down", SENTINEL_PEER_DOWN, true) + "]";
++    }
++
++    std::string sentinel_three_peers(const std::string &self_url) {
++        return "[" + sentinel_peer("ctrl-self", self_url, true) + "," +
++               sentinel_peer("ctrl-up", SENTINEL_PEER_UP, true) + "," +
++               sentinel_peer("ctrl-down", SENTINEL_PEER_DOWN, false) + "," +
++               sentinel_peer_old_api("ctrl-oldapi", SENTINEL_PEER_OLD_API) + "]";
++    }
++}
++
++TEST_CASE("sentinel_ctrl_learns_peers_from_controller", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv;
++    REQUIRE(sentinel_start_ctrl(&srv, loop));
++    srv.advertise_ha = true;
++    srv.peers_payload = sentinel_three_peers(srv.url);
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(srv.version_reqs >= 1);
++    CHECK(model_map_size(&ctrl.endpoints) == 1);
++
++    login_capture login;
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_login_cb, &login);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(login.called);
++    CHECK(login.err == 0);
++
++    // the peer list has to be asked for, and only once the session exists
++    CHECK(srv.controller_reqs == 1);
++    CHECK(srv.unauthorized_controller_reqs == 0);
++
++    std::set<std::string> expected = {srv.url, SENTINEL_PEER_UP, SENTINEL_PEER_DOWN};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++
++    // the peer that only publishes an older edge API is not an endpoint
++    CHECK(sentinel_endpoint_keys(&ctrl).count(SENTINEL_PEER_OLD_API) == 0);
++
++    REQUIRE(ctrl.url != nullptr);
++    CHECK_THAT(ctrl.url, Equals(srv.url));
++
++    // and again when the current edge routers are fetched
++    login_capture routers;
++    ziti_ctrl_current_edge_routers(&ctrl, sentinel_routers_cb, &routers);
++    uv_run(loop, UV_RUN_DEFAULT);
++    CHECK(routers.called);
++    CHECK(srv.edge_router_reqs == 1);
++    CHECK(srv.controller_reqs == 2);
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    sentinel_stop_ctrl(&srv);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
++
++TEST_CASE("sentinel_ctrl_skips_peer_refresh_without_ha", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv;
++    REQUIRE(sentinel_start_ctrl(&srv, loop));
++    srv.advertise_ha = false;
++    srv.peers_payload = sentinel_three_peers(srv.url);
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(srv.version_reqs >= 1);
++
++    login_capture login;
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_login_cb, &login);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(login.called);
++
++    login_capture routers;
++    ziti_ctrl_current_edge_routers(&ctrl, sentinel_routers_cb, &routers);
++    uv_run(loop, UV_RUN_DEFAULT);
++    CHECK(routers.called);
++
++    // installing a bearer token is the third path that can ask for peers
++    ziti_ctrl_set_token(&ctrl, "sentinel-bearer");
++    uv_run(loop, UV_RUN_DEFAULT);
++
++    // no capability advertised, so the controller is never asked for peers
++    CHECK(srv.controller_reqs == 0);
++    CHECK(srv.unauthorized_controller_reqs == 0);
++    std::set<std::string> expected = {srv.url};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    sentinel_stop_ctrl(&srv);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
++
++TEST_CASE("sentinel_ctrl_prefers_peer_reported_online", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv;
++    REQUIRE(sentinel_start_ctrl(&srv, loop));
++    srv.advertise_ha = true;
++    srv.peers_payload = sentinel_three_peers(srv.url);
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    uv_run(loop, UV_RUN_DEFAULT);
++
++    login_capture login;
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_login_cb, &login);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(srv.controller_reqs == 1);
++    REQUIRE(model_map_size(&ctrl.endpoints) == 3);
++    REQUIRE(ctrl.url != nullptr);
++    REQUIRE(std::string(ctrl.url) == srv.url);
++
++    // the controller goes away, so the next request fails at the transport level
++    sentinel_stop_ctrl(&srv);
++    login_capture again;
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_login_cb, &again);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(again.called);
++    CHECK(again.err != 0);
++
++    // the peer the controller reported online is the one to move to, and the one
++    // it reported offline is not
++    REQUIRE(ctrl.url != nullptr);
++    CHECK_THAT(ctrl.url, Equals(SENTINEL_PEER_UP));
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
++
++TEST_CASE("sentinel_ctrl_failover_visits_distinct_endpoints", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++    model_list_append(&endpoints, (void *) SENTINEL_EP3);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    REQUIRE(ctrl.url != nullptr);
++
++    // the client has to be talking to the endpoint the controller reports as current
++    REQUIRE(ctrl.client != nullptr);
++    REQUIRE(ctrl.client->host != nullptr);
++    CHECK(std::string(ctrl.url).find(std::string(ctrl.client->host)) != std::string::npos);
++
++    // an endpoint that has just failed is out of the running, so three requests
++    // against a set of three unreachable endpoints visit all three
++    std::set<std::string> visited;
++    visited.insert(ctrl.url);
++    for (int i = 0; i < 2; i++) {
++        sentinel_version_capture cap = sentinel_failed_request(&ctrl, loop);
++        REQUIRE(cap.called);
++        REQUIRE(ctrl.url != nullptr);
++        visited.insert(ctrl.url);
++        CHECK(std::string(ctrl.url).find(std::string(ctrl.client->host)) != std::string::npos);
++    }
++    CHECK(visited.size() == 3);
++
++    // Every endpoint has now failed, so none is believed online. Selection still
++    // has to keep handing one back rather than giving up, which shows as the
++    // endpoint continuing to move across a run of failures.
++    std::string stuck = ctrl.url;
++    bool still_moving = false;
++    for (int i = 0; i < 12; i++) {
++        sentinel_version_capture cap = sentinel_failed_request(&ctrl, loop);
++        REQUIRE(cap.called);
++        REQUIRE(ctrl.url != nullptr);
++        CHECK(visited.count(ctrl.url) == 1);
++        CHECK(std::string(ctrl.url).find(std::string(ctrl.client->host)) != std::string::npos);
++        if (stuck != ctrl.url) { still_moving = true; }
++    }
++    CHECK(still_moving);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++namespace {
++    struct inflight_capture {
++        ziti_controller *ctrl;
++        bool called;
++        unsigned int reqs_at_cb;
++        std::string url_at_cb;
++    };
++
++    void sentinel_inflight_cb(ziti_api_session *s, const ziti_error *, void *ctx) {
++        auto *c = (inflight_capture *) ctx;
++        c->called = true;
++        c->reqs_at_cb = c->ctrl->active_reqs;
++        c->url_at_cb = c->ctrl->url != nullptr ? c->ctrl->url : "";
++        free_ziti_api_session_ptr(s);
++    }
++}
++
++TEST_CASE("sentinel_ctrl_no_switch_while_a_request_is_in_flight", "[sentinel][controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void *) SENTINEL_EP1);
++    model_list_append(&endpoints, (void *) SENTINEL_EP2);
++    model_list_append(&endpoints, (void *) SENTINEL_EP3);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    // let the request init puts on the wire finish, so the two started below
++    // are the only ones outstanding
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(ctrl.active_reqs == 0);
++    REQUIRE(ctrl.url != nullptr);
++    std::string before = ctrl.url;
++
++    inflight_capture first = {&ctrl, false, 0, ""};
++    inflight_capture second = {&ctrl, false, 0, ""};
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_inflight_cb, &first);
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_inflight_cb, &second);
++
++    // both are counted while they are outstanding
++    CHECK(ctrl.active_reqs == 2);
++
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(first.called);
++    REQUIRE(second.called);
++    CHECK(ctrl.active_reqs == 0);
++
++    // exactly one of the two came back while the other was still outstanding
++    int saw_outstanding = (first.reqs_at_cb > 0 ? 1 : 0) + (second.reqs_at_cb > 0 ? 1 : 0);
++    CHECK(saw_outstanding == 1);
++
++    // and that one must not have moved the endpoint, because something else
++    // was still in flight when it failed
++    if (first.reqs_at_cb > 0) { CHECK_THAT(first.url_at_cb, Equals(before)); }
++    if (second.reqs_at_cb > 0) { CHECK_THAT(second.url_at_cb, Equals(before)); }
++
++    // once nothing was left in flight, the move happened
++    REQUIRE(ctrl.url != nullptr);
++    CHECK(std::string(ctrl.url) != before);
++
++    // a cancelled request is not a transport failure and must not move anything
++    std::string settled = ctrl.url;
++    inflight_capture cancelled = {&ctrl, false, 0, ""};
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_inflight_cb, &cancelled);
++    ziti_ctrl_cancel(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++    CHECK(cancelled.called);
++    REQUIRE(ctrl.url != nullptr);
++    CHECK_THAT(ctrl.url, Equals(settled));
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("sentinel_ctrl_refresh_replaces_dropped_endpoint", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv;
++    REQUIRE(sentinel_start_ctrl(&srv, loop));
++    srv.advertise_ha = true;
++    // the controller answers with a set that no longer contains the endpoint in use
++    srv.peers_payload = sentinel_peers_without_self();
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(ctrl.url != nullptr);
++    REQUIRE(std::string(ctrl.url) == srv.url);
++
++    login_capture login;
++    ziti_ctrl_login(&ctrl, nullptr, sentinel_login_cb, &login);
++    uv_run(loop, UV_RUN_DEFAULT);
++    REQUIRE(login.called);
++    REQUIRE(srv.controller_reqs == 1);
++
++    // the set is now the two the controller named, and the endpoint in use has to
++    // be one of them rather than the one that was dropped
++    std::set<std::string> expected = {SENTINEL_PEER_UP, SENTINEL_PEER_DOWN};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++    REQUIRE(ctrl.url != nullptr);
++    CHECK(expected.count(ctrl.url) == 1);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    sentinel_stop_ctrl(&srv);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
++
++TEST_CASE("sentinel_ctrl_redirect_rekeys_endpoint_set", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv;
++    REQUIRE(sentinel_start_ctrl(&srv, loop));
++    srv.advertise_ha = false;
++    // the controller answers every request telling the caller to use a different address
++    const std::string moved = "http://ctrl-moved.sentinel.invalid:1280";
++    srv.redirect_to = moved;
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    REQUIRE(ctrl.url != nullptr);
++    REQUIRE(std::string(ctrl.url) == srv.url);
++    REQUIRE(model_map_size(&ctrl.endpoints) == 1);
++
++    uv_run(loop, UV_RUN_DEFAULT);
++
++    // the address it was told to use is now the one in use
++    REQUIRE(ctrl.url != nullptr);
++    CHECK_THAT(ctrl.url, Equals(moved));
++
++    // and it took the superseded address's place rather than being added beside
++    // it, so the set is the same size and url is still one of its members
++    std::set<std::string> expected = {moved};
++    CHECK(sentinel_endpoint_keys(&ctrl) == expected);
++    CHECK(model_map_size(&ctrl.endpoints) == 1);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    sentinel_stop_ctrl(&srv);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
++
++TEST_CASE("sentinel_ctrl_version_follows_the_endpoint_in_use", "[sentinel][controller]") {
++    uv_loop_t *loop = uv_loop_new();
++    fake_ctrl srv1, srv2;
++    REQUIRE(sentinel_start_ctrl(&srv1, loop));
++    REQUIRE(sentinel_start_ctrl(&srv2, loop));
++    srv1.advertise_ha = false;
++    srv2.advertise_ha = false;
++    srv1.redirect_to = srv2.url;
++
++    ziti_controller ctrl;
++    model_list endpoints = {nullptr};
++    sentinel_only(&endpoints, srv1.url);
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    uv_run(loop, UV_RUN_DEFAULT);
++
++    REQUIRE(ctrl.url != nullptr);
++    REQUIRE(std::string(ctrl.url) == srv2.url);
++    REQUIRE(srv1.version_reqs >= 1);
++
++    // the endpoint in use has changed, so what the previous one reported about
++    // itself no longer applies and the answer has to come from the one in use
++    sentinel_version_capture cap = {false, 0, ""};
++    ziti_ctrl_get_version(&ctrl, sentinel_version_cb, &cap);
++    uv_run(loop, UV_RUN_DEFAULT);
++
++    CHECK(cap.called);
++    CHECK(srv2.version_reqs >= 1);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    sentinel_stop_ctrl(&srv1);
++    sentinel_stop_ctrl(&srv2);
++    uv_run(loop, UV_RUN_DEFAULT);
++    uv_loop_close(loop);
++    free(loop);
++}
+diff --git a/tests/integ/oidc-tests.cpp b/tests/integ/oidc-tests.cpp
+index 14fbdc4..65ed25d 100644
+--- a/tests/integ/oidc-tests.cpp
++++ b/tests/integ/oidc-tests.cpp
+@@ -36,7 +36,7 @@ TEST_CASE_METHOD(LoopTestCase, "ha-oidc", "[integ]") {
+     tls->set_own_cert(tls, key, cert);
+ 
+     oidc_client_t oidcClient;
+-    oidc_client_init(l, &oidcClient, cfg.controller_url, tls);
++    oidc_client_init(l, &oidcClient, (const char*)model_list_head(&cfg.controllers), tls);
+     struct oidc_cfg_result {
+         bool called;
+         int status;

@@ -1,8 +1,9 @@
 ---
 id: related-pr-carries-its-own-bug
 status: platform-confirmed
-last_verified: 2026-08-11
+last_verified: 2026-08-16
 verified_by:
+  - 20260805_220102__xaaha_hulak__118
   - 20260807_080545__tair-opensource_redisshake__1005
 evidence: "Difficulty screen returned FAIL EASY at 8 of 8 agent solves. The related later PR adapted as the lever carried a bug of its own, and 4 of 5 plausible implementations of its one function fail the graded test built from real server output"
 applies_to:
@@ -128,3 +129,22 @@ got it wrong" is strong evidence a **trap** exists. It is not evidence that agen
 honest implementations passed**, because they wrote exact field matching where upstream wrote a
 first-match scan. Use the author's mistake to find the trap, then measure whether anyone actually
 walks into it, and remember the control is a ceiling (LEDGER L35).
+
+## Second instance of the recipe, efficacy unmeasured (hulak 118, accepted 2026-08-16)
+
+The three-step search worked exactly as written and found the candidate in one pass. PR 118 adds
+`DetailForm.HandleMouse`; **PR 155 exists to patch that same method**, which is as close as a later
+PR gets. The bug is `setArgEnabled(argName, v)` setting `enabled` on every item sharing an argument
+name, so an input-object argument drawn as one row per field switches all its siblings at once. The
+tell this note is about is textbook: the base keyboard path does exactly that, **eight lines above
+the method the agent has to write**, so copying it is the natural move and it is the wrong one.
+
+Two behaviours were adapted, neither wholesale, and PR 155's own 124 lines of tests were left out.
+The task was accepted.
+
+**And that is the whole of what is known.** The screen never re-ran after the round that added it,
+so nothing measures whether the trap converts anybody, and the round-2 discriminate matrix behind it
+is the weak shape this note's own caution describes: five implementations written on purpose to be
+wrong rather than five honest builds ([[difficulty-levers-must-discriminate]]). Cite hulak as
+evidence that **the three-step search finds real candidates**, never as evidence that this lever
+class moves a screen.

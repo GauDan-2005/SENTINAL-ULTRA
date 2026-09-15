@@ -1,0 +1,82 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "set -o pipefail",
+      "cargo test --offline --test lwa_http_regression -- --test-threads=1 2>&1 | tee /tmp/lwa_p2p.log; p2p_rc=${PIPESTATUS[0]}",
+      "cargo test --offline --test lwa_tls_contract -- --test-threads=1 2>&1 | tee /tmp/lwa_f2p.log; f2p_rc=${PIPESTATUS[0]}",
+      "if grep -q '^test result:' /tmp/lwa_p2p.log 2>/dev/null && grep -q '^test result:' /tmp/lwa_f2p.log 2>/dev/null; then echo 'test lwa_meta::suite_completed ... ok'; else echo 'test lwa_meta::suite_completed ... FAILED'; fi",
+      "if [ \"${p2p_rc:-1}\" -ne 0 ] || [ \"${f2p_rc:-1}\" -ne 0 ]; then exit 1; fi",
+      "exit 0"
+    ],
+    "selected_test_files_to_run": [
+      "tests/lwa_http_regression.rs",
+      "tests/lwa_tls_contract.rs",
+      "tests/lwa_support/mod.rs"
+    ],
+    "env": {
+      "CARGO_NET_OFFLINE": "true",
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1200
+  },
+  "grading": {
+    "fail_to_pass": [
+      "a_client_identity_gets_a_request_into_an_app_that_demands_one",
+      "a_plaintext_app_is_out_of_reach_once_tls_is_on",
+      "a_request_is_proxied_to_a_tls_only_app",
+      "a_response_from_a_tls_app_is_still_compressed_on_request",
+      "an_app_that_demands_a_client_certificate_stays_out_of_reach_without_one",
+      "an_identity_that_cannot_be_used_does_not_become_an_anonymous_one",
+      "half_an_identity_is_not_an_identity",
+      "requests_are_encrypted_when_tls_is_switched_on",
+      "the_base_path_is_stripped_when_proxying_to_a_tls_app",
+      "the_configured_name_travels_in_the_handshake",
+      "the_query_string_reaches_a_tls_app",
+      "the_readiness_probe_and_the_request_can_use_different_tls_ports",
+      "the_readiness_probe_completes_against_a_tls_only_app",
+      "the_readiness_probe_is_encrypted_when_tls_is_switched_on",
+      "the_readiness_probe_proves_who_it_is_as_well",
+      "the_request_path_selects_what_the_tls_app_returns",
+      "verification_refuses_a_certificate_it_should_not_accept"
+    ],
+    "pass_to_pass": [
+      "a_client_identity_changes_nothing_while_tls_is_off",
+      "a_value_that_is_not_a_bool_leaves_tls_off",
+      "an_empty_value_leaves_tls_off",
+      "an_unusable_identity_changes_nothing_while_tls_is_off",
+      "half_an_identity_changes_nothing_while_tls_is_off",
+      "regression_already_compressed_body_is_left_alone",
+      "regression_base_path_is_stripped_before_proxying",
+      "regression_basic_request_is_proxied",
+      "regression_encoded_path_is_forwarded_verbatim",
+      "regression_gzip_applied_when_compression_enabled",
+      "regression_gzip_skipped_for_uncompressable_type",
+      "regression_options_build_from_defaults",
+      "regression_post_put_delete_reach_the_app",
+      "regression_protocol_default_and_parsing",
+      "regression_query_parameters_are_forwarded",
+      "regression_readiness_check_calls_configured_path",
+      "regression_request_and_response_headers_survive",
+      "requests_stay_cleartext_when_nothing_asks_for_tls",
+      "requests_stay_cleartext_when_tls_is_switched_off",
+      "the_readiness_probe_stays_cleartext_when_tls_is_off",
+      "lwa_meta::suite_completed"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^test (?P<name>[A-Za-z0-9_:]+) \\.\\.\\. ok$",
+      "fail_regex": "^test (?P<name>[A-Za-z0-9_:]+) \\.\\.\\. FAILED$"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

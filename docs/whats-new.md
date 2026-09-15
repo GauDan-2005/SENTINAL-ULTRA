@@ -6,13 +6,25 @@ Latest updates to the Sentinel Ultra contributor guidelines
 
 📢 Latest update
 
-Review-gate blocks now point you to the reason
+Difficulty checks are now capped
 
-When an eval says the **review gate** blocked at the **agentic judge**, the actual per-axis reasons (`DISCUSS`/`REMOVE` + cited axes/files) are in the **"Agentic Judge Quality Report"** field on your submission — it's collapsed and marked *optional*, lower down the form, so it's easy to miss. **Expand it** to see exactly what to fix. The gate runs in two stages (agentic judge, then a difficulty screen); `"Not run: difficulty screen"` just means the judge blocked first — expected, not a second error.
+As of **August 14, 2026**, once **4 difficulty checks** have run on a task without passing, it's automatically classified as **Invalid Difficulty** and goes to review as it stands — **not** a rejection, and not applied retroactively. You'll see two new read-only fields (*Difficulty checks run* / *remaining*); at the limit, we set the verdict for you — resubmit as-is and leave it in place.
 
-[See the review-gate FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
+[What is Invalid Difficulty? →](faq.md#difficulty-checks-are-now-capped-what-is-invalid-difficulty)
 
 ## Recent updates <a id="recent-updates"></a>
+
+-   Aug 14, 2026
+
+    **Difficulty checks capped at 4 → "Invalid Difficulty."** Once 4 difficulty checks run on a task without passing, it's automatically classified **Invalid Difficulty** and goes to review as-is (not a rejection, not retroactive). At the limit we set the verdict for you — resubmit without changes and leave it in place. [FAQ →](faq.md#difficulty-checks-are-now-capped-what-is-invalid-difficulty)
+
+-   Aug 12, 2026
+
+    **New: Reviewer Rubric tab.** A dedicated tab defining the technical bar every task must clear and how to assess it — the two paths to Needs Revision, the five Major Pillars, the accumulating Secondary Requirements, and reviewer integrity. [Reviewer Rubric →](reviewer-rubric.md)
+
+-   Aug 5, 2026
+
+    **"Send to Reviewer" checkbox removed.** Passing post-submission evals now route your task to the reviewer queue automatically; failing ones come back to fix and resubmit. No box to check, and the `AlwaysNoPass` message is gone. [Submission flow →](tasking-guide.md#section-3-run-evals)
 
 -   Aug 5, 2026
 

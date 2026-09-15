@@ -1,8 +1,9 @@
 ---
 id: difficulty-levers-must-discriminate
 status: locally-verified
-last_verified: 2026-08-11
+last_verified: 2026-08-16
 verified_by:
+  - 20260805_220102__xaaha_hulak__118
   - 20260803_111822__xlwings_xlwings__2719
   - 20260805_080500__statrs-dev_statrs__315
   - 20260807_080545__tair-opensource_redisshake__1005
@@ -121,6 +122,21 @@ implementations **written specifically to be wrong**. Those two measure differen
 a correct implementation on purpose proves an assertion has teeth; it says nothing about whether a
 competent agent would ever write that mistake. Step 1 of The method says to collect *independent
 implementations of the feature*, and honest is the load-bearing word.
+
+**Third instance, and it is the one where the shape distinction cost something (hulak 118, accepted
+2026-08-16).** That task answered a `FAIL EASY` with scope adapted from a related later PR and
+pre-measured it: six rows, five plausible implementations plus the shipped oracle, five of them
+failing the new graded id. It reads like the xlwings matrix and it is the statrs one. All five were
+**written on purpose to be wrong** - copy the base keyboard path, fix only the mouse path, always
+switch the single row, keep each field's own required flag, clear `required` along with `enabled` -
+and not one is an independent honest build of the feature. No model was recorded against the number
+either, so it is not even a labelled ceiling.
+
+The bundle was accepted, and that settles nothing about the lever: no screen number was ever read for it
+after the round that added it, its round 3 carried four more difficulty-relevant changes, and two
+of those pull the other way. **Take the shape check as the cheap part of this note.** Asking "are
+these five honest builds or five sabotages" costs one sentence and would have told that round its
+own evidence was weaker than it looked.
 
 So the matrix bounds difficulty from above. A row where every honest implementation agrees cannot
 discriminate, which is what it is for. A row where hand-broken implementations disagree may still

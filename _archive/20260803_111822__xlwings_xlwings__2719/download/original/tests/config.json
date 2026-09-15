@@ -1,0 +1,54 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "python -m pytest -v tests/test_async_load.py tests/test_custom_scripts_call.py"
+    ],
+    "selected_test_files_to_run": [
+      "tests/test_async_load.py",
+      "tests/test_custom_scripts_call.py"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "tests/test_async_load.py::test_lazy_book_value_read_raises",
+      "tests/test_async_load.py::test_eager_book_value_read_works",
+      "tests/test_async_load.py::test_lazy_book_value_read_works_after_sheet_marked_loaded",
+      "tests/test_async_load.py::test_loaded_state_survives_sheet_rename",
+      "tests/test_async_load.py::test_lazy_book_load_defaults_to_metadata_only",
+      "tests/test_async_load.py::test_lazy_book_load_values_true_loads_values",
+      "tests/test_async_load.py::test_eager_book_load_defaults_to_full",
+      "tests/test_async_load.py::test_metadata_only_load_does_not_clobber_loaded_values",
+      "tests/test_async_load.py::test_sheet_load_values_true_marks_only_that_sheet",
+      "tests/test_async_load.py::test_public_wrapper_lazy_value_read_raises",
+      "tests/test_async_load.py::test_public_wrapper_forwards_values_kwarg",
+      "tests/test_async_load.py::test_lazy_flag_defaults_to_false",
+      "tests/test_async_load.py::test_sheet_values_loaded_false_initially",
+      "tests/test_async_load.py::test_error_message_identifies_sheet_by_name",
+      "tests/test_async_load.py::test_error_message_mentions_async_alternative",
+      "tests/test_async_load.py::test_values_false_on_lazy_book_is_metadata_only",
+      "tests/test_async_load.py::test_values_false_on_eager_book_forces_metadata_only",
+      "tests/test_async_load.py::test_eager_book_load_values_true_marks_sheets_loaded",
+      "tests/test_async_load.py::test_sheet_load_values_false_does_not_mark_loaded",
+      "tests/test_async_load.py::test_public_wrapper_lazy_book_load_values_false_still_raises",
+      "tests/test_custom_scripts_call.py::test_book_async_marks_injected_book_lazy",
+      "tests/test_custom_scripts_call.py::test_plain_book_annotation_stays_eager"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "pytest",
+      "result_source": "stdout_stderr"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

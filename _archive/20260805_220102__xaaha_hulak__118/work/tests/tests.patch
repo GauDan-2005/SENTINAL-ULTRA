@@ -1,0 +1,1136 @@
+diff --git a/pkg/tui/gqlexplorer/sentinel_mouse_test.go b/pkg/tui/gqlexplorer/sentinel_mouse_test.go
+new file mode 100644
+index 0000000..dc59e0c
+--- /dev/null
++++ b/pkg/tui/gqlexplorer/sentinel_mouse_test.go
+@@ -0,0 +1,660 @@
++package gqlexplorer
++
++import (
++	"strings"
++	"testing"
++	"time"
++
++	tea "github.com/charmbracelet/bubbletea"
++	"github.com/charmbracelet/lipgloss"
++
++	"github.com/xaaha/hulak/pkg/features/graphql"
++	"github.com/xaaha/hulak/pkg/tui"
++)
++
++// The zone manager stores marked regions on a background worker, and every scan
++// drops the regions recorded by earlier scans. sentinelArmZones registers a
++// throwaway region and hands back a wait function; once that region is gone the
++// worker has processed a later scan in full, so every region from that later
++// scan is readable.
++const sentinelZoneWait = 10 * time.Second
++
++func sentinelArmZones(t *testing.T) func() {
++	t.Helper()
++	z := tui.NewMouseZone()
++	probe := z.ID("armed")
++	_ = tui.ScanMouseZones(z.Mark(probe, "armed"))
++	sentinelAwaitZone(t, probe, true, "the probe region was never recorded")
++	return func() {
++		sentinelAwaitZone(t, probe, false,
++			"the rendered view never passed through ScanMouseZones")
++	}
++}
++
++func sentinelAwaitZone(t *testing.T, id string, want bool, msg string) {
++	t.Helper()
++	deadline := time.Now().Add(sentinelZoneWait)
++	for {
++		if _, _, _, _, ok := tui.ZoneBounds(id); ok == want {
++			return
++		}
++		if time.Now().After(deadline) {
++			t.Fatalf("%s (zone %q)", msg, id)
++		}
++		time.Sleep(time.Millisecond)
++	}
++}
++
++// sentinelStripSequences removes terminal escape sequences so a rendered line can
++// be searched as plain text.
++func sentinelStripSequences(line string) string {
++	var out strings.Builder
++	for i := 0; i < len(line); {
++		if line[i] == 0x1b {
++			j := i + 1
++			if j < len(line) && line[j] == '[' {
++				j++
++				for j < len(line) && (line[j] < '@' || line[j] > '~') {
++					j++
++				}
++				if j < len(line) {
++					j++
++				}
++				i = j
++				continue
++			}
++			i++
++			continue
++		}
++		out.WriteByte(line[i])
++		i++
++	}
++	return out.String()
++}
++
++type sentinelCell struct{ x, y int }
++
++func sentinelFindAll(view, want string) []sentinelCell {
++	var found []sentinelCell
++	for row, line := range strings.Split(view, "\n") {
++		plain := sentinelStripSequences(line)
++		for at := 0; ; {
++			i := strings.Index(plain[at:], want)
++			if i < 0 {
++				break
++			}
++			at += i
++			found = append(found, sentinelCell{lipgloss.Width(plain[:at]), row})
++			at += len(want)
++		}
++	}
++	return found
++}
++
++// sentinelCellOf returns the screen cell where want is drawn in a rendered view.
++// It fails the test when the text is missing or drawn more than once, so a click
++// always lands somewhere unambiguous.
++func sentinelCellOf(t *testing.T, view, want string) (int, int) {
++	t.Helper()
++	found := sentinelFindAll(view, want)
++	if len(found) != 1 {
++		t.Fatalf("expected %q to be drawn exactly once, it was drawn %d times", want, len(found))
++	}
++	return found[0].x, found[0].y
++}
++
++// sentinelCellBelow returns the screen cell where want is drawn somewhere under
++// the row that holds anchor. The explorer repeats endpoint names in the badge bar
++// above the search box, so a plain search would be ambiguous.
++func sentinelCellBelow(t *testing.T, view, anchor, want string) (int, int) {
++	t.Helper()
++	anchors := sentinelFindAll(view, anchor)
++	if len(anchors) != 1 {
++		t.Fatalf("expected the anchor %q to be drawn exactly once, it was drawn %d times",
++			anchor, len(anchors))
++	}
++	var below []sentinelCell
++	for _, c := range sentinelFindAll(view, want) {
++		if c.y > anchors[0].y {
++			below = append(below, c)
++		}
++	}
++	if len(below) != 1 {
++		t.Fatalf("expected %q to be drawn exactly once under %q, it was drawn %d times",
++			want, anchor, len(below))
++	}
++	return below[0].x, below[0].y
++}
++
++func sentinelLeftClick(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	}
++}
++
++// sentinelLeftDrag is the pointer moving with the left button held, which is not
++// a click and has to fall through to whatever already handled mouse events.
++func sentinelLeftDrag(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionMotion,
++	}
++}
++
++func sentinelWheelDown(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonWheelDown,
++		Action: tea.MouseActionPress,
++	}
++}
++
++func sentinelExplorer(t *testing.T, ops []UnifiedOperation) *Model {
++	t.Helper()
++	m := NewModel(ops, nil, nil, nil, nil, nil)
++	result, _ := m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
++	model, ok := result.(*Model)
++	if !ok {
++		t.Fatal("expected the explorer to keep its own model type after a resize")
++	}
++	return model
++}
++
++func TestDetailFormMarkedViewMatchesThePlainViewAndClickFocusesTheInput(t *testing.T) {
++	op := &UnifiedOperation{
++		Name: "detailop", Type: TypeQuery, Endpoint: "ep",
++		Arguments: []graphql.Argument{{Name: "queryarg", Type: "String"}},
++	}
++	df := buildDetailForm(op, nil, nil, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected a detail form for an operation with an argument")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++
++	plain, plainLine := df.View(op)
++	settled := sentinelArmZones(t)
++	marked, markedLine := df.ViewMarked(op, prefix, z.Mark)
++	scanned := tui.ScanMouseZones(marked)
++	settled()
++
++	if scanned != plain {
++		t.Fatal("expected marking the form not to change what it draws")
++	}
++	if markedLine != plainLine {
++		t.Fatalf("expected the focused line to stay at %d, got %d", plainLine, markedLine)
++	}
++
++	marks := 0
++	counting := func(id, view string) string {
++		marks++
++		return view
++	}
++	bare, bareLine := df.ViewMarked(op, "", counting)
++	if bare != plain {
++		t.Fatal("expected an empty prefix to render exactly what the plain view renders")
++	}
++	if bareLine != plainLine {
++		t.Fatalf("expected an empty prefix to report the same focused line %d, got %d",
++			plainLine, bareLine)
++	}
++	if marks != 0 {
++		t.Fatalf("expected an empty prefix to mark no regions, it marked %d", marks)
++	}
++
++	x, y := sentinelCellOf(t, scanned, "queryarg")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the click on a text argument to be handled")
++	}
++	if df.cursor != 0 {
++		t.Fatalf("expected the form cursor on the clicked row, got %d", df.cursor)
++	}
++	if !df.items[0].input.Model.Focused() {
++		t.Fatal("expected the clicked text argument to be ready for typing")
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected the clicked argument to be switched on")
++	}
++	if df.HandleMouse(prefix, sentinelLeftClick(x, y+400)) {
++		t.Fatal("expected a click outside every row to be left alone")
++	}
++}
++
++func TestDetailFormClickOnAPlainToggleRowMatchesTheSpaceKey(t *testing.T) {
++	op := &UnifiedOperation{
++		Name: "toggleop", Type: TypeQuery, Endpoint: "ep",
++		Arguments: []graphql.Argument{{Name: "flagarg", Type: "Boolean"}},
++	}
++	df := buildDetailForm(op, nil, nil, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected a detail form for an operation with a boolean argument")
++	}
++	if df.items[0].expandable {
++		t.Fatal("expected a boolean argument to be a plain toggle with nothing to expand")
++	}
++	rows := df.Len()
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	settled := sentinelArmZones(t)
++	marked, _ := df.ViewMarked(op, prefix, z.Mark)
++	scanned := tui.ScanMouseZones(marked)
++	settled()
++
++	x, y := sentinelCellOf(t, scanned, "flagarg")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the click on a plain toggle to be handled")
++	}
++	if df.cursor != 0 {
++		t.Fatalf("expected the form cursor on the clicked row, got %d", df.cursor)
++	}
++	if !df.items[0].toggle.Value {
++		t.Fatal("expected the click to switch the toggle on, the way the space key does")
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected the argument behind a plain toggle to follow the toggle on")
++	}
++	if df.Len() != rows {
++		t.Fatalf("expected a plain toggle to add no rows, form went from %d to %d", rows, df.Len())
++	}
++
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected a second click on a plain toggle to be handled")
++	}
++	if df.items[0].toggle.Value {
++		t.Fatal("expected a second click to switch the toggle back off")
++	}
++	if df.items[0].enabled {
++		t.Fatal("expected the argument to follow the toggle back off")
++	}
++}
++
++func TestDetailFormToggleReachesOnlyTheRowItBelongsTo(t *testing.T) {
++	ep := "ep"
++	inputTypes := map[string]graphql.InputType{
++		ScopedTypeKey(ep, "FilterInput"): {
++			Name: "FilterInput",
++			Fields: []graphql.InputField{
++				{Name: "keywordfield", Type: "String!"},
++				{Name: "catfield", Type: "String"},
++				{Name: "activefield", Type: "Boolean"},
++			},
++		},
++	}
++	op := &UnifiedOperation{
++		Name: "filterop", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "filterarg", Type: "FilterInput"}},
++	}
++	df := buildDetailForm(op, inputTypes, nil, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected a detail form for an operation with an input object argument")
++	}
++	if df.argCount != 3 {
++		t.Fatalf("expected the input object to expand into 3 rows, got %d", df.argCount)
++	}
++	for i := range 3 {
++		if df.items[i].enabled {
++			t.Fatalf("expected row %d to start switched off under an optional argument", i)
++		}
++	}
++	if !df.items[0].required {
++		t.Fatal("expected a field that is required in its own right to keep saying so")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	settled := sentinelArmZones(t)
++	marked, _ := df.ViewMarked(op, prefix, z.Mark)
++	scanned := tui.ScanMouseZones(marked)
++	settled()
++
++	x, y := sentinelCellOf(t, scanned, "activefield")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the click on the boolean row to be handled")
++	}
++	if !df.items[2].enabled {
++		t.Fatal("expected the clicked row to be switched on")
++	}
++	if df.items[0].enabled || df.items[1].enabled {
++		t.Fatalf("expected the rows sharing the argument not to follow the clicked one, got %v and %v",
++			df.items[0].enabled, df.items[1].enabled)
++	}
++
++	// The keyboard reaches exactly as far as the mouse does.
++	df.cursor = 0
++	df.FocusCurrent()
++	df.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
++	if !df.items[0].enabled {
++		t.Fatal("expected the space key to switch the row under the cursor on")
++	}
++	if df.items[1].enabled {
++		t.Fatal("expected the row beside it to stay switched off")
++	}
++	if !df.items[2].enabled {
++		t.Fatal("expected the row switched on by the mouse to stay on")
++	}
++
++	// A list argument is the other side of the same rule. Its rows do move as a
++	// group, and a click has to reach as far as the space key does.
++	listOp := &UnifiedOperation{
++		Name: "listop", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "idsarg", Type: "[ID]"}},
++	}
++	byKey := buildDetailForm(listOp, nil, nil, nil, nil, nil)
++	byKey.items[0].input.Model.SetValue("a")
++	byKey.syncListArgRows("idsarg")
++	byKey.FocusCurrent()
++	byKey.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
++	if byKey.argCount < 2 {
++		t.Fatalf("expected a second list row once the first has a value, got %d", byKey.argCount)
++	}
++
++	byMouse := buildDetailForm(listOp, nil, nil, nil, nil, nil)
++	byMouse.items[0].input.Model.SetValue("a")
++	byMouse.syncListArgRows("idsarg")
++
++	lz := tui.NewMouseZone()
++	listPrefix := lz.ID("detail")
++	settled = sentinelArmZones(t)
++	listMarked, _ := byMouse.ViewMarked(listOp, listPrefix, lz.Mark)
++	listScanned := tui.ScanMouseZones(listMarked)
++	settled()
++
++	rx, ry := sentinelCellOf(t, listScanned, "idsarg")
++	if !byMouse.HandleMouse(listPrefix, sentinelLeftClick(rx, ry)) {
++		t.Fatal("expected the click on a list row to be handled")
++	}
++	for i := 0; i < byKey.argCount; i++ {
++		if byMouse.items[i].enabled != byKey.items[i].enabled {
++			t.Fatalf("list row %d is %v after a click and %v after the space key, they have to agree",
++				i, byMouse.items[i].enabled, byKey.items[i].enabled)
++		}
++	}
++	if !byMouse.items[1].enabled {
++		t.Fatal("expected a click on one list row to carry the whole list argument with it")
++	}
++}
++
++func TestDetailFormClickOnAnExpandableFieldAddsItsChildRows(t *testing.T) {
++	ep := "ep"
++	objectTypes := map[string]graphql.ObjectType{
++		ScopedTypeKey(ep, "Country"): {
++			Name: "Country",
++			Fields: []graphql.ObjectField{
++				{Name: "codefield", Type: "ID!"},
++				{Name: "langfield", Type: "Language"},
++			},
++		},
++		ScopedTypeKey(ep, "Language"): {
++			Name:   "Language",
++			Fields: []graphql.ObjectField{{Name: "namefield", Type: "String"}},
++		},
++	}
++	op := &UnifiedOperation{Name: "countryop", ReturnType: "Country", Endpoint: ep}
++	df := buildDetailForm(op, nil, nil, objectTypes, nil, nil)
++	if df == nil {
++		t.Fatal("expected a detail form for an operation with an object return type")
++	}
++	before := df.Len()
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++	settled := sentinelArmZones(t)
++	marked, _ := df.ViewMarked(op, prefix, z.Mark)
++	scanned := tui.ScanMouseZones(marked)
++	settled()
++
++	x, y := sentinelCellOf(t, scanned, "langfield")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the click on an expandable field to be handled")
++	}
++	if df.cursor != 1 {
++		t.Fatalf("expected the form cursor on the clicked field, got %d", df.cursor)
++	}
++	if !df.items[1].toggle.Value {
++		t.Fatal("expected the clicked field to be switched on")
++	}
++	if df.Len() != before+1 {
++		t.Fatalf("expected the child row of the clicked field to appear, form went from %d to %d rows",
++			before, df.Len())
++	}
++}
++
++func TestDetailFormClickExpandsADropdownThenPicksTheClickedOption(t *testing.T) {
++	ep := "ep"
++	enums := map[string]graphql.EnumType{
++		ScopedTypeKey(ep, "Status"): {
++			Name: "Status",
++			Values: []graphql.EnumValue{
++				{Name: "optone"}, {Name: "opttwo"}, {Name: "optthree"},
++			},
++		},
++	}
++	op := &UnifiedOperation{
++		Name: "statusop", Type: TypeQuery, Endpoint: ep,
++		Arguments: []graphql.Argument{{Name: "statusarg", Type: "Status"}},
++	}
++	df := buildDetailForm(op, nil, enums, nil, nil, nil)
++	if df == nil {
++		t.Fatal("expected a detail form for an operation with an enum argument")
++	}
++
++	z := tui.NewMouseZone()
++	prefix := z.ID("detail")
++
++	settled := sentinelArmZones(t)
++	marked, _ := df.ViewMarked(op, prefix, z.Mark)
++	scanned := tui.ScanMouseZones(marked)
++	settled()
++
++	x, y := sentinelCellOf(t, scanned, "statusarg")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the first click on a closed dropdown to be handled")
++	}
++	if !df.items[0].dropdown.Expanded() {
++		t.Fatal("expected the first click to open the option list")
++	}
++	if !df.items[0].dropdown.Focused() {
++		t.Fatal("expected the first click to focus the dropdown it opened")
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected the first click to switch the argument behind the dropdown on")
++	}
++
++	settled = sentinelArmZones(t)
++	marked, _ = df.ViewMarked(op, prefix, z.Mark)
++	scanned = tui.ScanMouseZones(marked)
++	settled()
++
++	x, y = sentinelCellOf(t, scanned, "optthree")
++	if !df.HandleMouse(prefix, sentinelLeftClick(x, y)) {
++		t.Fatal("expected the click on an open option row to be handled")
++	}
++	if df.items[0].dropdown.Expanded() {
++		t.Fatal("expected picking an option to close the list")
++	}
++	if got := df.items[0].dropdown.Value(); got != "optthree" {
++		t.Fatalf("expected the clicked option to be the value, got %q", got)
++	}
++	if !df.items[0].enabled {
++		t.Fatal("expected the argument behind the dropdown to be switched on")
++	}
++}
++
++func TestExplorerClickOnAnOperationRowMovesTheCursorAndFocusesTheList(t *testing.T) {
++	model := sentinelExplorer(t, []UnifiedOperation{
++		{Name: "opalpha", Type: TypeQuery, Description: "first", Endpoint: "http://one/g"},
++		{Name: "opbeta", Type: TypeQuery, Description: "second", Endpoint: "http://two/g"},
++		{Name: "opgamma", Type: TypeQuery, Description: "third", Endpoint: "http://three/g"},
++	})
++	model.cursor = len(model.filtered) - 1
++	model.syncViewport()
++
++	settled := sentinelArmZones(t)
++	view := model.View()
++	settled()
++
++	x, y := sentinelCellBelow(t, view, "Search:", "opbeta")
++
++	for _, quiet := range []tea.MouseMsg{sentinelWheelDown(x, y), sentinelLeftDrag(x, y)} {
++		passed, _ := model.Update(quiet)
++		model = passed.(*Model)
++		if model.cursor == 1 {
++			t.Fatal("expected scroll and drag events to pass through rather than pick a row")
++		}
++	}
++
++	result, _ := model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if model.cursor != 1 {
++		t.Fatalf("expected the cursor on the clicked operation, got %d", model.cursor)
++	}
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected the operation list to take focus after the click")
++	}
++	if model.focus.Typing() {
++		t.Fatal("expected typing to be off after clicking an operation")
++	}
++
++	// The explorer draws a single stacked panel when the terminal is too narrow for
++	// two, and that view has to record its regions the same way the wide one does.
++	narrowed, _ := model.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
++	model = narrowed.(*Model)
++
++	settled = sentinelArmZones(t)
++	view = model.View()
++	settled()
++
++	x, y = sentinelCellBelow(t, view, "Search:", "opgamma")
++	result, _ = model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if model.cursor != 2 {
++		t.Fatalf("expected a click to work in the narrow layout too, cursor is %d", model.cursor)
++	}
++}
++
++func TestExplorerClickOnAnEndpointRowTogglesItBothWays(t *testing.T) {
++	model := sentinelExplorer(t, []UnifiedOperation{
++		{Name: "opalpha", Type: TypeQuery, Endpoint: "http://epalpha/g"},
++		{Name: "opbeta", Type: TypeQuery, Endpoint: "http://epbeta/g"},
++	})
++	model.search.Model.SetValue("e:")
++	model.endpointCursor = 0
++	model.applyFilterAndReset()
++
++	eps := model.filteredEndpoints()
++	if len(eps) != 2 {
++		t.Fatalf("expected the two endpoints of the sample operations, got %v", eps)
++	}
++	clicked := eps[1]
++	delete(model.activeEndpoints, clicked)
++
++	settled := sentinelArmZones(t)
++	view := model.View()
++	settled()
++
++	x, y := sentinelCellBelow(t, view, "Search:", clicked)
++	result, _ := model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if model.endpointCursor != 1 {
++		t.Fatalf("expected the endpoint cursor on the clicked row, got %d", model.endpointCursor)
++	}
++	if !model.activeEndpoints[clicked] {
++		t.Fatalf("expected clicking the switched off endpoint %q to switch it on", clicked)
++	}
++	if !model.activeEndpoints[eps[0]] {
++		t.Fatalf("expected the endpoint that was not clicked to keep its state")
++	}
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected the endpoint list to take focus after the click")
++	}
++	if model.focus.Typing() {
++		t.Fatal("expected typing to be off after clicking an endpoint")
++	}
++
++	settled = sentinelArmZones(t)
++	view = model.View()
++	settled()
++
++	x, y = sentinelCellBelow(t, view, "Search:", clicked)
++	result, _ = model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if model.activeEndpoints[clicked] {
++		t.Fatalf("expected clicking the switched on endpoint %q to switch it off", clicked)
++	}
++}
++
++func TestExplorerClickOnADetailRowFocusesTheDetailPanel(t *testing.T) {
++	model := sentinelExplorer(t, []UnifiedOperation{{
++		Name: "searchop", Type: TypeQuery, Endpoint: "http://one/g",
++		Arguments: []graphql.Argument{{Name: "detailarg", Type: "String"}},
++	}})
++
++	settled := sentinelArmZones(t)
++	view := model.View()
++	settled()
++
++	x, y := sentinelCellOf(t, view, "detailarg")
++	result, _ := model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if !model.focus.IsFocused(model.detailPanel) {
++		t.Fatal("expected the detail panel to take focus after clicking one of its rows")
++	}
++	if model.detailForm.cursor != 0 {
++		t.Fatalf("expected the detail cursor on the clicked row, got %d", model.detailForm.cursor)
++	}
++	if !model.detailForm.items[0].input.Model.Focused() {
++		t.Fatal("expected the clicked text argument to be ready for typing")
++	}
++}
++
++func TestExplorerClickOnTheSearchBoxFocusesTheListAndTyping(t *testing.T) {
++	model := sentinelExplorer(t, []UnifiedOperation{{
++		Name: "searchop", Type: TypeQuery, Endpoint: "http://one/g",
++		Arguments: []graphql.Argument{{Name: "detailarg", Type: "String"}},
++	}})
++	model.focus.FocusByNumber(model.detailPanel.Number)
++	model.syncSearchFocus()
++	if model.focus.LeftFocused() {
++		t.Fatal("expected the detail panel to hold focus before the click")
++	}
++
++	settled := sentinelArmZones(t)
++	view := model.View()
++	settled()
++
++	x, y := sentinelCellOf(t, view, "Search:")
++	result, _ := model.Update(sentinelLeftClick(x, y))
++	model = result.(*Model)
++
++	if !model.focus.LeftFocused() {
++		t.Fatal("expected the click on the search box to focus the list panel")
++	}
++	if !model.focus.Typing() {
++		t.Fatal("expected the click on the search box to turn typing on")
++	}
++	if !model.search.Model.Focused() {
++		t.Fatal("expected the search input to be ready for typing after the click")
++	}
++	if model.detailForm == nil || model.detailForm.Len() == 0 {
++		t.Fatal("expected the detail form to be live, so the click had two live regions to choose between")
++	}
++	if model.detailForm.items[0].input.Model.Focused() {
++		t.Fatal("expected the click on the search box to leave the detail form alone")
++	}
++	if model.focus.IsFocused(model.detailPanel) {
++		t.Fatal("expected the click on the search box not to focus the detail panel")
++	}
++}
+diff --git a/pkg/tui/sentinel_mouse_test.go b/pkg/tui/sentinel_mouse_test.go
+new file mode 100644
+index 0000000..2bb617f
+--- /dev/null
++++ b/pkg/tui/sentinel_mouse_test.go
+@@ -0,0 +1,464 @@
++package tui
++
++import (
++	"strings"
++	"testing"
++	"time"
++
++	tea "github.com/charmbracelet/bubbletea"
++	"github.com/charmbracelet/lipgloss"
++)
++
++// The zone manager stores marked regions on a background worker, and every scan
++// drops the regions recorded by earlier scans. sentinelArmZones registers a
++// throwaway region and hands back a wait function; once that region is gone the
++// worker has processed a later scan in full, so every region from that later
++// scan is readable.
++const sentinelZoneWait = 10 * time.Second
++
++func sentinelArmZones(t *testing.T) func() {
++	t.Helper()
++	z := NewMouseZone()
++	probe := z.ID("armed")
++	_ = ScanMouseZones(z.Mark(probe, "armed"))
++	sentinelAwaitZone(t, probe, true, "the probe region was never recorded")
++	return func() {
++		sentinelAwaitZone(t, probe, false,
++			"the rendered view never passed through ScanMouseZones")
++	}
++}
++
++func sentinelAwaitZone(t *testing.T, id string, want bool, msg string) {
++	t.Helper()
++	deadline := time.Now().Add(sentinelZoneWait)
++	for {
++		if _, _, _, _, ok := ZoneBounds(id); ok == want {
++			return
++		}
++		if time.Now().After(deadline) {
++			t.Fatalf("%s (zone %q)", msg, id)
++		}
++		time.Sleep(time.Millisecond)
++	}
++}
++
++// sentinelStripSequences removes terminal escape sequences so a rendered line can
++// be searched as plain text.
++func sentinelStripSequences(line string) string {
++	var out strings.Builder
++	for i := 0; i < len(line); {
++		if line[i] == 0x1b {
++			j := i + 1
++			if j < len(line) && line[j] == '[' {
++				j++
++				for j < len(line) && (line[j] < '@' || line[j] > '~') {
++					j++
++				}
++				if j < len(line) {
++					j++
++				}
++				i = j
++				continue
++			}
++			i++
++			continue
++		}
++		out.WriteByte(line[i])
++		i++
++	}
++	return out.String()
++}
++
++type sentinelCell struct{ x, y int }
++
++func sentinelFindAll(view, want string) []sentinelCell {
++	var found []sentinelCell
++	for row, line := range strings.Split(view, "\n") {
++		plain := sentinelStripSequences(line)
++		for at := 0; ; {
++			i := strings.Index(plain[at:], want)
++			if i < 0 {
++				break
++			}
++			at += i
++			found = append(found, sentinelCell{lipgloss.Width(plain[:at]), row})
++			at += len(want)
++		}
++	}
++	return found
++}
++
++// sentinelCellOf returns the screen cell where want is drawn in a rendered view.
++// It fails the test when the text is missing or drawn more than once, so a click
++// always lands somewhere unambiguous.
++func sentinelCellOf(t *testing.T, view, want string) (int, int) {
++	t.Helper()
++	type cell struct{ x, y int }
++	var found []cell
++	for row, line := range strings.Split(view, "\n") {
++		plain := sentinelStripSequences(line)
++		for at := 0; ; {
++			i := strings.Index(plain[at:], want)
++			if i < 0 {
++				break
++			}
++			at += i
++			found = append(found, cell{lipgloss.Width(plain[:at]), row})
++			at += len(want)
++		}
++	}
++	if len(found) != 1 {
++		t.Fatalf("expected %q to be drawn exactly once, it was drawn %d times", want, len(found))
++	}
++	return found[0].x, found[0].y
++}
++
++// sentinelCellBelow returns the cell where want is drawn under the row holding
++// anchor. The picker echoes its first item as the search placeholder, so a bare
++// search for that item would be ambiguous.
++func sentinelCellBelow(t *testing.T, view, anchor, want string) (int, int) {
++	t.Helper()
++	anchors := sentinelFindAll(view, anchor)
++	if len(anchors) != 1 {
++		t.Fatalf("expected the anchor %q to be drawn exactly once, it was drawn %d times",
++			anchor, len(anchors))
++	}
++	var below []sentinelCell
++	for _, c := range sentinelFindAll(view, want) {
++		if c.y > anchors[0].y {
++			below = append(below, c)
++		}
++	}
++	if len(below) != 1 {
++		t.Fatalf("expected %q to be drawn exactly once under %q, it was drawn %d times",
++			want, anchor, len(below))
++	}
++	return below[0].x, below[0].y
++}
++
++func sentinelLeftClick(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionRelease,
++	}
++}
++
++// sentinelLeftDrag is the pointer moving with the left button held, which is not
++// a click and has to fall through to whatever already handled mouse events.
++func sentinelLeftDrag(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonLeft,
++		Action: tea.MouseActionMotion,
++	}
++}
++
++func sentinelWheelDown(x, y int) tea.MouseMsg {
++	return tea.MouseMsg{
++		X:      x,
++		Y:      y,
++		Button: tea.MouseButtonWheelDown,
++		Action: tea.MouseActionPress,
++	}
++}
++
++func TestMouseZoneIDsDoNotCollideAcrossZones(t *testing.T) {
++	first := NewMouseZone()
++	second := NewMouseZone()
++
++	if first.ID("action") == second.ID("action") {
++		t.Fatalf("two zones produced the same ID for the same name: %q", first.ID("action"))
++	}
++	if first.ID("action") != first.ID("action") {
++		t.Fatal("the same zone produced two different IDs for one name")
++	}
++	if bare := first.ID(); bare == "" || !strings.HasPrefix(first.ID("action"), bare) {
++		t.Fatalf("expected a zone asked for no parts to return the prefix its other IDs are built on, got %q", bare)
++	}
++}
++
++func TestMouseZoneIDJoinsPartsWithColons(t *testing.T) {
++	z := NewMouseZone()
++
++	if got := z.ID("button", "save"); !strings.Contains(got, "button:save") {
++		t.Fatalf("expected the parts joined by a colon in %q", got)
++	}
++	if z.ID("button", "save") == z.ID("button", "cancel") {
++		t.Fatal("expected different parts to build different IDs")
++	}
++}
++
++func TestScanMouseZonesKeepsTextAndRecordsBounds(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("row")
++
++	marked := z.Mark(id, "hello")
++	if marked == "hello" {
++		t.Fatal("expected Mark to wrap the fragment with something Scan can find")
++	}
++
++	scanned := ScanMouseZones(marked)
++	if scanned != "hello" {
++		t.Fatalf("expected the visible text back unchanged, got %q", scanned)
++	}
++
++	sentinelAwaitZone(t, id, true, "the marked region was never recorded")
++	startX, startY, endX, endY, ok := ZoneBounds(id)
++	if !ok {
++		t.Fatal("expected bounds for a region that was just scanned")
++	}
++	if startX != 0 || startY != 0 {
++		t.Fatalf("expected the region to begin at the top left, got (%d,%d)", startX, startY)
++	}
++	if endY != startY {
++		t.Fatalf("expected a single line region, got rows %d to %d", startY, endY)
++	}
++	if endX-startX+1 != len("hello") {
++		t.Fatalf("expected the last cell of the region to be its final character, got columns %d to %d",
++			startX, endX)
++	}
++
++	// A later scan is a new picture of the screen, so what the previous one recorded
++	// has to go, or a region that is no longer drawn would still take clicks.
++	later := z.ID("later")
++	_ = ScanMouseZones(z.Mark(later, "world"))
++	sentinelAwaitZone(t, later, true, "the region in the later scan was never recorded")
++	sentinelAwaitZone(t, id, false, "a region from an earlier scan is still recorded")
++	if Hit(id, sentinelLeftClick(startX, startY)) {
++		t.Fatal("expected a region that is no longer drawn to stop taking clicks")
++	}
++}
++
++func TestZoneBoundsAndZonePosInsideAndOutsideARegion(t *testing.T) {
++	z := NewMouseZone()
++	id := z.ID("row")
++
++	_ = ScanMouseZones("pad " + z.Mark(id, "hello"))
++	sentinelAwaitZone(t, id, true, "the marked region was never recorded")
++
++	startX, startY, endX, endY, ok := ZoneBounds(id)
++	if !ok {
++		t.Fatal("expected bounds for a region that was just scanned")
++	}
++	if startX == 0 {
++		t.Fatal("expected the padded region to start away from the left edge")
++	}
++
++	inside := sentinelLeftClick(startX+2, startY)
++	if !Hit(id, inside) {
++		t.Fatal("expected a click inside the region to be a hit")
++	}
++	if x, y := ZonePos(id, inside); x != 2 || y != 0 {
++		t.Fatalf("expected the position relative to the region to be (2,0), got (%d,%d)", x, y)
++	}
++	if x, y := ZonePos(id, sentinelLeftClick(startX, startY)); x != 0 || y != 0 {
++		t.Fatalf("expected the first cell of the region to be (0,0), got (%d,%d)", x, y)
++	}
++
++	past := sentinelLeftClick(endX+1, endY)
++	if Hit(id, past) {
++		t.Fatal("expected a click one cell past the region to miss")
++	}
++	if x, y := ZonePos(id, past); x != -1 || y != -1 {
++		t.Fatalf("expected an out of range position for a click outside the region, got (%d,%d)", x, y)
++	}
++	if _, _, _, _, known := ZoneBounds(z.ID("never", "marked")); known {
++		t.Fatal("expected no bounds for a region that was never marked")
++	}
++	if Hit(z.ID("never", "marked"), sentinelLeftClick(0, 0)) {
++		t.Fatal("expected a region that was never marked to report no hits")
++	}
++}
++
++func TestIsLeftClickOnlyAcceptsALeftRelease(t *testing.T) {
++	if !IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease}) {
++		t.Fatal("expected a left button release to count as a click")
++	}
++	if IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}) {
++		t.Fatal("expected a left button press on its own not to count as a click")
++	}
++	if IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionRelease}) {
++		t.Fatal("expected a right button release not to count as a click")
++	}
++	if IsLeftClick(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}) {
++		t.Fatal("expected a wheel event not to count as a click")
++	}
++}
++
++func TestDropdownExpandOpensAtTheSelectedOption(t *testing.T) {
++	dd := NewDropdown("role", testOptions, 1)
++
++	dd.Expand()
++
++	if !dd.Expanded() {
++		t.Fatal("expected Expand to open the option list")
++	}
++	if dd.Cursor() != dd.Selected {
++		t.Fatalf("expected the cursor on the selected option %d, got %d", dd.Selected, dd.Cursor())
++	}
++}
++
++func TestDropdownSelectChoosesClampsAndCollapses(t *testing.T) {
++	dd := NewDropdown("role", testOptions, 0)
++	last := len(testOptions) - 1
++
++	dd.Expand()
++	dd.Select(last)
++	if dd.Expanded() {
++		t.Fatal("expected Select to close the option list")
++	}
++	if dd.Selected != last || dd.Value() != testOptions[last] {
++		t.Fatalf("Selected = %d and Value = %q, want %d and %q",
++			dd.Selected, dd.Value(), last, testOptions[last])
++	}
++
++	dd.Select(-4)
++	if dd.Selected != 0 || dd.Value() != testOptions[0] {
++		t.Fatalf("expected an index below the range to resolve to the first option, got %d", dd.Selected)
++	}
++
++	dd.Select(len(testOptions) + 3)
++	if dd.Selected != last || dd.Value() != testOptions[last] {
++		t.Fatalf("expected an index past the range to resolve to the last option, got %d", dd.Selected)
++	}
++}
++
++func TestDropdownExpandAndSelectWithoutOptions(t *testing.T) {
++	dd := NewDropdown("role", nil, 0)
++
++	dd.Expand()
++	if dd.Expanded() {
++		t.Fatal("expected a dropdown with no options to stay closed")
++	}
++
++	dd.Select(2)
++	if dd.Expanded() {
++		t.Fatal("expected a dropdown with no options to stay closed after a selection")
++	}
++	if dd.Selected != 0 || dd.Cursor() != 0 {
++		t.Fatalf("expected selection and cursor to fall back to 0, got %d and %d",
++			dd.Selected, dd.Cursor())
++	}
++	if dd.Value() != "" {
++		t.Fatalf("expected no value from a dropdown with no options, got %q", dd.Value())
++	}
++}
++
++func TestSelectorClickOnARowSelectsAndConfirmsIt(t *testing.T) {
++	m := NewSelector([]string{"itemone", "itemtwo", "itemthree"}, "Pick: ")
++	m.Cursor = 2
++	m.syncViewport()
++
++	settled := sentinelArmZones(t)
++	view := m.View()
++	settled()
++
++	x, y := sentinelCellOf(t, view, "itemtwo")
++
++	dragged, _ := m.Update(sentinelLeftDrag(x, y))
++	if held := dragged.(*SelectorModel); held.Selected != "" || held.Cursor != 2 {
++		t.Fatalf("expected dragging across a row to select nothing and leave the cursor at 2, got %q and %d",
++			held.Selected, held.Cursor)
++	}
++
++	updated, cmd := m.Update(sentinelLeftClick(x, y))
++	model := updated.(*SelectorModel)
++
++	if model.Cursor != 1 {
++		t.Fatalf("expected the cursor to move to the clicked row, got %d", model.Cursor)
++	}
++	if model.Selected != "itemtwo" {
++		t.Fatalf("expected the clicked row to become the selection, got %q", model.Selected)
++	}
++	if cmd == nil {
++		t.Fatal("expected the click to confirm the selection and end the picker")
++	}
++	if _, quitting := cmd().(tea.QuitMsg); !quitting {
++		t.Fatal("expected the command the click returns to be the one that ends the picker")
++	}
++
++	// Every visible row has to be clickable, not just the ones below the first.
++	first := NewSelector([]string{"itemone", "itemtwo", "itemthree"}, "Pick: ")
++	first.Cursor = 2
++	first.syncViewport()
++
++	settled = sentinelArmZones(t)
++	view = first.View()
++	settled()
++
++	x, y = sentinelCellBelow(t, view, "Pick:", "itemone")
++	updated, cmd = first.Update(sentinelLeftClick(x, y))
++	top := updated.(*SelectorModel)
++	if top.Cursor != 0 || top.Selected != "itemone" {
++		t.Fatalf("expected the first row to be clickable too, cursor %d and selection %q",
++			top.Cursor, top.Selected)
++	}
++	if cmd == nil {
++		t.Fatal("expected clicking the first row to confirm it as well")
++	}
++}
++
++func TestSelectorClickOnTheSearchAreaFocusesTheInput(t *testing.T) {
++	m := NewSelector([]string{"itemone", "itemtwo"}, "Pick: ")
++	m.TextInput.Model.Blur()
++
++	settled := sentinelArmZones(t)
++	view := m.View()
++	settled()
++
++	x, y := sentinelCellOf(t, view, "Pick:")
++	updated, _ := m.Update(sentinelLeftClick(x, y))
++	model := updated.(*SelectorModel)
++
++	if !model.TextInput.Model.Focused() {
++		t.Fatal("expected a click on the search area to focus the filter input")
++	}
++	if model.Selected != "" {
++		t.Fatalf("expected a click on the search area not to select anything, got %q", model.Selected)
++	}
++}
++
++func TestSelectorScrollAndDragStillReachTheListWithoutSelecting(t *testing.T) {
++	items := make([]string, 0, 12)
++	for i := range 12 {
++		items = append(items, "rowvalue"+string(rune('a'+i)))
++	}
++	m := NewSelector(items, "Pick: ")
++	m.Cursor = 0
++	m.syncViewport()
++
++	before := m.viewport.YOffset
++	updated, _ := m.Update(sentinelWheelDown(0, 0))
++	model := updated.(*SelectorModel)
++
++	if model.viewport.YOffset <= before {
++		t.Fatalf("expected a scroll event to reach the list viewport, offset stayed at %d",
++			model.viewport.YOffset)
++	}
++	if model.Selected != "" || model.Cursor != 0 {
++		t.Fatalf("expected a scroll event to select nothing and move no cursor, got %q and %d",
++			model.Selected, model.Cursor)
++	}
++
++	scrolled := model.viewport.YOffset
++	updated, _ = model.Update(sentinelLeftDrag(2, 5))
++	model = updated.(*SelectorModel)
++
++	if model.Selected != "" || model.Cursor != 0 {
++		t.Fatalf("expected a drag to select nothing and move no cursor, got %q and %d",
++			model.Selected, model.Cursor)
++	}
++	if model.viewport.YOffset != scrolled {
++		t.Fatalf("expected a drag to leave the list where scrolling put it, offset moved to %d",
++			model.viewport.YOffset)
++	}
++
++	updated, _ = model.Update(sentinelWheelDown(0, 0))
++	model = updated.(*SelectorModel)
++	if model.viewport.YOffset <= scrolled {
++		t.Fatal("expected scrolling to keep working after a drag")
++	}
++}

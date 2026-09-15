@@ -1,0 +1,161 @@
+Submitter Answers - Fixable
+Task: 20260805_220102__xaaha_hulak__118
+
+What is your analysis of the Sentinel task? (both occurrences)
+Fixable
+[Internal] Validity: Fixable
+
+Select where the task had issues (check all that apply):
+- [x] Instructions
+- [x] Tests
+- [x] Oracle Solution
+- [x] Environment/Dockerfile
+
+What issues did you find with the task?
+- [x] Every requirement in the instructions is not properly tested
+- [x] All test requirements are not properly specified in the instructions
+- [ ] The instructions appear LLM generated
+- [x] The instructions are overly-prescriptive
+- [x] The task leaks solution information
+- [x] The oracle does not implement the solution following the instructions
+- [ ] Less than 10 fail-to-pass tests in the test suite
+
+Issue details:
+
+1) All test requirements are not properly specified in the instructions - the graded tests reached into the implementation for private helpers at six call sites, across five distinct names, none of which exists at the base commit. tests.patch line 247 calls model.operationZoneID(1), line 283 calls model.endpointZoneID(1), line 318 calls model.detailForm.itemZoneID(model.detailMousePrefix(), 0), line 353 calls model.searchZoneID(), line 515 calls m.itemZoneID(1) and line 541 calls m.searchZoneID(). A git grep for each of those at the base commit e1cd5e43 returns nothing. Four of the five names appear nowhere in instruction.md. The fifth, itemZoneID, appears once, but on a different type and with a different argument list, so it does not cover the two calls the tests make. These are private helpers, so the only way an agent could match them is by guessing the exact spelling the reference solution happened to pick. Go compiles a package as a unit, so one wrong private name stops the whole test binary building and every graded id in that package reports as missing. The blast radius was all 17 graded ids for an implementation that met the written spec in full. The arrival metadata says both frontier models scored zero of three, and that number cannot tell you whether the task is hard or whether the names were unguessable.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The graded tests no longer ask the implementation for a zone id. They render the real view, find the row they want to click by the text drawn on it, and send the click at that cell, which is what a user does. Locating a click by what is on screen is also a stronger check than looking a private id up, because it only passes when the marked region really lines up with the visible row. That let every one of the six private names come out of both the tests and the instruction. The rewritten tests are two new files, pkg/tui/sentinel_mouse_test.go and pkg/tui/gqlexplorer/sentinel_mouse_test.go, and every identifier they still touch is either stated in the instruction or already present at the base commit.
+
+2) Every requirement in the instructions is not properly tested - three separate gaps. First, there was no regression guard at all. tests/config.json line 37 shipped an empty pass_to_pass with allow_extra_failures set to true, while the instruction required that all existing keyboard, vim motion and filtering behaviour keep working. The two packages the patch edits hold 330 existing tests and not one of them was graded, so an implementation could have broken every one and still scored 1.0. Second, the instruction stated that Select clamps an index below the range to the first option and an index at or past the end to the last, and that a dropdown with no options stays closed with its selection and cursor reset, and nothing asserted any of that. Third, the instruction required that scroll and drag events still reach the filter input and the list, and nothing asserted that either.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? pass_to_pass went from 0 to 331 entries, the 330 tests that already existed in the two packages the change touches plus one new fall-through case. All 330 of the existing ones were measured passing at the base commit before they were listed, and the new one asserts behaviour the base already has, which is why it is a guard rather than a graded requirement. The clamping, the empty dropdown, and scroll and drag falling through each got a test. A later review pass found four more requirements with no assertion and they are closed too. Rendering the form with an empty prefix has to match the plain view and mark nothing, a plain toggle row has to behave like the space key in both directions, a drag has to be told apart from a click at the same cell, and the single panel view the explorer draws on a narrow terminal has to record its regions like the wide one. Every one of them was proved by breaking the behaviour in a throwaway copy and watching the named test go red. The graded set went from 17 to 19.
+
+3) The instructions are overly-prescriptive - the instruction named five internal source files and told the agent which method to edit. It said the mouse layer lives in a new file pkg/tui/mouse.go, that the dropdown work happens in pkg/tui/dropdown.go, and it headed three sections with pkg/tui/selector.go, pkg/tui/gqlexplorer/model.go and pkg/tui/gqlexplorer/formitem.go. It also said that within Update a tea.MouseMsg is handled ahead of key handling and directed to a mouse handler, which is a procedure rather than a requirement.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Every source file path is gone and so is the ordering step inside Update. The instruction now states the package the new public surface has to live under, because the explorer code and the tests both reach it as an import, and it names the existing types that gain methods. Where the code goes inside that package is left to the agent. The instruction went from 10588 bytes to 7204, after round 2 added the behaviour described under PR additions and round 3 dropped the module pin.
+
+4) The task leaks solution information - two kinds. The instruction restated the graded expectations as worked examples, so several requirements read as the test transcribed into prose. It gave the cursor index and the selected string a three item list produces after a click, the exact end coordinate of a five cell region, the item count a two item form reaches after clicking an expandable field, and which option index a click two rows down selects. It also carried a line telling the agent not to modify any test files, which points straight at the graded artifact and still does not stop an honest agent writing its own test beside the code it was asked to build.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Every worked example is now a plain statement of the contract. The instruction says that clicking a row moves the cursor there, makes it the selection and confirms it, without giving the index or the string a particular fixture produces. It says the recorded end coordinate names the last cell a region covers rather than the first cell after it, which is the real ambiguity an implementer has to resolve, without giving the coordinate. The test-file line is gone, and the guarantee it was standing in for now lives in the verifier, which restores the base test tree before it applies the graded tests.
+
+5) The oracle does not implement the solution following the instructions - solution/golden.patch is faithful and matches the source PR file for file, but solve.sh could not deliver it reliably. Line 9 of solve.sh reverse-applied golden.patch as its else branch, so the second run against an already patched tree undid the fix and exited 0 as if it had succeeded. The platform runs the golden solution three times and needs all three to pass.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? solve.sh is now forward only. It probes with a reverse check first, which reports that the patch is already in without changing anything, then applies plainly, then retries with three way merging, then fails loudly. Three applies in one container now leave the same eight changed files each time and the verifier scores 1.0 on all three.
+
+Additional findings outside the listed categories:
+
+6) The verifier had no way to survive an agent that writes its own tests. tests/test.sh line 69 applied tests.patch straight onto whatever tree the agent left behind, and the patch created pkg/tui/mouse_test.go, which is the file a Go developer writes for the new pkg/tui/mouse.go the instruction asked for. A create cannot merge with a file that is already there, so the patch fails, the verifier reports an infrastructure error and the trial is scored as a harness failure rather than as a result.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? tests/test.sh now carries a gzipped archive of all 46 base test files and the golden fixture directory as base64 inside the script itself. It deletes every test file in the checkout and unpacks the base ones before applying the graded tests, so no file an agent wrote can collide and no test an agent wrote can run in the graded suite. The payload sits inside test.sh because the tests directory only accepts four file names, and it is not built on git because the workspace the verifier runs in is not a git checkout. Proved on the zip going up now against an agent that writes its own mouse_test.go, deletes a base test file, leaves a symlink at a test path, commits everything and removes .git. It scores 1.0 at 350 of 350, with the deleted file back and the symlink gone.
+
+7) The grader awarded full reward while the test command had failed. tests/test.sh line 507 decided success as "not missing_required and not unexpected", and the raw exit code it had recorded twice a few lines earlier was never read. I checked that rather than assuming it. I broke a package outside the graded ones so the repo no longer compiles, ran the same tree through both graders, and the shipped one wrote reward 1.0 with a recorded exit status of 1 while the fixed one wrote 0.0.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The exit status is now part of the success expression rather than an early bail out, so a failing run stays an ordinary grading failure instead of being reported as an invalid trial. The generated runner also emits set -e and is invoked with pipefail, so the status that reaches the gate is the suite's own. I measured the bare exit of the graded command on a correct tree first, at the base commit and after the oracle, and it is 0 in both cases, so the gate cannot fail a healthy run.
+
+8) Git metadata in the shipped repo. git fsck reported "refs/remotes/origin/HEAD: invalid sha1 pointer 0000000000000000000000000000000000000000", which git remote and for-each-ref both miss, so nothing else in the checklist catches it. git status also reported scripts/install-hooks.sh as modified at the base commit, a lost executable bit on a file nobody had edited.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The broken reference is removed, the mode is restored to what the base commit records, the working tree is clean and fsck is silent. Regenerating tests.patch left the two graded test files as unreachable blobs in the object store and those were pruned as well, so nothing readable from an agent path carries the graded tests.
+
+9) tests/test.sh and solution/solve.sh both shipped at mode 0644, and test.sh could not run under a plain POSIX shell because of its RUNNER array. Both are failures that only show up at run time.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? Both scripts are 0755 in the zip and both re-exec themselves under bash before anything else runs, so handing either of them to sh now works.
+
+10) task.toml. repo_license was the empty string while the repository ships an MIT licence, the [environment] os field was missing, difficulty_explanation was missing, [verifier] timeout_sec was 300 while the command timeout it contains was 1800 so the inner limit could never fire, and [agent] timeout_sec was 1800 against a documented ceiling of 7200 on a task whose own metadata estimates 150 expert minutes.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? repo_license is MIT, os is linux, a difficulty_explanation is written, the verifier budget is 900 with the command budget at 600 inside it, and the agent budget is the documented 7200. Measured runtimes for context, the image builds in 40 to 85 seconds and the whole verifier finishes in 1 to 3 seconds.
+
+11) environment/Dockerfile line 34 ran "go get golang.org/x/tools@latest" while building a coverage helper, so the image contents depended on the day it was built.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The version is pinned, and the tool still builds and is present in the image.
+
+12) The shipped repository read as dirty for anyone who unpacked it with a tool that drops permission bits. The zip always carried scripts/install-hooks.sh as executable, and unzip gives back 755 with a clean tree. Python's zipfile does not restore permission bits, and after that extraction the same repository reports "old mode 100755, new mode 100644" on that one file.
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? The mode is normalised to 0755 and core.fileMode is set to false in the repository config, so the tree reads clean whatever unpacked it. Measured both ways on the shipped zip. unzip gives mode 755 and an empty status, Python's zipfile gives mode 664 and an empty status, and flipping core.fileMode back to true on that same tree reproduces the mode line exactly.
+
+13) Garbage collection left .git/refs/heads empty, and an empty directory does not survive every extractor. After the pre-zip scrub, every reference lived in packed-refs and the loose file was gone, so .git/refs held nothing but an empty folder. Anything downstream that drops empty directories then leaves a half-present repository, and Go refuses to build against one, with "error obtaining VCS status: exit status 128".
+- Is this issue fixable or not fixable? Fixable.
+- If fixable, how? refs/heads/main is written back as a real file after the collection, so there are no empty directories under .git at all, and GOFLAGS carries -buildvcs=false in both the image and the verifier environment so no build reads git state. Measured on the shipped zip with the repository intact, with empty directories deleted, with refs removed, and with .git deleted outright, and all four score reward 1.0.
+
+--- Phase 2 (completed after the evals pass) ---
+
+Files Changed:
+1. instruction.md
+   Changed: rewritten. Removed the five source file paths and the step describing where inside Update to handle the message, replaced the worked examples with plain statements of each contract, removed the line telling the agent not to modify test files, dropped the requirement about the option the program is started with, and stated the required public surface instead. One sentence was rewritten again later: the claim that a click resolves against the left panel before the detail form described an ordering nothing can observe, and it now reads that a click the left panel handles must not also reach the detail form, which is what the tests check. A later round added the paragraph describing how far a switch reaches, which is the behaviour taken from the related pull request and the only requirement this task has gained. Later again, the pin on a specific module was dropped, because nothing in the graded suite enforced it and it was the line the quality report named first, so the marker encoding is now the implementer's choice. The rule that a fresh scan replaces what the one before it recorded was written down, because the tests already depended on it. The scan was clarified as a package level function rather than something each zone owns, the endpoint sentence was narrowed to defer to the keyboard, and the constraint line stopped claiming that nothing about the keyboard changes, since one thing deliberately does. 10588 bytes to 7204, longest paragraph 705 characters.
+   Why: closes issues 3 and 4, and closes the naming half of issue 1 by stating exactly the surface the graded tests use and nothing private.
+2. environment/problem_statement.md
+   Changed: re-copied from instruction.md so the two files are byte identical.
+   Why: the pair has to stay in step.
+3. tests/tests.patch
+   Changed: regenerated as a create-only patch of two new files, pkg/tui/sentinel_mouse_test.go and pkg/tui/gqlexplorer/sentinel_mouse_test.go. It previously modified four pre-existing test files and created a fifth. The graded tests now locate their click target by looking for the row in the rendered view instead of asking the implementation for a private zone id, and the coverage gaps in issue 2 are closed. One test was added for the plain toggle row, one was renamed and widened to cover drag as well as scroll, and seven assertions were added to tests that already existed. Later rounds added one test for how far a switch reaches and removed the last call to a private helper from it, so no graded test asks the implementation for a name again. Three more assertions went into tests that already existed, covering a fresh scan replacing the last one, the first row of the picker being clickable like the rest, and a click on a list row reaching as far as the space key.
+   Why: closes issues 1, 2 and 6. A create-only patch of files nobody else would write cannot conflict with agent edits, and the new files carry names an agent has no reason to choose.
+4. tests/config.json
+   Changed: fail_to_pass 17 to 19 and rewritten to the full import path form, with the two zone bounds cases merged into one to make room for the added behaviour, pass_to_pass 0 to 331, -count=1 added to the test command, execution.timeout_sec 1800 to 600, selected_test_files_to_run repointed at the two new files, and execution.env set to GOFLAGS=-buildvcs=false.
+   Why: closes issue 2. The full import path makes the grader match each id exactly instead of falling back to a suffix search, which is fragile once 331 names are in play.
+5. tests/test.sh
+   Changed: a bash re-exec guard ahead of everything else, a base64 archive of the base test tree and the golden fixtures embedded in the script and unpacked over a deleted test tree before the graded tests are applied, set -e emitted into the generated runner, pipefail on the runner invocation, and the recorded exit status added to the grader's success expression. The wipe that runs before the archive is unpacked now removes a directory or a symlink sitting at a test path as well as a regular file, and the runner appends to the error log rather than truncating it, so the restore and patch messages survive for whoever reads the artifact.
+   Why: closes issues 6, 7 and 9.
+6. solution/golden.patch
+   Changed: extended with the two behaviours described under PR additions. One shared helper decides how far a switch reaches and both the mouse path and the keyboard path go through it, and the form builder starts the rows of an optional argument switched off. Still 8 files and still no test file.
+   Why: the difficulty screen measured the task easy at 3 of 4 on both models, and this is the added scope that answers it.
+7. solution/solve.sh
+   Changed: replaced with a forward-only script that probes for an already applied patch, applies, retries with three way merging, then fails loudly. Same bash re-exec guard.
+   Why: closes issues 5 and 9.
+8. task.toml
+   Changed: repo_license set to MIT, os set to linux under [environment], a difficulty_explanation added, [verifier] timeout_sec 300 to 900, [agent] timeout_sec 1800 to 7200. At the reviewer's request difficulty and model_difficulty were both set to medium. The recorded pass rates carry the last full evaluation, 4/4 for Opus and 2/4 for Codex. They were briefly set to the 3/4 figures from the cheap screen and put back, because the quality report read screen numbers as invalid evidence for the tier. difficulty_explanation now covers the added behaviour.
+   Why: closes issue 10, and records the difficulty evidence the reviewer asked for. The tier moved once, from hard to medium, at the reviewer's direct request, and has not been touched since.
+9. environment/Dockerfile
+   Changed: the unpinned go get pinned to v0.38.0, and GOFLAGS set to -buildvcs=false.
+   Why: closes issue 11, and stops the Go toolchain reading git state during a build.
+10. environment/repo/scripts/install-hooks.sh
+   Changed: executable bit restored to what the base commit records, and normalised to 0755. The contents are untouched.
+   Why: the shipped tree has to match the base commit, and it did not.
+11. environment/repo/.git
+   Changed: metadata only. Removed the broken refs/remotes/origin/HEAD, expired the reflog, pruned unreachable objects, wrote refs/heads/main back as a real file after the garbage collection so .git/refs is not an empty directory, and set core.fileMode to false.
+   Why: closes issue 8, and closes issues 12 and 13.
+
+PR additions:
+The original PR is untouched and two behaviours are added on top of it, both adapted from xaaha/hulak PR 155, "Bug Fix: GQL UI Issues", which is a later pull request in the same repository that patches DetailForm.HandleMouse, the very method PR 118 introduces. First, how far a switch reaches, and it applies to a click and to the space key alike. An argument whose type is an input object is drawn as one row per field and those rows all carry the same argument name, so the helper that PR 118 calls switches every sibling at once. Switching one row now changes that row alone, while a row standing for a whole argument and the rows of a list argument still move as a group, and the keyboard and the mouse go through the same rule. Second, an optional argument starts every row it expands into switched off, including a field that is required in its own right, and that field still reports itself as required. Neither behaviour is copied wholesale from PR 155, and nothing PR 118 does has been reduced or replaced. To be exact about the reach, that pull request changes two files, pkg/tui/gqlexplorer/formitem.go and its test file. All three source changes in formitem.go were adapted, because they are one behaviour between them, and its 124 lines of tests were not taken.
+
+Post-fix confirmation (each verified after fixes):
+[x] Every requirement in the instructions is properly tested
+[x] All test requirements are properly specified in the instructions
+[x] The instructions do not sound like an LLM generated them
+[x] The instructions are not overly-prescriptive
+[x] The task does not leak solution information
+[x] The oracle implements the solution following the instructions
+[x] The PR was not modified in any way beyond what is allowed by the guidelines
+[x] More than 10 fail-to-pass tests in the test suite (counted: 19)
+
+Send to reviewer: No, not yet. The judge sent this back and the difficulty screen has not run since, so two of the conditions I check before sending are unmeasured. Everything I can check without the platform is green against the zip going up now. I will check the box once the judge passes and the screen comes back at Medium or better.
+
+What makes this task difficult?
+The work is one feature spread over two screens that already exist and have to keep behaving exactly as they did. A click-region layer has to hand out ids that never collide between components, wrap parts of a view without changing a single visible character, and record where each marked region ended up on screen after lipgloss has composed panels, borders and a scrolling viewport around it, with each fresh scan replacing what the last one recorded. Then five call sites have to agree on how a click becomes an action, the picker, the operation list, the endpoint list, the detail form and the search box, each with its own focus and typing state to move. Two things catch people. The regions are only registered if every view goes out through ScanMouseZones, and the explorer draws a wide two panel layout and a narrow stacked one, so an implementation can get the model exactly right and still miss every click on a narrow terminal. And DetailForm draws one row per field for an argument whose type is an input object, with every one of those rows carrying the same argument name, so setArgEnabled, sitting right there in formitem.go, switches all of them at once. Reaching for it is the natural move and it is the wrong one. The author of the upstream change made exactly that mistake and a later pull request had to go back and fix it.
+
+Senior engineer estimate: 40+ minutes
+
+Comments for Reviewer:
+Revision 3, answering the judge. The blocking item was mine and it was a repeat. A graded test called an unexported helper the instruction never names, which is the same defect revision 0 existed to remove, and it came back in revision 2 when I added a list row check and reached for the helper instead of the screen. The test now finds that row the way every other one does, by the text drawn on it, and no graded test calls a name that is absent from the base commit and missing from the instruction. I re-ran that audit over every identifier in both graded files rather than only the one the report named, and it is clean.
+Auditing it turned up a second case of the same shape that the report only hinted at. The helper my tests use to wait for regions to be recorded works by watching an earlier region disappear, which quietly required that a fresh scan replaces what the previous one recorded. The instruction never said so, so an implementation that kept every region would have failed most of the suite while matching the written contract. I measured that, then stated the rule in the instruction and put an assertion on it in the test that already scans, so it is now a contract rather than an assumption.
+The module pin is gone, and that closes two of the report's points at once. It was the line both readers named first for over-specification, and the same report noted that nothing in the suite enforced it, so a correct implementation with its own marker encoding would have passed while breaking a stated rule. The instruction now says only that the verifier runs offline and leaves the marker encoding to the implementer. The oracle still uses the module the image warms, which the instruction neither requires nor forbids.
+I also clarified the one thing the report called ambiguous, that the scan is a package level function rather than something each zone owns.
+While I had the instruction open I ran a clause by clause sweep, breaking each stated rule in a throwaway copy and checking a named test went red. Everything held except one. The picker is required to mark every visible row, and leaving the first row unmarked passed the whole suite, because no test ever clicked it. That is closed inside the test that was already there, so the graded count is unchanged at 19.
+On the pass rate fields, the report called the numbers I recorded last round invalid evidence because they came from the cheap single arm screen. They are back to the figures from the last full evaluation, 4 of 4 for Opus and 2 of 4 for Codex, which is what the earlier reviewer asked for. Both describe the bundle as it was two rounds ago and neither reflects what this round changed. The tier itself moved once, from hard to medium, because the reviewer asked for it directly, and I have not touched it since.
+Fresh numbers on the zip going up now, from fresh extracts and an image built from one of them. The empty solution scores 0.0 with a recorded exit status of 1 and no infrastructure error. The golden solution scores 1.0 three times in three fresh containers at 350 of 350, and three applies in one container leave the tree stable. Ten breaks each drop the reward to 0.0 and each one names the test that caught it. The two aimed at what changed this round are worth quoting. Keeping a region recorded after a later scan fails TestScanMouseZonesKeepsTextAndRecordsBounds, and leaving the top row of the picker unmarked fails TestSelectorClickOnARowSelectsAndConfirmsIt. A committing agent that writes its own tests, deletes a base test file and leaves a symlink at a test path still scores 1.0. The exit code gate still separates, the same break scoring 1.0 on the stock grader and 0.0 here. The repository survives all four states of a damaged git directory, and the zip unpacks clean under two different extractors.
+Two probes lied to me across these rounds and both were caught by the same guard. One left an unused variable so the package never compiled, and a run with no tests looks exactly like a run with no failures. The other simply failed to match after a later round rewrote the code it patched. Every probe now asserts its own edit landed exactly once and builds before it reads a reward.
+Left alone on purpose and declared. The package the new API lives under is still named, because the graded tests import it and that makes it the contract rather than a hint. The coverage helper the image builds is pinned but still best effort and nothing in the verifier uses it. A Go graded id names an import path and a test function rather than a file, so nothing can work out automatically which file defines it, and I resolved that by hand instead. 330 of the 350 graded ids live in test files the patch does not touch, which is why the verifier carries the whole base test tree rather than a create only patch.
+
+Handling time
+
+How long did it take you to review the initial task and determine its validity?
+55 minutes
+
+How long did it take you to complete the initial task rewrite only?
+145 minutes
+
+How long did it take you to complete the additional questions on the form?
+15 minutes
+
+Total submission time: 215 minutes
+
+How long did it take you to complete all revisions?
+210 minutes

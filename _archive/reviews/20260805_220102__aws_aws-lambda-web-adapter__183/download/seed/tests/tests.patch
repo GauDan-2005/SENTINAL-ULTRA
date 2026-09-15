@@ -1,0 +1,1034 @@
+diff --git a/tests/e2e/main.rs b/tests/e2e/main.rs
+deleted file mode 100644
+index 4809069..0000000
+--- a/tests/e2e/main.rs
++++ /dev/null
+@@ -1,130 +0,0 @@
+-use flate2::read::GzDecoder;
+-use http::Uri;
+-use hyper::{Body, Client, Method, Request};
+-use hyper_tls::HttpsConnector;
+-use lambda_http::aws_lambda_events::serde_json;
+-use lambda_http::aws_lambda_events::serde_json::Value;
+-use std::env;
+-use std::io;
+-use std::io::prelude::*;
+-
+-fn get_endpoints() -> Vec<Option<String>> {
+-    let configurations = [
+-        "OCI_REST_ENDPOINT",
+-        "OCI_HTTP_ENDPOINT",
+-        "OCI_ALB_ENDPOINT",
+-        // "OCI_FURL_ENDPOINT",
+-        "ZIP_REST_ENDPOINT",
+-        "ZIP_HTTP_ENDPOINT",
+-        "ZIP_ALB_ENDPOINT",
+-        // "ZIP_FURL_ENDPOINT",
+-    ];
+-
+-    configurations.iter().map(|e| env::var(e).ok()).collect()
+-}
+-
+-fn decode_reader(bytes: &Vec<u8>) -> io::Result<String> {
+-    let mut gz = GzDecoder::new(&bytes[..]);
+-    let mut s = String::new();
+-    gz.read_to_string(&mut s)?;
+-    Ok(s)
+-}
+-
+-#[ignore]
+-#[tokio::test]
+-async fn test_http_basic_request() {
+-    for endpoint in get_endpoints().iter() {
+-        if let Some(endpoint) = endpoint {
+-            let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+-            let response = client.get(endpoint.parse().unwrap()).await.unwrap();
+-
+-            assert_eq!(200, response.status());
+-        }
+-    }
+-}
+-
+-#[ignore]
+-#[tokio::test]
+-async fn test_http_headers() {
+-    for endpoint in get_endpoints().iter() {
+-        if let Some(endpoint) = endpoint {
+-            let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+-            let uri = endpoint.to_string() + "get";
+-            let req = Request::builder()
+-                .method(Method::GET)
+-                .uri(uri)
+-                .header("Foo", "Bar")
+-                .body(Body::empty())
+-                .unwrap();
+-            let resp = client.request(req).await.unwrap();
+-            let (parts, body) = resp.into_parts();
+-            let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+-            let body = serde_json::from_slice::<Value>(&*body_bytes).unwrap();
+-
+-            assert_eq!(200, parts.status.as_u16());
+-            assert!(body["headers"]["Foo"][0].is_string());
+-            assert_eq!(Some("Bar"), body["headers"]["Foo"][0].as_str());
+-        }
+-    }
+-}
+-
+-#[ignore]
+-#[tokio::test]
+-async fn test_http_query_params() {
+-    for endpoint in get_endpoints().iter() {
+-        if let Some(endpoint) = endpoint {
+-            let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+-            let parts = endpoint.parse::<Uri>().unwrap().into_parts();
+-            let uri = Uri::builder()
+-                .scheme(parts.scheme.unwrap())
+-                .authority(parts.authority.unwrap())
+-                .path_and_query("/get?foo=bar&fizz=buzz")
+-                .build()
+-                .unwrap();
+-            let req = Request::builder()
+-                .method(Method::GET)
+-                .uri(uri)
+-                .body(Body::empty())
+-                .unwrap();
+-            let resp = client.request(req).await.unwrap();
+-            let (parts, body) = resp.into_parts();
+-            let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+-            let body = serde_json::from_slice::<Value>(&*body_bytes).unwrap();
+-
+-            assert_eq!(200, parts.status.as_u16());
+-            assert!(body["args"]["fizz"][0].is_string());
+-            assert_eq!(Some("buzz"), body["args"]["fizz"][0].as_str());
+-            assert_eq!(Some("bar"), body["args"]["foo"][0].as_str());
+-        }
+-    }
+-}
+-
+-#[ignore]
+-#[tokio::test]
+-async fn test_http_compress() {
+-    for endpoint in get_endpoints().iter() {
+-        if let Some(endpoint) = endpoint {
+-            let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+-            let parts = endpoint.parse::<Uri>().unwrap().into_parts();
+-            let uri = Uri::builder()
+-                .scheme(parts.scheme.unwrap())
+-                .authority(parts.authority.unwrap())
+-                .path_and_query("/html")
+-                .build()
+-                .unwrap();
+-            let req = Request::builder()
+-                .method(Method::GET)
+-                .header("accept-encoding", "gzip")
+-                .uri(uri)
+-                .body(Body::empty())
+-                .unwrap();
+-            let resp = client.request(req).await.unwrap();
+-            let (parts, body) = resp.into_parts();
+-            let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+-            let body = decode_reader(&body_bytes.to_vec()).unwrap();
+-
+-            assert_eq!(200, parts.status.as_u16());
+-            assert!(body.contains("<html>"));
+-        }
+-    }
+-}
+diff --git a/tests/e2e/fixtures/go-httpbin-zip/.gitignore b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/.gitignore
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin-zip/.gitignore
+rename to tests/e2e_tests/fixtures/go-httpbin-tls-zip/.gitignore
+diff --git a/tests/e2e/fixtures/go-httpbin-zip/README.md b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/README.md
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin-zip/README.md
+rename to tests/e2e_tests/fixtures/go-httpbin-tls-zip/README.md
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/Makefile b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/Makefile
+new file mode 100644
+index 0000000..5697df1
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/Makefile
+@@ -0,0 +1,4 @@
++build-HttpBinFunction:
++	GOBIN=$(ARTIFACTS_DIR)/ go install github.com/mccutchen/go-httpbin/v2/cmd/go-httpbin@v2.4.1
++	cp bootstrap $(ARTIFACTS_DIR)/
++	cp -R certs $(ARTIFACTS_DIR)/
+\ No newline at end of file
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/bootstrap b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/bootstrap
+new file mode 100755
+index 0000000..d16e34c
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/bootstrap
+@@ -0,0 +1,3 @@
++#!/bin/bash
++
++exec ./go-httpbin -host 127.0.0.1 -port "$PORT" -https-cert-file ./certs/cert.pem -https-key-file ./certs/key.pem
+\ No newline at end of file
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/cert.pem b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/cert.pem
+new file mode 100644
+index 0000000..0db6495
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/cert.pem
+@@ -0,0 +1,32 @@
++-----BEGIN CERTIFICATE-----
++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
++-----END CERTIFICATE-----
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/key.pem b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/key.pem
+new file mode 100644
+index 0000000..38610b2
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/key.pem
+@@ -0,0 +1,52 @@
++-----BEGIN PRIVATE KEY-----
++MIIJQgIBADANBgkqhkiG9w0BAQEFAASCCSwwggkoAgEAAoICAQDrkA9d82vzHVL4
++W2NBEncBCTKGqTcpKVI5LGZ82Njb3EPw8mtSa27QF7dswD+PGbizjEtkdKVuSrZJ
++chdf9FIPpNzYwH2QSsCAAxu6Xh6lbuDtTkiq4vRFLPbX9AOHRigDEXp7vyhp1g/z
++FzuJx3RT76g/vjzmw+aUPn6FUxseHNHw2K49d9tY/b9ST4J3kdnLBILiEHJsuhRO
++VKVQQkIPMg4b7hgD4Bfw5RuyLqGZdDj3PGJgwS8FuZELuZzgvZjWV3KX/tyY5ofK
++2g1WSGDa7M6Ns3Ya5R6OkC0NEHqAZMjadTN3psYUM5QMczrF77KDg30mgBEfBfBW
++hWj5aIxwS76+SFrS8QaxdiGbwUS0d0QGvfV8rJCcjZVWmu4d0hrXUo3h2oB9a4zC
++JPIP2k+gEYNW486QXVzDW6F/C/wNVJ1t6DCF9kG5gDeiuBU1DwOYf41sfyHvNaqI
++8hWr94UBo4IP+D4p32K1WCjoXZtU4jGLan54ohP0GER8eLF2lz903rTQKf3NaKBS
++4d/3M2fwxUZS1HAhawqUcqwlI+1G4SnHqrUv4l5WfPF0vukjzAw2owCqYDYo+0FH
++nfAxrdl1W9ZraD8H4VoagJv06gh2Sia11K0z3DHsbHRfV1ts1CzR236oU/r521Yl
++NbAFix4MXRjg66byjP22h0iVeORmcwIDAQABAoICAFusf95/WlaN5flTj4gGiJu1
++mZ1Ag4AYXbB0cBpMRfEigqplnZDA0KpZYIAJPXMSfogZpEme/7axismAhkpIihse
++fPg5yWP7Q3lOPF9GO8UEJrMT0UH3+zpkqlgW1byyd+XhynoYRcESlrhzJS+UmNgF
++n8PW5FqmiLjOrWxzkE0iyC1kFkNDvvCeJ/P/j3W7JDhXNByIbA+WR0rItGFMt+qz
++/zutaFkxv/93GlU4wpk22uiU7nBbHlKrCiC3Bq+L+cwI0kcG35D9voEaZTBcEJ2C
++pUwOOHt1CXRP9chszk/jaStjizkYhWPdQtOpkIjxpNZ7uJvgIUmihQsW9miB4I0g
++IB+l3Ow4U0MvHtlpQY6LZ9zFEUNuOvndYLmZkP9T5QD2hLSf+8i9itWMC5qpc722
++FuE44Jfxnw0skHNhv62+LKLzPzU2KPUdH+btr42hrjYVaZv10/1KG/QQ6XYOJLs5
++R+gEhHVhcKULAtg/3fw2bmAmS8i6NHUsLYk0lFz5C9Y7YshnoJRaHsiFh1D/ZAIQ
++mDuzOY/VWaHo6aM91sRM8n+EqHxAqUn8519yYTgHJbvIdiHubs+k7Ka/W/ybozML
++iUEAgGtDG3v3YfmlDvV6tSzCyYaq/M+/tGlq99Ah28SoGrlrcTcdlsWJhlOHKWCV
++66zHlVjVbROlNwUwCQVZAoIBAQD9pfOFCMB3mrcgXkbbWV1adV18Jyj3FZB1o+EB
++Yt4f8H/XrcLNurR/pegQo0eTsoaHdxfHUSp7NWeUnNSnBdNY9nC+kl7YzSArkYsQ
+++Woox1MYgAXivMRjyMnPJ2+Bg4UMQWOb429pEfE416cDr0gk3Un93yM/un4Zjwsu
++swthEs2UCVXFnaIQy5NyOEnewm+NCKGvrVKNLjlqbEl0mBHe1oOVaIbTsTNQGWVu
++CKvos1paGtuZzY/GvFII88x1r3/kEvHVBz2KXp1iAnJ1qNdWEBJyQGgaDC+HUZUy
++pQjz5ubeU2m01nsSgb24+WMeL4hbki3AqY16jjNswiHWIWsFAoIBAQDtvy6IiWgc
++D31TyQwqy5MLmW6PV+cM/cgMJ0825FIGaiuFidHQ/yaGjMbW0WuH9k8mXz3MgT55
++mxcL08t3EYNJWMmXpP5cMlSN+zzikw1Nrk6ABJ/hCllckGSaEUQ5RcbEFnQgunbz
++4Za1Dd9j/0KgGEHRrZYQdrc4fG/pq7JASzvzfHSoHgEE3zCsWhLmhx4Q0lxYJif6
++bA5nBAEmLw3Yu6Dqh9xoCuOJfoOXAqvRLp1J/hqcXXn2PDuSVCbAV1cnKVZoMa4Z
++huARa9wjFfjj+2wrgiFrz+6dSaR/+pUKs5mMSUVTKgzfrPTjkQOr6AYqft+zWsb1
++ILLtnKPYGPUXAoIBAALbNYzP9mriYSGKLj4WGYkFPVJClqGBqqjIeaYsWNf/O1FQ
++cZsjeRje42gcjpfJMN6hprDl5xaQGWSBB5wB4sljrQ1YVJ0YYj5bWzeLt3hSFkt2
++VZqiCYweHLeqeAT7WCo1Kkv9GaoTO6YqN4VBGgzgOQ8Uzi7PiM/83mFePsiPD6WV
++HVQmXEbYJAbrP1m00tDBwiBaUU2psZfTNFiNxdW+kKjEDpCftDY4sv20N0tdiazu
++FH7845uXT00ugaTpnwUQeYyukjDWs+sAoA1XI2WitLJ4qzNv47EgaA+z8A/fD8Z9
++JfmVWLlyoJJOrKEQY/a0BLPgtOkmZMnavcrNgYkCggEBAMVaSERq25M/gGeGoqT7
++rCqayN4Qt+le2SrNjsIgMb7Fby9Awnzc8JwMTBqSaNLKMdXGhcQ3HSdRCIZ235UN
++YpAGNgG9oq/hz7K0dUwXiZmMMfmu3RCvyJJAAmKqJpnsRB0ODoQEhS3Ze4L76w5V
++HHdM64YktEciZOFs2nF8Z1Fbon5yN1w+29Wxd/P6KWpXiyunk6RQuCr2e9Yjythp
++gvMAfYlyEhIDx/GgpZc7TmksasC7QFfAeLdgNIs5c5mCZwRJGkMPylfCUEnl4Sz2
++1k5ZrOdI9HlMd+T09qqN1h62C6YaRIPOijU6m2Y0QHn49vVbsFJv7mwZIq5/srp1
++rS0CggEAVarssjNH1VdgsRy2zcYu7Fs3mCvqMYIiLz/V9YpXKNZKX1orZGjJfsnm
++rDfTtrUrkapC7r0/vZj+7nXsXUOE6RPoRrR31J8QCENWJBj7Y82cirSEIc5YUfVT
++IYMOTC3zUJ7HG20GaFPVyKZdjVUQdjdjDka8j4paMNIPFTCVtN/flBIS2N39TUh7
++atl1gFKdSJpuy4P0I8kTiVoT+2OAtMmZ0wWCBICvsQvoWC01aoJhZWfz3CLSFsIg
++al8XpOzI4GUuZADddus7n1prhsc0pF+viM0XK6S9uHXybn/m/XPoGsBcoY6lhZS0
+++hz58ionR0VxVTmfnsAv5VzIVivFGQ==
++-----END PRIVATE KEY-----
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-tls-zip/template.yaml b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/template.yaml
+new file mode 100644
+index 0000000..4f3b95b
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-tls-zip/template.yaml
+@@ -0,0 +1,200 @@
++AWSTemplateFormatVersion: '2010-09-09'
++Transform: AWS::Serverless-2016-10-31
++Description: >
++  Go-HttpBin-tls-Zip
++
++  Sample SAM Template for Go-HttpBin-tls-Zip
++
++Parameters:
++  Subnets:
++    Type: AWS::SSM::Parameter::Value<List<AWS::EC2::Subnet::Id>>
++    Default: /lambda-web-adapter/e2e/subnets
++  VpcId:
++    Type: AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>
++    Default: /lambda-web-adapter/e2e/vpcid
++  CertificateArn:
++    Type: AWS::SSM::Parameter::Value<String>
++    Default: /lambda-web-adapter/e2e/cert
++  Route53HostedZone:
++    Type: AWS::SSM::Parameter::Value<String>
++    Default: /lambda-web-adapter/e2e/hostedzone
++  Route53HostedZoneId:
++    Type: AWS::SSM::Parameter::Value<String>
++    Default: /lambda-web-adapter/e2e/hostedzoneid
++  AdapterLayerArn:
++    Type: AWS::SSM::Parameter::Value<String>
++    Default: /lambda-web-adapter/layer/x86_64/latest
++
++Globals:
++  Function:
++    Timeout: 10
++
++Resources:
++  RestApi:
++    Type: AWS::Serverless::Api
++    Properties:
++      StageName: Prod
++      BinaryMediaTypes:
++        - '*~1*'
++      Domain:
++        CertificateArn: !Ref CertificateArn
++        DomainName: !Sub httpbin-tls-rest-zip.${Route53HostedZone}
++        EndpointConfiguration: REGIONAL
++        Route53:
++          HostedZoneId: !Ref Route53HostedZoneId
++      EndpointConfiguration:
++        Type: REGIONAL
++
++  HttpApi:
++    Type: AWS::Serverless::HttpApi
++    Properties:
++      Domain:
++        CertificateArn: !Ref CertificateArn
++        DomainName: !Sub httpbin-tls-http-zip.${Route53HostedZone}
++        Route53:
++          HostedZoneId: !Ref Route53HostedZoneId
++
++  HttpBinFunction:
++    Type: AWS::Serverless::Function
++    Properties:
++      Architectures:
++        - x86_64
++      CodeUri: ./app
++      Handler: bootstrap
++      Runtime: provided.al2
++      MemorySize: 256
++      Environment:
++        Variables:
++          PORT: 8443
++          AWS_LWA_ENABLE_COMPRESSION: 'true'
++          AWS_LWA_ENABLE_TLS: true
++          AWS_LWA_TLS_SERVER_NAME: api.example.com
++          AWS_LWA_TLS_CERT_FILE: /var/task/certs/cert.pem
++      Layers:
++        - !Ref AdapterLayerArn
++      Events:
++        HttpAPIEvent:
++          Type: HttpApi
++          Properties:
++            ApiId: !Ref HttpApi
++        RestAPIRoot:
++          Type: Api
++          Properties:
++            Path: /
++            Method: ANY
++            RestApiId: !Ref RestApi
++        RestAPIProxy:
++          Type: Api
++          Properties:
++            Path: /{proxy+}
++            Method: ANY
++            RestApiId: !Ref RestApi
++      FunctionUrlConfig:
++        AuthType: AWS_IAM
++    Metadata:
++      BuildMethod: makefile
++
++  LoadBalancerSecurityGroup:
++    Type: AWS::EC2::SecurityGroup
++    Properties:
++      GroupDescription: Allow http to client host
++      VpcId: !Ref VpcId
++      SecurityGroupIngress:
++        - IpProtocol: tcp
++          FromPort: 443
++          ToPort: 443
++          CidrIp: 0.0.0.0/0
++
++  LoadBalancer:
++    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
++    Properties:
++      Scheme: internet-facing
++      Subnets: !Ref Subnets
++      SecurityGroups:
++        - !Ref LoadBalancerSecurityGroup
++
++  HttpBinFunctionInvokePermission:
++    Type: AWS::Lambda::Permission
++    Properties:
++      FunctionName: !GetAtt HttpBinFunction.Arn
++      Action: 'lambda:InvokeFunction'
++      Principal: elasticloadbalancing.amazonaws.com
++
++  TargetGroup:
++    Type: AWS::ElasticLoadBalancingV2::TargetGroup
++    DependsOn: HttpBinFunctionInvokePermission
++    Properties:
++      TargetType: lambda
++      Targets:
++        - Id: !GetAtt HttpBinFunction.Arn
++
++  HttpsListener:
++    Type: 'AWS::ElasticLoadBalancingV2::Listener'
++    Properties:
++      Certificates:
++        - CertificateArn: !Ref CertificateArn
++      DefaultActions:
++        - TargetGroupArn: !Ref TargetGroup
++          Type: forward
++      LoadBalancerArn: !Ref LoadBalancer
++      Port: 443
++      Protocol: HTTPS
++
++  AlbDNSRecord:
++    Type: AWS::Route53::RecordSet
++    Properties:
++      HostedZoneId : !Ref Route53HostedZoneId
++      Name: !Sub httpbin-tls-alb-zip.${Route53HostedZone}
++      AliasTarget:
++        DNSName: !GetAtt LoadBalancer.DNSName
++        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
++      Type: A
++
++  RestApiEndpoint:
++    Type: AWS::SSM::Parameter
++    Properties:
++      Name: /lambda-web-adapter/e2e/httpbin-tls/zip/rest-api-endpoint
++      Description: 'Rest API Endpoint for HttpBin function'
++      Type: String
++      Value: !Sub "https://httpbin-tls-rest-zip.${Route53HostedZone}/"
++
++  HttpApiEndpoint:
++    Type: AWS::SSM::Parameter
++    Properties:
++      Name: /lambda-web-adapter/e2e/httpbin-tls/zip/http-api-endpoint
++      Description: 'Http API Endpoint for HttpBin function'
++      Type: String
++      Value: !Sub "https://httpbin-tls-http-zip.${Route53HostedZone}/"
++
++  AlbEndpoint:
++    Type: AWS::SSM::Parameter
++    Properties:
++      Name: /lambda-web-adapter/e2e/httpbin-tls/zip/alb-endpoint
++      Description: 'ALB Endpoint for HttpBin function'
++      Type: String
++      Value: !Sub "https://${AlbDNSRecord}/"
++
++  FunctionUrl:
++    Type: AWS::SSM::Parameter
++    Properties:
++      Name: /lambda-web-adapter/e2e/httpbin-tls/zip/function-url
++      Description: 'Function URL for HttpBin function'
++      Type: String
++      Value: !GetAtt HttpBinFunctionUrl.FunctionUrl
++
++Outputs:
++  HttpBinHttpApi:
++    Description: "API Gateway Http API endpoint URL for default stage for HttpBin function"
++    Value: !GetAtt HttpApiEndpoint.Value
++
++  HttpBinRestApi:
++    Description: "API Gateway Rest API endpoint URL for Prod stage for HttpBin function"
++    Value: !GetAtt RestApiEndpoint.Value
++
++  HttpBinAlbDNS:
++    Description: "Application Load Balancer for HttpBin function"
++    Value: !GetAtt AlbEndpoint.Value
++
++  HttpBinFunctionUrl:
++    Description: "Function URL for HttpBin function"
++    Value: !GetAtt FunctionUrl.Value
+diff --git a/tests/e2e/fixtures/go-httpbin/.gitignore b/tests/e2e_tests/fixtures/go-httpbin-zip/.gitignore
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin/.gitignore
+rename to tests/e2e_tests/fixtures/go-httpbin-zip/.gitignore
+diff --git a/tests/e2e_tests/fixtures/go-httpbin-zip/README.md b/tests/e2e_tests/fixtures/go-httpbin-zip/README.md
+new file mode 100644
+index 0000000..ef48d08
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin-zip/README.md
+@@ -0,0 +1,12 @@
++# golang httpbin Zip package example
++
++This example is used for end-to-end tests. 
++
++## build and deploy 
++
++Run the following commands. 
++
++```shell
++sam build 
++sam deploy -g
++```
+\ No newline at end of file
+diff --git a/tests/e2e/fixtures/go-httpbin-zip/app/Makefile b/tests/e2e_tests/fixtures/go-httpbin-zip/app/Makefile
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin-zip/app/Makefile
+rename to tests/e2e_tests/fixtures/go-httpbin-zip/app/Makefile
+diff --git a/tests/e2e/fixtures/go-httpbin-zip/template.yaml b/tests/e2e_tests/fixtures/go-httpbin-zip/template.yaml
+similarity index 95%
+rename from tests/e2e/fixtures/go-httpbin-zip/template.yaml
+rename to tests/e2e_tests/fixtures/go-httpbin-zip/template.yaml
+index 04e5453..2e9867d 100644
+--- a/tests/e2e/fixtures/go-httpbin-zip/template.yaml
++++ b/tests/e2e_tests/fixtures/go-httpbin-zip/template.yaml
+@@ -147,7 +147,7 @@ Resources:
+   RestApiEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/zip/rest-api-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/zip/rest-api-endpoint
+       Description: 'Rest API Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://httpbin-rest-zip.${Route53HostedZone}/"
+@@ -155,7 +155,7 @@ Resources:
+   HttpApiEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/zip/http-api-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/zip/http-api-endpoint
+       Description: 'Http API Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://httpbin-http-zip.${Route53HostedZone}/"
+@@ -163,7 +163,7 @@ Resources:
+   AlbEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/zip/alb-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/zip/alb-endpoint
+       Description: 'ALB Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://${AlbDNSRecord}/"
+@@ -171,7 +171,7 @@ Resources:
+   FunctionUrl:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/zip/function-url
++      Name: /lambda-web-adapter/e2e/httpbin/zip/function-url
+       Description: 'Function URL for HttpBin function'
+       Type: String
+       Value: !GetAtt HttpBinFunctionUrl.FunctionUrl
+diff --git a/tests/e2e_tests/fixtures/go-httpbin/.gitignore b/tests/e2e_tests/fixtures/go-httpbin/.gitignore
+new file mode 100644
+index 0000000..a15e9e4
+--- /dev/null
++++ b/tests/e2e_tests/fixtures/go-httpbin/.gitignore
+@@ -0,0 +1,36 @@
++HELP.md
++target/
++!app/.mvn/wrapper/maven-wrapper.jar
++!**/src/main/**/target/
++!**/src/test/**/target/
++
++### STS ###
++.apt_generated
++.classpath
++.factorypath
++.project
++.settings
++.springBeans
++.sts4-cache
++
++### IntelliJ IDEA ###
++.idea
++*.iws
++*.iml
++*.ipr
++
++### NetBeans ###
++/nbproject/private/
++/nbbuild/
++/dist/
++/nbdist/
++/.nb-gradle/
++build/
++!**/src/main/**/build/
++!**/src/test/**/build/
++
++### VS Code ###
++.vscode/
++
++.mvn
++.aws-sam
+\ No newline at end of file
+diff --git a/tests/e2e/fixtures/go-httpbin/README.md b/tests/e2e_tests/fixtures/go-httpbin/README.md
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin/README.md
+rename to tests/e2e_tests/fixtures/go-httpbin/README.md
+diff --git a/tests/e2e/fixtures/go-httpbin/app/Dockerfile b/tests/e2e_tests/fixtures/go-httpbin/app/Dockerfile
+similarity index 100%
+rename from tests/e2e/fixtures/go-httpbin/app/Dockerfile
+rename to tests/e2e_tests/fixtures/go-httpbin/app/Dockerfile
+diff --git a/tests/e2e/fixtures/go-httpbin/template.yaml b/tests/e2e_tests/fixtures/go-httpbin/template.yaml
+similarity index 95%
+rename from tests/e2e/fixtures/go-httpbin/template.yaml
+rename to tests/e2e_tests/fixtures/go-httpbin/template.yaml
+index b9189d1..6fc6ca3 100644
+--- a/tests/e2e/fixtures/go-httpbin/template.yaml
++++ b/tests/e2e_tests/fixtures/go-httpbin/template.yaml
+@@ -142,7 +142,7 @@ Resources:
+   RestApiEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/oci/rest-api-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/oci/rest-api-endpoint
+       Description: 'Rest API Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://httpbin-rest-zip.${Route53HostedZone}/"
+@@ -150,7 +150,7 @@ Resources:
+   HttpApiEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/oci/http-api-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/oci/http-api-endpoint
+       Description: 'Http API Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://httpbin-http-zip.${Route53HostedZone}/"
+@@ -158,7 +158,7 @@ Resources:
+   AlbEndpoint:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/oci/alb-endpoint
++      Name: /lambda-web-adapter/e2e/httpbin/oci/alb-endpoint
+       Description: 'ALB Endpoint for HttpBin function'
+       Type: String
+       Value: !Sub "https://${AlbDNSRecord}/"
+@@ -166,7 +166,7 @@ Resources:
+   FunctionUrl:
+     Type: AWS::SSM::Parameter
+     Properties:
+-      Name: /lambda-web-adapter/e2e/oci/function-url
++      Name: /lambda-web-adapter/e2e/httpbin/oci/function-url
+       Description: 'Function URL for HttpBin function'
+       Type: String
+       Value: !GetAtt HttpBinFunctionUrl.FunctionUrl
+diff --git a/tests/e2e_tests/main.rs b/tests/e2e_tests/main.rs
+new file mode 100644
+index 0000000..1e8d2fe
+--- /dev/null
++++ b/tests/e2e_tests/main.rs
+@@ -0,0 +1,178 @@
++use aws_sigv4::http_request::{sign, SignableBody, SignableRequest, SigningParams, SigningSettings};
++use flate2::read::GzDecoder;
++use http::Uri;
++use hyper::client::HttpConnector;
++use hyper::{Body, Client, Method, Request};
++use hyper_rustls::HttpsConnector;
++use lambda_http::aws_lambda_events::serde_json;
++use lambda_http::aws_lambda_events::serde_json::Value;
++use std::env;
++use std::io;
++use std::io::prelude::*;
++use std::time::SystemTime;
++
++#[derive(PartialEq)]
++enum AuthType {
++    Open,
++    Iam,
++}
++
++impl From<&str> for AuthType {
++    fn from(value: &str) -> Self {
++        match value.to_lowercase().as_str() {
++            "iam" => AuthType::Iam,
++            _ => AuthType::Open,
++        }
++    }
++}
++
++struct TestConfig {
++    pub endpoint: Uri,
++    pub auth_type: AuthType,
++}
++
++impl Default for TestConfig {
++    fn default() -> Self {
++        TestConfig {
++            endpoint: env::var("API_ENDPOINT").unwrap().parse().unwrap(),
++            auth_type: env::var("API_AUTH_TYPE").unwrap().as_str().into(),
++        }
++    }
++}
++
++fn decode_reader(bytes: &[u8]) -> io::Result<String> {
++    let mut gz = GzDecoder::new(bytes);
++    let mut s = String::new();
++    gz.read_to_string(&mut s)?;
++    Ok(s)
++}
++
++fn get_https_connector() -> HttpsConnector<HttpConnector> {
++    hyper_rustls::HttpsConnectorBuilder::new()
++        .with_native_roots()
++        .https_or_http()
++        .enable_http1()
++        .build()
++}
++
++fn signing_request(conf: TestConfig, req: &mut Request<&str>) {
++    if conf.auth_type == AuthType::Iam {
++        let access_key_id = env::var("AWS_ACCESS_KEY_ID").unwrap();
++        let secret_key = env::var("AWS_SECRET_ACCESS_KEY").unwrap();
++        let session_token = env::var("AWS_SESSION_TOKEN").unwrap();
++        let region = env::var("AWS_DEFAULT_REGION").unwrap();
++        // Set up information and settings for the signing
++        let signing_settings = SigningSettings::default();
++        let signing_params = SigningParams::builder()
++            .access_key(access_key_id.as_str())
++            .secret_key(secret_key.as_str())
++            .security_token(session_token.as_str())
++            .region(region.as_str())
++            .service_name("lambda")
++            .time(SystemTime::now())
++            .settings(signing_settings)
++            .build()
++            .unwrap();
++
++        // Convert the HTTP request into a signable request
++        let signable_request = SignableRequest::new(
++            req.method(),
++            req.uri(),
++            req.headers(),
++            SignableBody::Bytes(req.body().as_bytes()),
++        );
++
++        // Sign and then apply the signature to the request
++        let (signing_instructions, _signature) = sign(signable_request, &signing_params).unwrap().into_parts();
++        signing_instructions.apply_to_request(req);
++    }
++}
++
++#[ignore]
++#[tokio::test]
++async fn test_http_basic_request() {
++    let conf = TestConfig::default();
++    let client = Client::builder().build::<_, Body>(get_https_connector());
++    let uri = conf.endpoint.clone();
++    let mut req = http::Request::builder().method(Method::GET).uri(uri).body("").unwrap();
++    signing_request(conf, &mut req);
++    let response = client.request(req.map(Body::from)).await.unwrap();
++
++    assert_eq!(200, response.status());
++}
++
++#[ignore]
++#[tokio::test]
++async fn test_http_headers() {
++    let conf = TestConfig::default();
++    let client = Client::builder().build::<_, Body>(get_https_connector());
++    let uri = conf.endpoint.to_string() + "get";
++    let mut req = Request::builder()
++        .method(Method::GET)
++        .uri(uri)
++        .header("Foo", "Bar")
++        .body("")
++        .unwrap();
++    signing_request(conf, &mut req);
++    let resp = client.request(req.map(Body::from)).await.unwrap();
++    let (parts, body) = resp.into_parts();
++    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
++    let body = serde_json::from_slice::<Value>(&body_bytes).unwrap();
++
++    assert_eq!(200, parts.status.as_u16());
++    assert!(body["headers"]["Foo"][0].is_string());
++    assert_eq!(Some("Bar"), body["headers"]["Foo"][0].as_str());
++}
++
++#[ignore]
++#[tokio::test]
++async fn test_http_query_params() {
++    let conf = TestConfig::default();
++    let client = Client::builder().build::<_, Body>(get_https_connector());
++    let parts = conf.endpoint.clone().into_parts();
++    let uri = Uri::builder()
++        .scheme(parts.scheme.unwrap())
++        .authority(parts.authority.unwrap())
++        .path_and_query("/get?foo=bar&fizz=buzz")
++        .build()
++        .unwrap();
++    let mut req = Request::builder().method(Method::GET).uri(uri).body("").unwrap();
++    signing_request(conf, &mut req);
++    let resp = client.request(req.map(Body::from)).await.unwrap();
++    let (parts, body) = resp.into_parts();
++    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
++    let body = serde_json::from_slice::<Value>(&body_bytes).unwrap();
++
++    assert_eq!(200, parts.status.as_u16());
++    assert!(body["args"]["fizz"][0].is_string());
++    assert_eq!(Some("buzz"), body["args"]["fizz"][0].as_str());
++    assert_eq!(Some("bar"), body["args"]["foo"][0].as_str());
++}
++
++#[ignore]
++#[tokio::test]
++async fn test_http_compress() {
++    let conf = TestConfig::default();
++    let client = Client::builder().build::<_, Body>(get_https_connector());
++    let parts = conf.endpoint.clone().into_parts();
++    let uri = Uri::builder()
++        .scheme(parts.scheme.unwrap())
++        .authority(parts.authority.unwrap())
++        .path_and_query("/html")
++        .build()
++        .unwrap();
++    let mut req = Request::builder()
++        .method(Method::GET)
++        .header("accept-encoding", "gzip")
++        .uri(uri)
++        .body("")
++        .unwrap();
++    signing_request(conf, &mut req);
++    let resp = client.request(req.map(Body::from)).await.unwrap();
++    let (parts, body) = resp.into_parts();
++    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
++    let body = decode_reader(&body_bytes).unwrap();
++
++    assert_eq!(200, parts.status.as_u16());
++    assert!(body.contains("<html>"));
++}
+diff --git a/tests/events.rs b/tests/integ_tests/common/mod.rs
+similarity index 100%
+rename from tests/events.rs
+rename to tests/integ_tests/common/mod.rs
+diff --git a/tests/integ_tests.rs b/tests/integ_tests/main.rs
+similarity index 90%
+rename from tests/integ_tests.rs
+rename to tests/integ_tests/main.rs
+index ff97503..40bd922 100644
+--- a/tests/integ_tests.rs
++++ b/tests/integ_tests/main.rs
+@@ -1,10 +1,10 @@
+-pub mod events;
++pub mod common;
+ 
+ use std::env;
+ use std::io;
+ use std::io::prelude::*;
+ 
+-use crate::events::LambdaEventBuilder;
++use crate::common::LambdaEventBuilder;
+ use http::{Method, Response};
+ use httpmock::{
+     Method::{DELETE, GET, POST, PUT},
+@@ -27,6 +27,10 @@ fn test_adapter_options_from_env() {
+     env::set_var("READINESS_CHECK_PATH", "/healthcheck");
+     env::set_var("REMOVE_BASE_PATH", "/prod");
+     env::set_var("ASYNC_INIT", "true");
++    env::set_var("AWS_LWA_ENABLE_COMPRESSION", "true");
++    env::set_var("AWS_LWA_ENABLE_TLS", "true");
++    env::set_var("AWS_LWA_TLS_SERVER_NAME", "api.example.com");
++    env::remove_var("AWS_LWA_TLS_CERT_FILE");
+ 
+     // Initialize adapter with env options
+     let options = AdapterOptions::from_env();
+@@ -39,6 +43,10 @@ fn test_adapter_options_from_env() {
+     assert_eq!(Protocol::Tcp, options.readiness_check_protocol);
+     assert_eq!(Some("/prod".into()), options.base_path);
+     assert!(options.async_init);
++    assert!(options.compression);
++    assert!(options.enable_tls);
++    assert_eq!(Some("api.example.com".into()), options.tls_server_name);
++    assert_eq!(None, options.tls_cert_file);
+ }
+ 
+ #[tokio::test]
+@@ -60,6 +68,9 @@ async fn test_http_readiness_check() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     };
+ 
+     // Initialize adapter and do readiness check
+@@ -89,6 +100,9 @@ async fn test_http_basic_request() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // // Call the adapter service with basic request
+@@ -125,6 +139,9 @@ async fn test_http_headers() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // Prepare request
+@@ -167,6 +184,9 @@ async fn test_http_path_encoding() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // Prepare request
+@@ -207,6 +227,9 @@ async fn test_http_query_params() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // Prepare request
+@@ -256,6 +279,9 @@ async fn test_http_post_put_delete() {
+         async_init: false,
+         base_path: None,
+         compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // Prepare requests
+@@ -313,6 +339,9 @@ async fn test_http_compress() {
+         async_init: false,
+         base_path: None,
+         compression: true,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // // Call the adapter service with basic request
+@@ -356,6 +385,9 @@ async fn test_http_compress_disallowed_type() {
+         async_init: false,
+         base_path: None,
+         compression: true,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // // Call the adapter service with basic request
+@@ -371,7 +403,7 @@ async fn test_http_compress_disallowed_type() {
+     // and response has expected content
+     assert_eq!(200, response.status());
+     assert_eq!(response.headers().get("content-length").unwrap(), "59"); // uncompressed: 59
+-    assert_eq!(response.headers().contains_key("content-encoding"), false);
++    assert!(!response.headers().contains_key("content-encoding"));
+     assert_eq!(
+         "Hello World Hello World Hello World Hello World Hello World",
+         body_to_string(response).await
+@@ -403,6 +435,9 @@ async fn test_http_compress_already_compressed() {
+         async_init: false,
+         base_path: None,
+         compression: true,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: None,
+     });
+ 
+     // Call the adapter service with basic request
+@@ -427,16 +462,16 @@ async fn test_http_compress_already_compressed() {
+ 
+ async fn body_to_string(res: Response<Body>) -> String {
+     let body_bytes = body::to_bytes(res.into_body()).await.unwrap();
+-    String::from_utf8_lossy(&*body_bytes).to_string()
++    String::from_utf8_lossy(&body_bytes).to_string()
+ }
+ 
+ async fn compressed_body_to_string(res: Response<Body>) -> String {
+     let body_bytes = body::to_bytes(res.into_body()).await.unwrap();
+-    decode_reader(&body_bytes.to_vec()).unwrap()
++    decode_reader(&body_bytes).unwrap()
+ }
+ 
+-fn decode_reader(bytes: &Vec<u8>) -> io::Result<String> {
+-    let mut gz = GzDecoder::new(&bytes[..]);
++fn decode_reader(bytes: &[u8]) -> io::Result<String> {
++    let mut gz = GzDecoder::new(bytes);
+     let mut s = String::new();
+     gz.read_to_string(&mut s)?;
+     Ok(s)
+diff --git a/tests/integ_tests/main.rs b/tests/integ_tests/main.rs
+--- a/tests/integ_tests/main.rs
++++ b/tests/integ_tests/main.rs
+@@ -476,3 +476,49 @@
+     gz.read_to_string(&mut s)?;
+     Ok(s)
+ }
++
++#[test]
++fn test_tls_defaults_when_unset() {
++    env::remove_var("AWS_LWA_ENABLE_TLS");
++    env::remove_var("AWS_LWA_TLS_SERVER_NAME");
++    env::remove_var("AWS_LWA_TLS_CERT_FILE");
++
++    let options = AdapterOptions::from_env();
++    assert!(!options.enable_tls);
++    assert_eq!(None, options.tls_server_name);
++    assert_eq!(None, options.tls_cert_file);
++}
++
++#[test]
++fn test_enable_tls_bad_value_defaults_false() {
++    env::set_var("AWS_LWA_ENABLE_TLS", "not-a-bool");
++    let options = AdapterOptions::from_env();
++    assert!(!options.enable_tls);
++    env::remove_var("AWS_LWA_ENABLE_TLS");
++}
++
++#[test]
++fn test_tls_cert_file_sets_ssl_env() {
++    let cert_path = concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/tests/e2e_tests/fixtures/go-httpbin-tls-zip/app/certs/cert.pem"
++    );
++    env::remove_var("SSL_CERT_FILE");
++    let options = AdapterOptions {
++        host: "127.0.0.1".into(),
++        port: "8080".into(),
++        readiness_check_port: "8080".into(),
++        readiness_check_path: "/".into(),
++        readiness_check_protocol: Protocol::Http,
++        base_path: None,
++        async_init: false,
++        compression: false,
++        enable_tls: false,
++        tls_server_name: None,
++        tls_cert_file: Some(cert_path.into()),
++    };
++    assert!(env::var("SSL_CERT_FILE").is_err());
++    let _adapter = Adapter::new(&options);
++    assert_eq!(Ok(cert_path.to_string()), env::var("SSL_CERT_FILE"));
++    env::remove_var("SSL_CERT_FILE");
++}

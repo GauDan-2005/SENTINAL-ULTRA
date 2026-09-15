@@ -32,7 +32,7 @@ Read ALL of:
 - `runs/*/*/result.json`, plus `verifier/test-stdout.txt` for ALL failing trials and at least one passing trial. `runs/` is packaged alongside the task files rather than inside them, and it is not guaranteed to be there at all - `docs/harbor-framework.md` "Task Structure & Components" says the logs folder may or may not be included. A download without one is not a finding, only less evidence to work from
 - Fetch the source PR from task.toml (`[metadata] source`, or `source_pr_url` on older tasks) and note its scope and diff
 
-Git-hygiene and packaging checks on the shipped repo (read-only):
+Git-hygiene and packaging checks on the shipped repo (read-only). **Run this block before reading anything for content.** `docs/reviewer-rubric.md:85-95` makes git state and repo cleanliness a Major pillar and the only one it marks an early gate, flagged in 31% of reviewer comments, so settle a repo whose history leaks the fix before spending a pass on instruction quality:
 
 - `git -C task/environment/repo log --oneline -n 20` → history must not contain or describe the fix
 - `git -C task/environment/repo rev-list --all --not HEAD` → MUST be empty, any ref past HEAD can leak the fix
@@ -42,6 +42,8 @@ Git-hygiene and packaging checks on the shipped repo (read-only):
 - `git -C task/environment/repo reflog` / `ls .git/logs` → no entries exposing the fix
 - `git -C task/environment/repo rev-parse HEAD` → must match the base commit pinned in task.toml (on mismatch the repo wins)
 - `du -sh task/environment/repo/.git` → must be under 100 MB
+- `git -C task/environment/repo worktree list` must print the shipped repo and nothing else, and `task/environment/repo/.git/worktrees` must not exist. A linked worktree keeps its own HEAD, so its commits stay reachable and the `fsck --unreachable` line below has nothing to say about them. `docs/reviewer-rubric.md:89-95` names stray worktrees next to remotes and stash inside the Major early gate, and nothing else in this list looks for one
+- `git -C task/environment/repo stash list` MUST be empty, and `.git/refs/stash` must not exist. A stash ref keeps its blobs reachable, so `gc --prune=now` never prunes them and the `fsck --unreachable` line below stays silent while the fix sits in the stash. Named in the same early gate at `docs/reviewer-rubric.md:89`
 - `git -C task/environment/repo fsck --unreachable --no-progress` → MUST print nothing. Unreachable objects are not covered by any line above: a repo with a clean tree, no reflog and no stray refs can still hold dangling blobs of the golden file and the patched test file, readable with `git cat-file -p <sha>`. This check is not in the `docs/` checklist; the leakage rule it enforces is (`docs/tasking-guide.md` step 5 — no solution material readable from agent paths, and `.git` is one). See `learning/unreachable-git-blobs.md`
 - `git -C task/environment/repo apply --check ../../tests/tests.patch` → the f2p patch must apply at the base commit, otherwise every trial fails before any evidence is collected
 - The test files **shipped inside `environment/repo`** must be byte-identical to the base commit — that is the rule the harness enforces. It is NOT a rule about `tests.patch`: the patch is how graded tests arrive and it MAY edit pre-existing test files. The accepted kvdex bundle's `tests.patch` has 45 diff headers of which only 1 is a `new file mode`, so 44 pre-existing test files are edited by the patch and the bundle passed every gate. Check the shipped tree, not the patch: `git -C task/environment/repo status --porcelain` empty, plus a diff of the shipped test paths against the base commit
@@ -52,6 +54,22 @@ Git-hygiene and packaging checks on the shipped repo (read-only):
 ## 2. The three verdicts
 
 Exactly one verdict per task.
+
+### The bar the verdict is measured against
+
+`docs/reviewer-rubric.md` is the documented technical bar for both sides of this work, added to the Hub export on 2026-08-13. Two independent paths reach Needs Revision and both must be clear for a task to be accepted (`:15-19`): **one** confirmed Major Pillar violation on its own, or **5 or more** Minor violations across any combination of the eleven Secondary Requirements. One to four Minor violations are accepted with mandatory coaching comments, so a low count is not a free pass.
+
+The five Major Pillars, with the reviewer-flag rate the rubric measured for each and where this file checks it:
+
+| Pillar | Flagged in | Checked here |
+|---|---|---|
+| 1. Oracle and golden-solution correctness | 51% | Section 5, Oracle shape |
+| 2. `fail_to_pass` / `pass_to_pass` integrity | 45% | Section 5, Fail-to-pass test count |
+| 3. No leakage, not reward-hackable | 21% | Section 4 |
+| 4. Airgapped verifier and network integrity | 41% | Section 1 task.toml limits, Section 5 test mechanics |
+| 5. Git state and repo cleanliness | 31% | Section 1 git hygiene, run first as an early gate |
+
+The eleven Secondary Requirements sit at `docs/reviewer-rubric.md:101-111` and each one maps to a Fixable trigger below. Count them as you go, because five is the line and they accumulate across categories that feel unrelated to each other.
 
 ### Valid as-is
 Instruction, tests, and oracle all align with each other AND with the source PR. No rewrite or edits are required.
@@ -66,24 +84,31 @@ The task has one or more of these issues (all correctable within the task):
 5. The fail-to-pass count sits outside **10–20 inclusive** → bring it back into range. Target 11–20. The platform's static check rejects both ends: under 10 fails the build and 21+ fails it too (`learning/static-checks.md`)
 6. Task leaks solution information (PR URL in the instruction, environment spoilers, test-gaming shortcuts)
 7. Oracle does not implement the solution following the instructions
-8. Overall task is too easy → raise difficulty by adding to the PR scope (must remain the original PR plus additions, never a different task)
+8. Overall task is too easy → raise difficulty by adding to the PR scope (must remain the original PR plus additions, never a different task). Since 2026-08-14 a task gets only 4 difficulty checks per review cycle (`docs/faq.md`, "Difficulty checks are now capped"), so choose the lever by measuring it before the upload rather than spending a check to find out whether a lever picked by reasoning works. The measurements that find one live in sentinel-difficulty-scope
 9. A specific, listed Dockerfile issue (allowed-fix table in sentinel-task-fixing §4, mirrored from `docs/guidelines.md#environment-limited-fixes`)
 10. A git-hygiene issue in the shipped repo: leaked fix history, a configured remote, a HEAD/base-commit mismatch, reflog entries, an oversized .git
-11. A `task.toml` problem against the published limits: a value out of range, `gpus` not 0, a missing or stripped `network_mode` block, a missing `[environment] os`, an agent timeout too low for what runs/ shows, an inaccurate `category` / `difficulty_explanation` / source URL
+11. A `task.toml` problem against the published limits: a value out of range, `gpus` not 0, a missing or stripped `network_mode` block, a missing `[environment] os`, an agent timeout too low for what runs/ shows, a `[verifier] timeout_sec` shorter than the task's own `execution.timeout_sec` in `tests/config.json` (`docs/reviewer-rubric.md:101` now names that a Minor reviewer finding at an 18% flag rate, because a short verifier timeout kills valid solutions early), an inaccurate `category` / `difficulty_explanation` / source URL
 12. A packaging problem: `tests.patch` cut against the wrong base, a pre-existing test file modified **inside the shipped repo** (a pre-existing test file edited by `tests.patch` is allowed and normal), stray dev artifacts, `solution.patch` instead of `golden.patch`, `problem_statement.md` out of sync with `instruction.md`, a `0644` `test.sh` or `solve.sh`
 13. A verifier problem: a grader that awards reward `1.0` while the test command exited nonzero, an empty or ungraded `pass_to_pass` where existing tests cover the patched area, or unreachable solution/test blobs left in `environment/repo/.git`
 
-### Not Fixable
-Either of:
+### Not Fixable - two buckets, tagged separately
+
+`docs/reviewer-rubric.md:25-31` splits Unfixable into Structure and Difficulty and says lumping them as "invalid" is what sends ECs into three or more unpaid revision loops on tasks that were never fixable. Pick the bucket before writing anything, and name it in the first line of the Part B explanation, because the form's own checkboxes cannot carry the distinction.
+
+**Unfixable - Structure.** Either of:
 
 1. PR scope needs to be changed or reduced — the only way to make the task valid is to reduce or replace the PR scope entirely
 2. Environment issues that ECs are not allowed to fix (per the Environment section) — a tangled toolchain/dependency build failure, an oracle timeout that bumping cannot resolve, an agent that genuinely cannot finish within the 7200 s ceiling, a heavy external-network dependency, or genuinely unrecoverable git corruption
+
+**Unfixable - Difficulty.** The task is genuinely too easy or too hard and cannot be recalibrated without leaving the PR scope (`docs/reviewer-rubric.md:29`). Two gates sit in front of it. A task only slightly under-difficult that IS raisable inside the PR scope is not this bucket, because the rubric scores that Minor and calls it difficulty drift (`:111`), which is Fixable trigger 8 above. And this is the most over-claimed verdict this workspace has produced, so read CLAUDE.md Section 3 before reaching for it: redisshake 1005 carried four lever classes each measured at zero and a complete dossier, and was ACCEPTED on that round. The record there says the screen blocked four times and does not say how many difficulty checks ran in total, so that arc sits at or past the cap the platform now applies. It ran before 2026-08-14 and the policy is not retroactive, so it was unaffected, and its lesson is not withdrawn - it is now something you have four checks to demonstrate rather than an unlimited number.
+
+**Invalid Difficulty is the platform's verdict, not one of yours. New on 2026-08-14.** `docs/faq.md`, "Difficulty checks are now capped", gives a task 4 difficulty checks per review cycle. A check spends budget only when it runs and returns a result, so a submission that comes back before the check runs costs nothing and a technical issue that prevents a result costs nothing, and a reviewer sending the task back restarts the count at zero, which makes the cap per review cycle and not per task lifetime. At the fourth check that has not passed, the platform changes the answer on the validity question to Invalid Difficulty itself and hands the task back once with that verdict already on it. **Resubmit it unchanged** - do not rewrite the bundle, do not restore your own verdict, and do not work it as a bounce. It is not a rejection, it does not reach back to tasks that ran before 2026-08-14, and a human reviewer still reads it. None of this moves the bar above: Unfixable - Difficulty is still yours to reach on evidence and every caveat behind it stands, including the source-PR tell and the fact that a local control runs on a newer model than the screen grades, so it is a ceiling and never a forecast. What changed is only that the platform now reaches a difficulty verdict on its own at the fourth check.
 
 **Infra and platform failures are NOT a Not Fixable condition — ever.** A failed eval only feeds the verdict when the task caused it. `DaytonaRateLimitError` / `ApiRateLimitError`, sandbox auth or connection errors, a one-off `NonZeroAgentExitCode`, and a run returning blank feedback or "No evaluation information available" are all platform-side. The tell is inconsistency: the same task passes on one run and errors on another, or only 1 of N trials fails while the rest are clean. Retry rather than reworking, never burn a revision slot resubmitting blindly, and if it persists have the user flag it on Slack with the task/submission UID, the exact error, and whether it is intermittent. Separate this from a reproducible failure that merely looks like infra — `tests.patch did not apply` after an agent edited the tests fails identically every run and IS a task defect with a real fix.
 
 If Not Fixable, list every reason clearly and specifically so it can go into the submission form (Part B).
 
-**Environment list:** items Fixable-9 and Not-Fixable-2 are decided by the allowed/disallowed tables in sentinel-task-fixing §4 and `docs/guidelines.md#environment-limited-fixes`. Check every Dockerfile or environment issue against them. Note that a **build-time network install is NOT an issue** — the Dockerfile may use the network at build time; only run time is restricted (the agent reaches the model gateway only, the verifier is airgapped). When a case genuinely sits on the boundary, flag it and ask the user. Do not guess.
+**Environment list:** Fixable trigger 9 and Unfixable-Structure item 2 are decided by the allowed/disallowed tables in sentinel-task-fixing §4 and `docs/guidelines.md#environment-limited-fixes`. Check every Dockerfile or environment issue against them. Note that a **build-time network install is NOT an issue** - the Dockerfile may use the network at build time; only run time is restricted (the agent reaches the model gateway only, the verifier is airgapped). When a case genuinely sits on the boundary, flag it and ask the user. Do not guess.
 
 ---
 
@@ -171,6 +196,7 @@ Tests likely need a rewrite when they: enforce undescribed behavior, require non
 - Outside the range → verdict is Fixable. Too few, add tests. Too many, regroup cases as sub-steps under fewer top-level tests rather than deleting assertions
 - Added tests must cover requirements stated or reasonably implied in the instruction — never undescribed behavior
 - Count statically: enumerate the individual test cases in tests.patch that exercise the changed behavior, cross-check `grading.fail_to_pass` in config.json, and confirm the count against a passing trial's test-stdout.txt
+- **Counting the declared list is not the same as checking what the verifier grades.** `docs/reviewer-rubric.md:53` sets the standard as the declared `fail_to_pass` and `pass_to_pass` lists matching what the verifier actually grades, and `:59` makes a static list-length check passing while the true graded count differs materially a Needs Revision trigger on a Major pillar. Statically that means reading `execution.commands` and `selected_test_files_to_run` and asking what the runner really collects. A suite running far more cases than the two lists name is graded partly through the `unexpected` set, which `test.sh` builds only from FAILED and ERROR results, so undeclared cases gate the reward while nothing declares them. The number is settled later against the oracle report (CLAUDE.md Step 5.5); at verdict time it is a read of the config and a finding when the two are obviously far apart
 - The suite must include **at least one test that directly reproduces the failure described in the issue** — fails pre-patch, passes post-fix
 
 ### Test mechanics
@@ -196,7 +222,7 @@ The coverage axis asks whether a broken or stub solution fails at least one test
 
 ### Oracle shape
 
-- Diff the golden patch's file list against the source PR's. Extra files break the "no unnecessary changes" rule; files the PR touched but golden omits are the same defect inverted
+- Diff the golden patch's file list against the source PR's. Extra files break the "no unnecessary changes" rule. Files the PR touched but golden omits are NOT the same defect inverted: a docs or changelog file left out is the accepted shape, measured at **7 of 8** archived goldens ship no `.md` or docs file at all, accepted kvdex 245 included, and the eighth is AltBeacon 1177 shipping its `CHANGELOG.md` (LEDGER L59)
 - If the instruction names a known library function as the behavioral standard, read the oracle against that function's real contract. Boundary cases are where a plausible oracle is wrong and the tests agree with it
 - `solve.sh` should be forward-only and idempotent, in four steps: a `git apply --reverse --check` probe that exits 0 when the patch is already in, a plain forward apply, a `git apply --3way` retry, then a loud failure. The `--3way` retry is the **prescribed** handling for a patch that will not apply cleanly, not a defect. What is banned is a reverse-apply that counts as SUCCESS after the forward apply failed — that inverts a correct tree on the second run and hides a golden patch that never applied. Reverse-diff tasks shipping `init_state.patch` correctly run `patch -p1 -R` as their only path. Verified shape in `learning/solve-sh-idempotency.md`
 - The platform runs the golden solution **three times and the bar is 3/3**. Read the number before theorising: 1/3 or 2/3 points at state accumulation (reproduce it by running solve.sh twice in one container), while 0/3 says run one already failed, which rules out every state-accumulation theory in one step. Real per-test output next to an N/3 line is a task defect; blank or null results with no verifier output is infra
@@ -249,7 +275,7 @@ Red flags: robotic phrasing ("The system shall…", "It is required that…"), t
 ## 7. Verdict decision procedure
 
 1. Run every check in Sections 1 and 3–6. Record each finding with file:line evidence
-2. If any Not Fixable condition holds (PR scope must be replaced/reduced, or a disallowed environment issue) → verdict is **Not Fixable**. Stop and write the reasons for Part B. A failed eval on its own is never enough — confirm the failure is caused by the task and reproduces every run, because infra and platform failures never make a task Unfixable
+2. If any Not Fixable condition holds, the verdict is **Not Fixable**, and record which of the two buckets it is. `docs/reviewer-rubric.md:28` is **Unfixable - Structure**, where the only fix is changing or reducing the source PR scope, or an environment issue ECs are not allowed to touch. `:29` is **Unfixable - Difficulty**, where the task is genuinely too easy or too hard and cannot be recalibrated without leaving the PR scope. Stop and write the reasons for Part B, naming the bucket, because `:31` says lumping the two as "invalid" is what sends ECs into 3 or more unpaid revision loops on tasks that were never fixable. A failed eval on its own is never enough - confirm the failure is caused by the task and reproduces every run, because infra and platform failures never make a task Unfixable
 3. Otherwise, if any Fixable trigger (Section 2 list, items 1–13) holds → verdict is **Fixable**. Produce a numbered fix plan
 4. Otherwise → **Valid as-is** (all four principles pass, the fail-to-pass count sits inside 10–20, and instruction/tests/oracle/PR are fully aligned)
 
@@ -260,7 +286,7 @@ Multiple fixable issues still equal one Fixable verdict. A single Not Fixable co
 ## 8. Output format after a check
 
 ```
-Verdict: [Valid as-is / Fixable / Not Fixable]
+Verdict: [Valid as-is / Fixable / Not Fixable - Structure / Not Fixable - Difficulty]
 
 Fail-to-pass test count: N
 (counted from: <files>, confirmed against <passing trial stdout>)
@@ -291,7 +317,7 @@ Never claim a finding without evidence from the actual files. Never mark Fixable
 - [ ] No commit messages, comments, or docs spoiling the change
 - [ ] Tests cannot be passed by editing the tests
 - [ ] Every requirement → a test, every assertion → a stated or implied requirement, no hidden checks
-- [ ] Fail-to-pass count inside 10–20 inclusive (target 11–20; 21+ fails the static check), including one direct repro of the issue
+- [ ] Fail-to-pass count inside 10-20 inclusive (target 11-20; 21+ fails the static check), including one direct repro of the issue, and the declared lists match what the runner actually collects
 - [ ] Tests are outcome-based, deterministic, within timeout, independent of the golden solution
 - [ ] Every expected name is derivable (exists in base / standard convention / stated in instruction)
 - [ ] Roughly 100+ line fix across 2+ files, not a trivial edit or contrived puzzle
@@ -300,9 +326,9 @@ Never claim a finding without evidence from the actual files. Never mark Fixable
 - [ ] Every assertion would catch a real implementation defect — no constraint claimed by a fixture that cannot violate it
 - [ ] `tests/test.sh` fails closed: reward 1.0 requires a zero exit from the test command, not just the expected lines in the log
 - [ ] `pass_to_pass` covers the patched area and actually grades something
-- [ ] Golden patch's file list matches the source PR's, in both directions; `solve.sh` is forward-only; both scripts are `0755`
-- [ ] Git hygiene clean: no fix history, no refs past HEAD, no remotes, no `filter.*`, clean tree, HEAD equals base commit, no reflog leak, .git under 100 MB, `git fsck --unreachable` silent
+- [ ] Golden patch carries no file the source PR never touched (the reverse direction is not a gate, LEDGER L59); `solve.sh` is forward-only; both scripts are `0755`
+- [ ] Git hygiene clean, and checked first as the early gate: no fix history, no refs past HEAD, no remotes, no linked worktree, no stash, no `filter.*`, clean tree, HEAD equals base commit, no reflog leak, .git under 100 MB, `git fsck --unreachable` silent
 - [ ] `tests.patch` applies at the base commit, and the test files inside the shipped repo are byte-identical to base (the patch itself editing pre-existing test files is fine)
 - [ ] `problem_statement.md` is byte-identical to `instruction.md`, and the solution patch is named `golden.patch`
-- [ ] `task.toml` inside every published limit, `gpus = 0`, `network_mode` present and correct in all three blocks
+- [ ] `task.toml` inside every published limit, `gpus = 0`, `network_mode` present and correct in all three blocks, `[verifier] timeout_sec` not shorter than `execution.timeout_sec` in `tests/config.json`
 - [ ] No stray dev artifacts anywhere in the bundle

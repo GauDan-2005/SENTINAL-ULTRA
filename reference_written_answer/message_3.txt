@@ -1,0 +1,3 @@
+Accepted.
+
+minor coaching: platform QC flagged Q10 because instruction.md line 11 names trust_remote_code and diffusers, which mirror the graded assert in test_hunyuan_30_reports_its_actual_limitation. Acceptable as a user-facing contract, but future uploads could soften to “clearly explain why it cannot be loaded safely” if you want a clean 15/15 QC.

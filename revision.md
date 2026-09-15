@@ -65,9 +65,9 @@ Here are the feedbacks:
 
 ## Reviewer Feedback
 
-## Automated feedback
-
 ## Difficulty Check
+
+## Automated feedback
 
 ## Quality Check
 

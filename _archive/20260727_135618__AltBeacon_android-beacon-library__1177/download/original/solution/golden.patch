@@ -1,0 +1,1139 @@
+diff --git a/lib/build.gradle b/lib/build.gradle
+index 48ce0d4..856095f 100644
+--- a/lib/build.gradle
++++ b/lib/build.gradle
+@@ -68,17 +68,17 @@ dependencies {
+ 
+     testImplementation 'junit:junit:4.13.2'
+ 
+-    testImplementation 'org.robolectric:robolectric:4.9'
++    testImplementation 'org.robolectric:robolectric:4.11.1'
+     testImplementation 'com.google.android:android-test:4.1.1.4'
+-    testImplementation 'com.squareup:fest-android:1.0.8@aar'
++    //testImplementation 'com.squareup:fest-android:1.0.8@aar'
+     testImplementation 'org.mockito:mockito-core:2.23.4'
+ 
+     androidTestUtil 'androidx.test:orchestrator:1.4.2'
+ 
+-    androidTestImplementation 'androidx.test:rules:1.1.0'
++    androidTestImplementation 'androidx.test:rules:1.5.0'
+     androidTestImplementation 'org.apache.commons:commons-math3:3.6.1'
+     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+-    implementation "androidx.core:core-ktx:1.3.2" // 1.10.1 requires targeting android SDK 33
++    implementation "androidx.core:core-ktx:1.12.0"
+     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+     dokkaHtmlPlugin("org.jetbrains.dokka:kotlin-as-java-plugin:1.5.0")
+ }
+diff --git a/lib/src/main/java/org/altbeacon/beacon/Beacon.java b/lib/src/main/java/org/altbeacon/beacon/Beacon.java
+index 1f164ba..4e1402a 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/Beacon.java
++++ b/lib/src/main/java/org/altbeacon/beacon/Beacon.java
+@@ -215,14 +215,21 @@ public class Beacon implements Parcelable, Serializable {
+     };
+ 
+     /**
++     * @deprecated Set the distanceCalculatorFactory method on the Settings class
++     * You must define your own factory to co with your DistanceCalculator implementation
++     * that returns a new instance of your DistanceCalculator implementation
+      * Sets the DistanceCalculator to use with this beacon
+      * @param dc
+      */
+     public static void setDistanceCalculator(DistanceCalculator dc) {
+         sDistanceCalculator = dc;
+     }
++    static void setDistanceCalculatorInternal(DistanceCalculator dc) {
++        sDistanceCalculator = dc;
++    }
+ 
+     /**
++     * @deprecated get the distanceCalculatorFactory method on the Settings class
+      * Gets the DistanceCalculator to use with this beacon
+      */
+     public static DistanceCalculator getDistanceCalculator() {
+@@ -230,16 +237,19 @@ public class Beacon implements Parcelable, Serializable {
+     }
+ 
+     /**
++     * @deprecated Use the method on the Settings class and call `beaconManger.adjustSettings(settings)`
+      * Configures whether a the bluetoothAddress (mac address) must be the same for two Beacons
+      * to be configured equal.  This setting applies to all beacon instances in the same process.
+      * Defaults to false for backward compatibility.
+      *
+      * @param e
+      */
++    @Deprecated
+     public static void setHardwareEqualityEnforced(boolean e) {
+         sHardwareEqualityEnforced = e;
+     }
+ 
++    @Deprecated
+     public static boolean getHardwareEqualityEnforced() {
+         return sHardwareEqualityEnforced;
+     }
+diff --git a/lib/src/main/java/org/altbeacon/beacon/BeaconManager.java b/lib/src/main/java/org/altbeacon/beacon/BeaconManager.java
+index 11ca49d..49d9e8a 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/BeaconManager.java
++++ b/lib/src/main/java/org/altbeacon/beacon/BeaconManager.java
+@@ -42,9 +42,12 @@ import android.os.Looper;
+ import android.os.Message;
+ import android.os.Messenger;
+ import android.os.RemoteException;
++import android.util.Log;
++
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ 
++import org.altbeacon.beacon.distance.DistanceCalculator;
+ import org.altbeacon.beacon.logging.LogManager;
+ import org.altbeacon.beacon.logging.Loggers;
+ import org.altbeacon.beacon.powersave.BackgroundPowerSaverInternal;
+@@ -73,6 +76,7 @@ import java.util.HashSet;
+ import java.util.Iterator;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Objects;
+ import java.util.Set;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.ConcurrentMap;
+@@ -165,7 +169,7 @@ public class BeaconManager {
+             LogManager.setLogger(Loggers.verboseLogger());
+             LogManager.setVerboseLoggingEnabled(true);
+         } else {
+-            LogManager.setLogger(Loggers.empty());
++            LogManager.setLogger(Loggers.infoLogger());
+             LogManager.setVerboseLoggingEnabled(false);
+         }
+     }
+@@ -219,6 +223,125 @@ public class BeaconManager {
+         return mRegionViewModels.get(region) != null;
+     }
+ 
++    private AppliedSettings settings = AppliedSettings.Companion.withDefaultValues();
++
++    /**
++     * Applies new library  settings as a single transaction and restart scanning if needed.
++     * Any settings field snot specified in the passed settings object will revert to defaults.
++     * @param settingsDelta the settings to be applied
++     */
++    public void replaceSettings(Settings settingsDelta) {
++        applySettingsChange(AppliedSettings.Companion.fromDeltaSettings(this.settings, settingsDelta));
++    }
++    /**
++     * Applies a delta of library  settings as a single transaction and restart scanning if needed.
++     * Any settings field snot specified in the passed settings object are unchanged.
++     * @param settingsDelta the settings to be applied
++     */
++    public void adjustSettings(Settings settingsDelta) {
++        applySettingsChange(AppliedSettings.Companion.fromDeltaSettings(this.settings, settingsDelta));
++    }
++    /**
++     * Resets library settings to defaults as a single transaction and restarts scanning if needed.
++     */
++    public void revertSettings() {
++        applySettingsChange(AppliedSettings.Companion.withDefaultValues());
++    }
++    private void applySettingsChange(AppliedSettings newSettings) {
++        AppliedSettings oldSettings = settings;
++        this.settings = newSettings;
++        Beacon.setHardwareEqualityEnforced(Boolean.TRUE.equals(this.settings.getHardwareEqualityEnforced()));
++        BeaconManager.setDistanceModelUpdateUrl(Objects.requireNonNull(settings.getDistanceModelUpdateUrl()));
++
++        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++            if (settings.getScanPeriods().getBackgroundScanPeriodMillis() < 15*60*1000 /* 15 min */ &&
++                    settings.getScanStrategy() instanceof Settings.JobServiceScanStrategy) {
++                LogManager.w(TAG, "Setting a short backgroundBetweenScanPeriod has no effect on "+
++                        "Android 8+, which is limited to scanning every ~15 minutes");
++            }
++        }
++
++        if (settings.getBeaconSimulator() == null || settings.getBeaconSimulator().getClass() == Settings.DisabledBeaconSimulator.class) {
++            BeaconManager.setBeaconSimulator(null);
++        }
++        else {
++            BeaconManager.setBeaconSimulator(settings.getBeaconSimulator());
++        }
++        Beacon.setHardwareEqualityEnforced(Boolean.TRUE.equals(settings.getHardwareEqualityEnforced()));
++        BeaconManager.setDebug(Boolean.TRUE.equals(settings.getDebug()));
++        Settings.ScanPeriods sp = settings.getScanPeriods();
++        if (sp != null) {
++            setBackgroundBetweenScanPeriod(sp.getBackgroundScanPeriodMillis());
++            setBackgroundScanPeriod(sp.getBackgroundScanPeriodMillis());
++            setForegroundBetweenScanPeriod(sp.getForegroundBetweenScanPeriodMillis());
++            setForegroundScanPeriod(sp.getForegroundScanPeriodMillis());
++        }
++        setManifestCheckingDisabled(Boolean.TRUE.equals(settings.getManifestCheckingDisabled()));
++        Integer regionExitPeriod = settings.getRegionExitPeriodMillis();
++        if (regionExitPeriod != null) {
++            setRegionExitPeriod(regionExitPeriod.longValue());
++        }
++        setRegionStatePersistenceEnabled(Boolean.TRUE.equals(settings.getRegionStatePersistenceEnabled()));
++
++        // Check if ScanStrategry has changed
++        boolean scanStrategyChanged = oldSettings.getScanStrategy().compareTo(settings.getScanStrategy()) != 0;
++        synchronized(consumers) {
++            if (scanStrategyChanged && consumers.size() > 0) {
++                LogManager.i(TAG, "ScanStrategy has changed. Unbinding and rebinding consumers.  Old strategry: "+oldSettings.getScanStrategy()+", new strategy: "+settings.getScanStrategy());
++                LogManager.i(TAG, "unbinding all consumers for strategy change");
++                List<InternalBeaconConsumer> oldConsumers = new ArrayList<InternalBeaconConsumer>(consumers.keySet());
++                for (InternalBeaconConsumer consumer: oldConsumers) {
++                    this.unbindInternal(consumer);
++                }
++                mScheduledScanJobsEnabledByFallback = false;
++                configureScanStrategyWhenConsumersUnbound(oldConsumers);
++            }
++            else if (consumers.size() == 0) {
++                // if no consumers are bound, we bind and start things up
++                Objects.requireNonNull(settings.getScanStrategy()).configure(this);
++            }
++            // if consumers are already bound but nothing changed, we have nothing to do
++        }
++        DistanceCalculator distanceCalculator = settings.getDistanceCalculatorFactory().getInstance(mContext);
++        Beacon.setDistanceCalculatorInternal(distanceCalculator);
++
++        // TODO: apply all other settings
++        //settings.getLongScanForcingEnabled()
++        //settings.getRssiFilterImplClass()
++        //settings.getScanStrategy()
++
++        applySettings();
++
++    }
++    private void configureScanStrategyWhenConsumersUnbound(List<InternalBeaconConsumer> oldConsumers) {
++        if (isAnyConsumerBound()) {
++            new Handler().postDelayed(new Runnable() {
++                @Override
++                public void run() {
++                    configureScanStrategyWhenConsumersUnbound(oldConsumers);
++                }
++            }, 100);
++        }
++        else {
++            Objects.requireNonNull(settings.getScanStrategy()).configure(BeaconManager.this);
++            LogManager.i(TAG, "binding all consumers for strategy change");
++            for (InternalBeaconConsumer consumer: oldConsumers) {
++                BeaconManager.this.bindInternal(consumer);
++            }
++            LogManager.i(TAG, "Done with scan strategy change");
++        }
++    }
++
++
++    /**
++     * Returns a copy of the active settings in use by the library.  The object returned is a copy
++     * and making changes on it will have no effect without a new call to set the settings.
++     * @return settings currently active
++     */
++    public AppliedSettings getActiveSettings() {
++        return  AppliedSettings.Companion.fromSettings(settings);
++    }
++
+     /**
+      * Sets the duration in milliseconds of each Bluetooth LE scan cycle to look for beacons.
+      * This function is used to setup the period before calling {@link #bind} or when switching
+@@ -266,11 +389,6 @@ public class BeaconManager {
+     public void setBackgroundBetweenScanPeriod(long p) {
+         LogManager.d(TAG, "API setBackgroundBetweenScanPeriod "+p);
+         backgroundBetweenScanPeriod = p;
+-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+-                backgroundBetweenScanPeriod < 15*60*1000 /* 15 min */) {
+-            LogManager.w(TAG, "Setting a short backgroundBetweenScanPeriod has no effect on "+
+-                    "Android 8+, which is limited to scanning every ~15 minutes");
+-        }
+     }
+ 
+     /**
+@@ -444,26 +562,28 @@ public class BeaconManager {
+                 LogManager.d(TAG, "This consumer is already bound");
+             }
+             else {
++                LogManager.i(TAG, "bindInternal active");
+                 if (mScheduledScanJobsEnabledByFallback) {
+                     LogManager.d(TAG, "Need to rebind for switch to foreground service", consumer);
+-                    // we are going to disable the fallbac so we can try a foreground service again
++                    // we are going to disable the fallback so we can try a foreground service again
+                     mScheduledScanJobsEnabledByFallback = false;
+                 }
+                 else {
+                     LogManager.d(TAG, "This consumer is not bound.  Binding now: %s", consumer);
+                 }
+                 if (mIntentScanStrategyCoordinator != null) {
++                    LogManager.i(TAG, "Using intent scan strategy");
+                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                         mIntentScanStrategyCoordinator.start();
+                     }
+                     consumer.onBeaconServiceConnect();
+                 }
+                 else if (mScheduledScanJobsEnabled) {
+-                    LogManager.d(TAG, "Not starting beacon scanning service. Using scheduled jobs");
++                    LogManager.i(TAG, "Not starting beacon scanning service. Using scheduled jobs");
+                     consumer.onBeaconServiceConnect();
+                 }
+                 else {
+-                    LogManager.d(TAG, "Binding to service");
++                    LogManager.i(TAG, "Using BeaconService to scan. Binding to service");
+                     Intent intent = new Intent(consumer.getApplicationContext(), BeaconService.class);
+                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                             this.getForegroundServiceNotification() != null) {
+@@ -721,10 +841,6 @@ public class BeaconManager {
+                     " availble prior to Android 5.0");
+             return;
+         }
+-        if (!enabled && android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-            LogManager.w(TAG, "Disabling ScanJobs on Android 8+ may disable delivery of "+
+-                    "beacon callbacks in the background unless a foreground service is active.");
+-        }
+         if (enabled) {
+             mScheduledScanJobsEnabledByFallback = false;
+         }
+@@ -1047,6 +1163,18 @@ public class BeaconManager {
+     public void startRangingBeacons(@NonNull Region region) {
+         LogManager.d(TAG, "API startRangingBeacons "+region);
+         LogManager.d(TAG, "startRanging");
++        if (region.mBeaconParser != null && region.mBeaconParser.getIdentifier() != null) {
++            boolean parserAlreadyAdded = false;
++            for (BeaconParser parser: getBeaconParsers()) {
++                if (region.mBeaconParser.getIdentifier().equals(parser.getIdentifier())) {
++                    parserAlreadyAdded = true;
++                    break;
++                }
++            }
++            if (!parserAlreadyAdded) {
++                getBeaconParsers().add(region.mBeaconParser);
++            }
++        }
+         ensureBackgroundPowerSaver();
+         if (isAnyConsumerBound()) {
+             try {
+@@ -1234,6 +1362,18 @@ public class BeaconManager {
+     @TargetApi(18)
+     public void startMonitoring(@NonNull Region region) {
+         LogManager.d(TAG, "API startMonitoring "+region);
++        if (region.mBeaconParser != null && region.mBeaconParser.getIdentifier() != null) {
++            boolean parserAlreadyAdded = false;
++            for (BeaconParser parser: getBeaconParsers()) {
++                if (region.mBeaconParser.getIdentifier().equals(parser.getIdentifier())) {
++                    parserAlreadyAdded = true;
++                    break;
++                }
++            }
++            if (!parserAlreadyAdded) {
++                getBeaconParsers().add(region.mBeaconParser);
++            }
++        }
+         ensureBackgroundPowerSaver();
+         if (isAnyConsumerBound()) {
+             try {
+@@ -1523,6 +1663,13 @@ public class BeaconManager {
+         return distanceModelUpdateUrl;
+     }
+ 
++
++    /**
++     * @deprecated Use the method on the Settings class and call `beaconManger.setSettings(settings)`
++     * @param url to use to get an updated database of Android phone models and curve fit parameters
++     *            for mapping distance to rssi. Set to "" to disable downloading an update.
++     */
++    @Deprecated
+     public static void setDistanceModelUpdateUrl(@NonNull String url) {
+         warnIfScannerNotInSameProcess();
+         distanceModelUpdateUrl = url;
+@@ -1722,6 +1869,7 @@ public class BeaconManager {
+      * @param disabled
+      * @deprecated This will be removed in the 3.0 release
+      */
++    @Deprecated
+     public static void setAndroidLScanningDisabled(boolean disabled) {
+         LogManager.d(TAG, "API setAndroidLScanningDisabled "+disabled);
+         sAndroidLScanningDisabled = disabled;
+diff --git a/lib/src/main/java/org/altbeacon/beacon/BeaconParser.java b/lib/src/main/java/org/altbeacon/beacon/BeaconParser.java
+index 8584d18..a7446dd 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/BeaconParser.java
++++ b/lib/src/main/java/org/altbeacon/beacon/BeaconParser.java
+@@ -1071,4 +1071,27 @@ public class BeaconParser implements Serializable {
+         return false;
+     }
+ 
++    @Override
++    public String toString() {
++        if (mIdentifier == null) {
++            return mBeaconLayout;
++        }
++        return mIdentifier + "~" + mBeaconLayout;
++    }
++
++    /**
++     * Creates a BeaconParser instance from a string in the format <identifier>~<layout>
++     * @param string the string to parse
++     * @return BeaconParser
++     */
++    public static BeaconParser fromString(String string) {
++        String[] parts = string.split("~");
++        if (parts.length != 2) {
++            return new BeaconParser().setBeaconLayout(string);
++        }
++        String identifier = parts[0];
++        String layout = parts[1];
++        return new BeaconParser(identifier).setBeaconLayout(layout);
++    }
++
+ }
+diff --git a/lib/src/main/java/org/altbeacon/beacon/BeaconRegion.kt b/lib/src/main/java/org/altbeacon/beacon/BeaconRegion.kt
+new file mode 100644
+index 0000000..663c4bf
+--- /dev/null
++++ b/lib/src/main/java/org/altbeacon/beacon/BeaconRegion.kt
+@@ -0,0 +1,8 @@
++package org.altbeacon.beacon
++
++class BeaconRegion(uniqueId: String, beaconParser: BeaconParser?, identifiers: List<Identifier>, bluetoothAddress: String?): Region(uniqueId, beaconParser, identifiers, bluetoothAddress, 3) {
++    constructor(uniqueId: String, beaconParser: BeaconParser, id1: String?, id2: String?, id3: String?) : this(uniqueId, beaconParser, listOf(Identifier.parse(id1), Identifier.parse(id2), Identifier.parse(id3)), null) {
++    }
++    constructor(uniqueId: String, macAddress: String) : this(uniqueId, null, arrayListOf(), macAddress) {
++    }
++}
+diff --git a/lib/src/main/java/org/altbeacon/beacon/Identifier.java b/lib/src/main/java/org/altbeacon/beacon/Identifier.java
+index d96e567..3910491 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/Identifier.java
++++ b/lib/src/main/java/org/altbeacon/beacon/Identifier.java
+@@ -65,7 +65,7 @@ public class Identifier implements Comparable<Identifier>, Serializable {
+      */
+     public static Identifier parse(String stringValue, int desiredByteLength) {
+         if (stringValue == null) {
+-            throw new NullPointerException("Identifiers cannot be constructed from null pointers but \"stringValue\" is null.");
++            return null;
+         }
+ 
+         if (HEX_PATTERN.matcher(stringValue).matches()) {
+diff --git a/lib/src/main/java/org/altbeacon/beacon/Region.java b/lib/src/main/java/org/altbeacon/beacon/Region.java
+index 2b6a557..8e1fbc6 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/Region.java
++++ b/lib/src/main/java/org/altbeacon/beacon/Region.java
+@@ -67,7 +67,7 @@ public class Region implements Parcelable, Serializable {
+     protected final List<Identifier> mIdentifiers;
+     protected final String mBluetoothAddress;
+     protected final String mUniqueId;
+-
++    protected final BeaconParser mBeaconParser;
+     /**
+      * Constructs a new Region object to be used for Ranging or Monitoring
+      * @param uniqueId - A unique identifier used to later cancel Ranging and Monitoring, or change the region being Ranged/Monitored
+@@ -82,6 +82,7 @@ public class Region implements Parcelable, Serializable {
+         this.mIdentifiers.add(id3);
+         this.mUniqueId = uniqueId;
+         this.mBluetoothAddress = null;
++        this.mBeaconParser = null;
+         if (uniqueId == null) {
+             throw new NullPointerException("uniqueId may not be null");
+         }
+@@ -107,10 +108,41 @@ public class Region implements Parcelable, Serializable {
+         this.mIdentifiers = new ArrayList<Identifier>(identifiers);
+         this.mUniqueId = uniqueId;
+         this.mBluetoothAddress = bluetoothAddress;
++        this.mBeaconParser = null;
++        if (uniqueId == null) {
++            throw new NullPointerException("uniqueId may not be null");
++        }
++    }
++
++    /**
++     * Constructs a new Region object to be used for Ranging or Monitoring
++     * @param uniqueId - A unique identifier used to later cancel Ranging and Monitoring, or change the region being Ranged/Monitored
++     * @param beaconParser - The parser used to decode the beacon identifiers
++     * @param identifiers - list of identifiers for this region
++     * @param bluetoothAddress - mac address
++     * @param apiVersion - future use
++     */
++    public Region(String uniqueId, BeaconParser beaconParser, List<Identifier> identifiers, String bluetoothAddress, int apiVersion) {
++        validateMac(bluetoothAddress);
++        if (identifiers == null) {
++            this.mIdentifiers = new ArrayList<>();
++        }
++        else {
++            this.mIdentifiers = new ArrayList<>(identifiers);
++        }
++        this.mUniqueId = uniqueId;
++        this.mBluetoothAddress = bluetoothAddress;
++        this.mBeaconParser = beaconParser;
+         if (uniqueId == null) {
+             throw new NullPointerException("uniqueId may not be null");
+         }
+     }
++    public Region(String uniqueId, BeaconParser beaconParser, Identifier id1, Identifier id2, Identifier id3) {
++        this(uniqueId, beaconParser, new ArrayList<Identifier>(3), null, 3);
++        this.mIdentifiers.add(id1);
++        this.mIdentifiers.add(id2);
++        this.mIdentifiers.add(id3);
++    }
+ 
+     /**
+      * Constructs a new Region object to be used for Ranging or Monitoring
+@@ -122,6 +154,7 @@ public class Region implements Parcelable, Serializable {
+         this.mBluetoothAddress = bluetoothAddress;
+         this.mUniqueId = uniqueId;
+         this.mIdentifiers = new ArrayList<Identifier>();
++        this.mBeaconParser = null;
+         if (uniqueId == null) {
+             throw new NullPointerException("uniqueId may not be null");
+         }
+@@ -185,6 +218,12 @@ public class Region implements Parcelable, Serializable {
+      * @return true if is covered
+      */
+     public boolean matchesBeacon(Beacon beacon) {
++        // If the region has a beacon parser type, it must match the beacon
++        if (mBeaconParser != null && mBeaconParser.mIdentifier != null) {
++            if (!mBeaconParser.mIdentifier.equals(beacon.getParserIdentifier())) {
++                return false;
++            }
++        }
+         // All identifiers must match, or the corresponding region identifier must be null.
+         for (int i = mIdentifiers.size(); --i >= 0; ) {
+             final Identifier identifier = mIdentifiers.get(i);
+@@ -274,9 +313,14 @@ public class Region implements Parcelable, Serializable {
+                 out.writeString(null);
+             }
+         }
++        if (mBeaconParser != null) {
++            out.writeString(mBeaconParser.toString());
++        }
++        else {
++            out.writeString(null);
++        }
+     }
+ 
+-
+     protected Region(Parcel in) {
+         mUniqueId = in.readString();
+         mBluetoothAddress = in.readString();
+@@ -291,6 +335,13 @@ public class Region implements Parcelable, Serializable {
+                 mIdentifiers.add(identifier);
+             }
+         }
++        String beaconParserString = in.readString();
++        if (beaconParserString != null) {
++            this.mBeaconParser = BeaconParser.fromString(beaconParserString);
++        }
++        else {
++            this.mBeaconParser = null;
++        }
+     }
+ 
+     private void validateMac(String mac) throws IllegalArgumentException {
+diff --git a/lib/src/main/java/org/altbeacon/beacon/Settings.kt b/lib/src/main/java/org/altbeacon/beacon/Settings.kt
+new file mode 100644
+index 0000000..4abacb2
+--- /dev/null
++++ b/lib/src/main/java/org/altbeacon/beacon/Settings.kt
+@@ -0,0 +1,351 @@
++package org.altbeacon.beacon
++
++import android.app.Notification
++import android.os.Build
++import org.altbeacon.beacon.distance.DistanceCalculatorFactory
++import org.altbeacon.beacon.distance.ModelSpecificDistanceCalculatorFactory
++import org.altbeacon.beacon.logging.LogManager
++import org.altbeacon.beacon.service.RunningAverageRssiFilter
++import org.altbeacon.beacon.simulator.BeaconSimulator
++
++data class AppliedSettings (
++    val debug: Boolean = Settings.Defaults.debug,
++    val regionStatePersistenceEnabled: Boolean = Settings.Defaults.regionStatePeristenceEnabled,
++    val hardwareEqualityEnforced: Boolean = Settings.Defaults.hardwareEqualityEnforced,
++    val scanPeriods: Settings.ScanPeriods = Settings.Defaults.scanPeriods,
++    val regionExitPeriodMillis: Int = Settings.Defaults.regionExitPeriodMillis,
++    val useTrackingCache: Boolean = Settings.Defaults.useTrackingCache,
++    val maxTrackingAgeMillis: Int = Settings.Defaults.maxTrackingAgeMillis,
++    val manifestCheckingDisabled: Boolean = Settings.Defaults.manifestCheckingDisabled,
++    val beaconSimulator: BeaconSimulator = Settings.Defaults.beaconSimulator,
++    val rssiFilterImplClass: Class<RunningAverageRssiFilter>? = Settings.Defaults.rssiFilterImplClass,
++    val distanceModelUpdateUrl: String = Settings.Defaults.distanceModelUpdateUrl,
++    val distanceCalculatorFactory: DistanceCalculatorFactory = Settings.Defaults.distanceCalculatorFactory,
++    val scanStrategy: Settings.ScanStrategy = Settings.Defaults.scanStrategy.clone(),
++    val longScanForcingEnabled: Boolean = Settings.Defaults.longScanForcingEnabled
++    ) {
++    companion object {
++        /**
++         * Makes a new settings object from the active settings, applying the non-null changes in the delta
++         */
++        fun fromDeltaSettings(settings: AppliedSettings, delta:Settings) : AppliedSettings {
++            return AppliedSettings(scanPeriods = delta.scanPeriods ?: settings.scanPeriods, debug = delta.debug ?: settings.debug, regionStatePersistenceEnabled = delta.regionStatePersistenceEnabled ?: settings.regionStatePersistenceEnabled, useTrackingCache = delta.useTrackingCache ?: settings.useTrackingCache, hardwareEqualityEnforced = delta.hardwareEqualityEnforced ?: settings.hardwareEqualityEnforced,
++                regionExitPeriodMillis = delta.regionExitPeriodMillis ?: settings.regionExitPeriodMillis, maxTrackingAgeMillis = delta.maxTrackingAgeMillis ?: settings.maxTrackingAgeMillis, manifestCheckingDisabled = delta.manifestCheckingDisabled ?: settings.manifestCheckingDisabled,
++                beaconSimulator = delta.beaconSimulator ?: settings.beaconSimulator, rssiFilterImplClass = delta.rssiFilterImplClass ?: settings.rssiFilterImplClass, scanStrategy = delta.scanStrategy?.clone() ?: settings.scanStrategy, longScanForcingEnabled = delta.longScanForcingEnabled ?: settings.longScanForcingEnabled, distanceModelUpdateUrl = delta.distanceModelUpdateUrl ?: settings.distanceModelUpdateUrl,
++                distanceCalculatorFactory = delta.distanceCalculatorFactory ?: settings.distanceCalculatorFactory)
++        }
++        fun withDefaultValues(): AppliedSettings {
++            return AppliedSettings(scanPeriods = Settings.Defaults.scanPeriods, debug = Settings.Defaults.debug, regionStatePersistenceEnabled = Settings.Defaults.regionStatePeristenceEnabled, useTrackingCache = Settings.Defaults.useTrackingCache, hardwareEqualityEnforced = Settings.Defaults.hardwareEqualityEnforced,
++                regionExitPeriodMillis = Settings.Defaults.regionExitPeriodMillis, maxTrackingAgeMillis = Settings.Defaults.maxTrackingAgeMillis, manifestCheckingDisabled = Settings.Defaults.manifestCheckingDisabled,
++                beaconSimulator = Settings.Defaults.beaconSimulator, rssiFilterImplClass = Settings.Defaults.rssiFilterImplClass, scanStrategy = Settings.Defaults.scanStrategy.clone(), longScanForcingEnabled = Settings.Defaults.longScanForcingEnabled, distanceModelUpdateUrl = Settings.Defaults.distanceModelUpdateUrl,
++                distanceCalculatorFactory = Settings.Defaults.distanceCalculatorFactory)
++        }
++        fun fromSettings(other: AppliedSettings) : AppliedSettings {
++            return AppliedSettings(scanPeriods = other.scanPeriods, debug = other.debug, regionStatePersistenceEnabled = other.regionStatePersistenceEnabled, useTrackingCache = other.useTrackingCache, hardwareEqualityEnforced = other.hardwareEqualityEnforced,
++                regionExitPeriodMillis = other.regionExitPeriodMillis, maxTrackingAgeMillis = other.maxTrackingAgeMillis, manifestCheckingDisabled = other.manifestCheckingDisabled,
++                beaconSimulator = other.beaconSimulator, rssiFilterImplClass = other.rssiFilterImplClass, scanStrategy = other.scanStrategy.clone(), longScanForcingEnabled = other.longScanForcingEnabled, distanceModelUpdateUrl = other.distanceModelUpdateUrl, distanceCalculatorFactory = other.distanceCalculatorFactory)
++        }
++    }
++}
++
++data class Settings(
++    // TODO: where should javadoc comments be?  on class or builder methods or both?
++    // I guess both, because the builder is used by Java and the class methods are used by kotlin
++
++    // not part of this api
++    // ---------
++    // BeaconParsers
++    // rangingRegions
++    // monitoringRegions
++    // rangingNotifiers
++    // monitoringNotifiers
++    // nonBeaconScanCallback
++
++    // not carried forward
++    // -------------------
++    // isAndroidLScanningDisabled()
++
++    /**
++     * Sets the log level on the library to debug (true) or info (false)
++     * Default is false
++     */
++    val debug: Boolean? = null,
++
++    /**
++     * Determines if monitored regions are persisted to app shared preferences so if the app restarts,
++     * the same regions are monitored.
++     * Default is true
++     */
++    val regionStatePersistenceEnabled: Boolean? = null,
++    /**
++     * Determines if two beacons with the same identifiers but with different hardware MAC addresses
++     * are treated as different beacons.
++     * Default is false
++     */
++    val hardwareEqualityEnforced: Boolean? = null,
++    val scanPeriods: ScanPeriods? = null,
++    /**
++     * How many milliseconds to wait after seeing the last beacon in a region before marking it as exited.
++     */
++    val regionExitPeriodMillis: Int? = null,
++    val useTrackingCache: Boolean? = null,
++    val maxTrackingAgeMillis: Int? = null,
++    val manifestCheckingDisabled: Boolean? = null,
++    val beaconSimulator: BeaconSimulator? = null,
++    val rssiFilterImplClass: Class<RunningAverageRssiFilter>? = null,
++    val distanceModelUpdateUrl: String? = null,
++    val distanceCalculatorFactory: DistanceCalculatorFactory? = null,
++    val scanStrategy: ScanStrategy? = null,
++    val longScanForcingEnabled: Boolean? = null
++    ) {
++    companion object {
++        fun fromSettings(other: Settings) : Settings {
++             return Settings(scanPeriods = other.scanPeriods,
++                 debug = other.debug,
++                 regionStatePersistenceEnabled = other.regionStatePersistenceEnabled,
++                 useTrackingCache = other.useTrackingCache,
++                 hardwareEqualityEnforced = other.hardwareEqualityEnforced,
++                 regionExitPeriodMillis = other.regionExitPeriodMillis,
++                 maxTrackingAgeMillis = other.maxTrackingAgeMillis,
++                 manifestCheckingDisabled = other.manifestCheckingDisabled,
++                 beaconSimulator = other.beaconSimulator,
++                 rssiFilterImplClass = other.rssiFilterImplClass,
++                 scanStrategy = other.scanStrategy?.clone(),
++                 longScanForcingEnabled = other.longScanForcingEnabled,
++                 distanceModelUpdateUrl = other.distanceModelUpdateUrl,
++                 distanceCalculatorFactory = other.distanceCalculatorFactory)
++        }
++        fun fromBuilder(builder: Builder) : Settings {
++            return Settings(scanPeriods = builder._scanPeriods,
++                debug = builder._debug, regionStatePersistenceEnabled = builder._regionStatePeristenceEnabled, useTrackingCache = builder._useTrackingCache, hardwareEqualityEnforced = builder._hardwareEqualityEnforced, regionExitPeriodMillis = builder._regionExitPeriodMillis,
++                maxTrackingAgeMillis = builder._maxTrackingAgeMillis, manifestCheckingDisabled = builder._manifestCheckingDisabled, beaconSimulator = builder._beaconSimulator, rssiFilterImplClass = builder._rssiFilterImplClass, scanStrategy = builder._scanStrategy?.clone(), longScanForcingEnabled = builder._longScanForcingEnabled, distanceModelUpdateUrl = builder._distanceModelUpdateUrl,
++                distanceCalculatorFactory = builder._distanceCalculatorFactory)
++        }
++    }
++    object Defaults {
++        const val debug = false
++        val scanStrategy: ScanStrategy
++        const val longScanForcingEnabled = false
++        val scanPeriods = ScanPeriods()
++        const val regionExitPeriodMillis = 30000
++        const val useTrackingCache = true
++        const val maxTrackingAgeMillis = 10000
++        const val manifestCheckingDisabled = false
++        val beaconSimulator = DisabledBeaconSimulator()
++        val rssiFilterImplClass = RunningAverageRssiFilter::class.java
++        const val regionStatePeristenceEnabled = true
++        const val hardwareEqualityEnforced = false
++        const val distanceModelUpdateUrl = "" // disabled
++        val distanceCalculatorFactory = ModelSpecificDistanceCalculatorFactory()
++        init{
++            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
++                scanStrategy = JobServiceScanStrategy()
++            }
++            else {
++                scanStrategy = BackgroundServiceScanStrategy()
++            }
++        }
++    }
++
++    class Builder {
++        internal var _scanPeriods: ScanPeriods? = null
++        internal var _debug: Boolean? = null
++        internal var _regionStatePeristenceEnabled: Boolean? = null
++        internal var _useTrackingCache: Boolean? = null
++        internal var _hardwareEqualityEnforced: Boolean? = null
++        internal var _regionExitPeriodMillis: Int? = null
++        internal var _maxTrackingAgeMillis: Int? = null
++        internal var _manifestCheckingDisabled: Boolean? = null
++        internal var _beaconSimulator: BeaconSimulator? = null
++        internal var _rssiFilterImplClass: Class<RunningAverageRssiFilter>? = null
++        internal var _distanceModelUpdateUrl: String? = null
++        internal var _distanceCalculatorFactory: DistanceCalculatorFactory? = null
++        internal var _scanStrategy: ScanStrategy? = null
++        internal var _longScanForcingEnabled: Boolean? = null
++        fun setDebug(debug: Boolean): Builder {
++            this._debug = debug
++            return this
++        }
++        fun setScanPeriods(scanPeriods: ScanPeriods): Builder {
++            this._scanPeriods = scanPeriods
++            return this
++        }
++        fun setDistanceModelUpdateUrl(url: String): Builder {
++            this._distanceModelUpdateUrl = url
++            return this
++        }
++        fun setDistanceCalculatorFactory(factory: DistanceCalculatorFactory): Builder {
++            this._distanceCalculatorFactory = factory
++            return this
++        }
++        fun setBeaconSimulator(beaconSimulator: BeaconSimulator): Builder {
++            this._beaconSimulator = beaconSimulator
++            return this
++        }
++        fun setScanStrategy(scanStrategy: ScanStrategy): Builder {
++            this._scanStrategy = scanStrategy
++            return this
++        }
++        fun setLongScanForcingEnabled(longScanForcingEnabled: Boolean): Builder {
++            this._longScanForcingEnabled = longScanForcingEnabled
++            return this
++        }
++        fun build(): Settings {
++            return fromBuilder(this)
++        }
++        // TODO: add all other setters
++    }
++
++    data class ScanPeriods (
++        val foregroundScanPeriodMillis: Long = 1100,
++        val foregroundBetweenScanPeriodMillis: Long  = 0,
++        val backgroundScanPeriodMillis: Long  = 30000,
++        val backgroundBetweenScanPeriodMillis: Long  = 0
++    )
++    interface ScanStrategy: Comparable<ScanStrategy> {
++        fun clone(): ScanStrategy
++
++        /**
++         * Internal use only.
++         */
++        fun configure(beaconManager: BeaconManager)
++    }
++    class JobServiceScanStrategy(val immediateJobId: Long = 208352939, val periodicJobId: Long = 208352940, val jobPersistenceEnabled: Boolean = true): ScanStrategy
++        {
++        override fun clone(): JobServiceScanStrategy {
++            return JobServiceScanStrategy(this.immediateJobId, this.periodicJobId, this.jobPersistenceEnabled)
++        }
++            override fun equals(other: Any?): Boolean {
++                val otherJobServiceScanStrategy =  other as? JobServiceScanStrategy
++                if (otherJobServiceScanStrategy != null) {
++                    return (this.immediateJobId == otherJobServiceScanStrategy.immediateJobId &&
++                        this.periodicJobId == otherJobServiceScanStrategy.periodicJobId &&
++                        this.jobPersistenceEnabled == otherJobServiceScanStrategy.jobPersistenceEnabled)
++                }
++                return false
++            }
++
++            override fun hashCode(): Int {
++                return javaClass.hashCode()
++            }
++
++            override fun configure(beaconManager: BeaconManager) {
++                beaconManager.setEnableScheduledScanJobs(true)
++                beaconManager.setIntentScanningStrategyEnabled(false)
++            }
++
++            override fun compareTo(other: ScanStrategy): Int {
++                return if (other is JobServiceScanStrategy) {
++                    if (this.immediateJobId == other.immediateJobId &&
++                        this.periodicJobId == other.periodicJobId &&
++                        this.jobPersistenceEnabled == other.jobPersistenceEnabled) {
++                        0
++                    } else {
++                        -1
++                    }
++                } else {
++                    -1
++                }
++            }
++        }
++    class BackgroundServiceScanStrategy(): ScanStrategy
++    {
++        override fun clone(): BackgroundServiceScanStrategy {
++            return BackgroundServiceScanStrategy()
++        }
++        override fun equals(other: Any?): Boolean {
++            return other as? BackgroundServiceScanStrategy != null
++        }
++
++        override fun hashCode(): Int {
++            return javaClass.hashCode()
++        }
++        override fun configure(beaconManager: BeaconManager) {
++            beaconManager.setEnableScheduledScanJobs(false)
++            beaconManager.setIntentScanningStrategyEnabled(false)
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                LogManager.w(
++                    "BackgroundServiceScanStrategy",
++                    "Using the BackgroundService  scan strategy on Android 8+ may disable delivery of " +
++                            "beacon callbacks in the background."
++                )
++            }
++        }
++        override fun compareTo(other: ScanStrategy): Int {
++            return if (other is BackgroundServiceScanStrategy) {
++                0
++            } else {
++                -1
++            }
++        }
++    }
++    class ForegroundServiceScanStrategy(val notification: Notification, val notificationId: Int): ScanStrategy {
++        var androidLScanningDisabled = true
++        override fun clone(): ForegroundServiceScanStrategy {
++           return ForegroundServiceScanStrategy(notification, notificationId)
++        }
++        override fun equals(other: Any?): Boolean {
++            val otherForegroundServiceScanStrategy =  other as? ForegroundServiceScanStrategy
++            if (otherForegroundServiceScanStrategy != null) {
++                return (this.notificationId == otherForegroundServiceScanStrategy.notificationId &&
++                        this.androidLScanningDisabled == otherForegroundServiceScanStrategy.androidLScanningDisabled)
++            }
++            return false
++        }
++
++        override fun hashCode(): Int {
++            return javaClass.hashCode()
++        }
++        override fun configure(beaconManager: BeaconManager) {
++            beaconManager.setEnableScheduledScanJobs(false)
++            beaconManager.setIntentScanningStrategyEnabled(false)
++            beaconManager.enableForegroundServiceScanning(notification, notificationId)
++        }
++
++        override fun compareTo(other: ScanStrategy): Int {
++            return if (other is ForegroundServiceScanStrategy) {
++                if (this.notificationId == other.notificationId &&
++                    this.androidLScanningDisabled == other.androidLScanningDisabled) {
++                    0
++                } else {
++                    -1
++                }
++            } else {
++                -1
++            }
++        }
++    }
++    class IntentScanStrategy: ScanStrategy {
++        override fun clone(): IntentScanStrategy {
++            return IntentScanStrategy()
++        }
++        override fun equals(other: Any?): Boolean {
++            return other as? IntentScanStrategy != null
++        }
++
++        override fun hashCode(): Int {
++            return javaClass.hashCode()
++        }
++        override fun configure(beaconManager: BeaconManager) {
++            beaconManager.setEnableScheduledScanJobs(false)
++            beaconManager.setIntentScanningStrategyEnabled(true)
++        }
++
++        override fun compareTo(other: ScanStrategy): Int {
++            return if (other is IntentScanStrategy) {
++                0
++            } else {
++                -1
++            }
++        }
++
++
++    }
++
++    class DisabledBeaconSimulator: BeaconSimulator {
++        override fun getBeacons(): MutableList<Beacon> {
++            return mutableListOf()
++        }
++    }
++}
++
+diff --git a/lib/src/main/java/org/altbeacon/beacon/distance/DistanceCalculatorFactory.kt b/lib/src/main/java/org/altbeacon/beacon/distance/DistanceCalculatorFactory.kt
+new file mode 100644
+index 0000000..06592ad
+--- /dev/null
++++ b/lib/src/main/java/org/altbeacon/beacon/distance/DistanceCalculatorFactory.kt
+@@ -0,0 +1,7 @@
++package org.altbeacon.beacon.distance
++
++import android.content.Context
++
++public interface DistanceCalculatorFactory {
++    fun getInstance(context: Context): DistanceCalculator
++}
+\ No newline at end of file
+diff --git a/lib/src/main/java/org/altbeacon/beacon/distance/ModelSpecificDistanceCalculatorFactory.kt b/lib/src/main/java/org/altbeacon/beacon/distance/ModelSpecificDistanceCalculatorFactory.kt
+new file mode 100644
+index 0000000..2da958e
+--- /dev/null
++++ b/lib/src/main/java/org/altbeacon/beacon/distance/ModelSpecificDistanceCalculatorFactory.kt
+@@ -0,0 +1,11 @@
++package org.altbeacon.beacon.distance
++
++import android.content.Context
++import org.altbeacon.beacon.BeaconManager
++
++class ModelSpecificDistanceCalculatorFactory: DistanceCalculatorFactory {
++    override fun getInstance(context: Context): DistanceCalculator {
++        val updateUrl = BeaconManager.getInstanceForApplication(context).activeSettings.distanceModelUpdateUrl
++        return ModelSpecificDistanceCalculator(context, updateUrl)
++    }
++}
+\ No newline at end of file
+diff --git a/lib/src/main/java/org/altbeacon/beacon/service/BeaconService.java b/lib/src/main/java/org/altbeacon/beacon/service/BeaconService.java
+index 127b291..f683b7e 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/service/BeaconService.java
++++ b/lib/src/main/java/org/altbeacon/beacon/service/BeaconService.java
+@@ -236,11 +236,6 @@ public class BeaconService extends Service {
+ 
+         mScanHelper.reloadParsers();
+ 
+-        if (Beacon.getDistanceCalculator() == null) {
+-            DistanceCalculator defaultDistanceCalculator =  new ModelSpecificDistanceCalculator(this, BeaconManager.getDistanceModelUpdateUrl());
+-            Beacon.setDistanceCalculator(defaultDistanceCalculator);
+-        }
+-
+         // Look for simulated scan data
+         try {
+             Class klass = Class.forName("org.altbeacon.beacon.SimulatedScanData");
+diff --git a/lib/src/main/java/org/altbeacon/beacon/service/IntentScanStrategyCoordinator.kt b/lib/src/main/java/org/altbeacon/beacon/service/IntentScanStrategyCoordinator.kt
+index c629444..fb0ff9f 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/service/IntentScanStrategyCoordinator.kt
++++ b/lib/src/main/java/org/altbeacon/beacon/service/IntentScanStrategyCoordinator.kt
+@@ -1,5 +1,6 @@
+ package org.altbeacon.beacon.service
+ 
++import android.annotation.SuppressLint
+ import android.bluetooth.BluetoothManager
+ import android.bluetooth.le.BluetoothLeScanner
+ import android.bluetooth.le.ScanCallback
+@@ -36,10 +37,6 @@ class IntentScanStrategyCoordinator(val context: Context) {
+         if (!initialized) {
+             initialized = true
+             scanHelper = ScanHelper(context)
+-            if (Beacon.getDistanceCalculator() == null) {
+-                val defaultDistanceCalculator =  ModelSpecificDistanceCalculator(context, BeaconManager.getDistanceModelUpdateUrl());
+-                Beacon.setDistanceCalculator(defaultDistanceCalculator);
+-            }
+             reinitialize()
+         }
+     }
+@@ -188,91 +185,118 @@ class IntentScanStrategyCoordinator(val context: Context) {
+     }
+ 
+     @RequiresApi(21)
++    @SuppressLint("MissingPermission")
+     fun runBackupScan(context: Context) {
+         if (!started) {
+             LogManager.i(TAG, "Not doing backup scan because we are not started")
+             return
+         }
+-        var anythingDetectedWithIntentScan = scanHelper.anyBeaconsDetectedThisCycle()
++        val anythingDetectedWithIntentScan = scanHelper.anyBeaconsDetectedThisCycle()
+         if (anythingDetectedWithIntentScan) {
+             LogManager.d(TAG, "We have detected beacons with the intent scan.  No need to do a backup scan.")
+             strategyFailureDetectionCount = 0
+             lastStrategyFailureDetectionCount = 0
+             return
+         }
+-        LogManager.i(TAG, "Starting backup scan on background thread")
+-        executor.execute({
+-            LogManager.i(TAG, "Starting backup scan")
+-            val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+-            val adapter = manager.adapter
+-            var beaconDetected = false
+-            val scanStartTime = System.currentTimeMillis()
++        LogManager.i(TAG, "Starting background thread to do backup scan")
++        executor.execute {
+ 
+-            if (adapter != null) {
+-                val scanner: BluetoothLeScanner? = adapter.getBluetoothLeScanner()
+-                if (scanner != null) {
+-                    val callback: ScanCallback = object : ScanCallback() {
+-                        override fun onScanResult(callbackType: Int, result: ScanResult) {
+-                            super.onScanResult(callbackType, result)
+-                            scanHelper.processScanResult(result.device, result.rssi, result.scanRecord?.bytes, result.timestampNanos)
+-                            try {
+-                                scanner.stopScan(this)
+-                            } catch (e: IllegalStateException) { /* do nothing */
+-                            } // caught if bluetooth is off here
+-                        }
++            // give the intent scan 5 seconds to detect beacons before starting the backup scan
++            try {
++                Thread.sleep(5000L)
++            } catch (e: InterruptedException) { /* do nothing */
++            }
+ 
+-                        override fun onBatchScanResults(results: List<ScanResult>) {
+-                            super.onBatchScanResults(results)
+-                        }
++            val anythingDetectedWithIntentScan = scanHelper.anyBeaconsDetectedThisCycle()
++            if (anythingDetectedWithIntentScan) {
++                LogManager.i(TAG, "We have belatedly detected beacons with the intent scan.  No need to do a backup scan.")
++                strategyFailureDetectionCount = 0
++                lastStrategyFailureDetectionCount = 0
++            }
++            else {
++                LogManager.i(TAG, "Starting backup scan")
++                val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
++                val adapter = manager.adapter
++                var beaconDetected = false
++                val scanStartTime = System.currentTimeMillis()
+ 
+-                        override fun onScanFailed(errorCode: Int) {
+-                            super.onScanFailed(errorCode)
+-                            LogManager.d(TAG, "Sending onScanFailed event")
+-                        }
+-                    }
+-                
+-                    try {
+-                        scanner.startScan(callback)
+-                        while (beaconDetected == false) {
+-                            LogManager.d(TAG, "Waiting for beacon detection...")
+-                            try {
+-                                Thread.sleep(1000L)
+-                            } catch (e: InterruptedException) { /* do nothing */
++                if (adapter != null) {
++                    val scanner: BluetoothLeScanner? = adapter.getBluetoothLeScanner()
++                    if (scanner != null) {
++                        val callback: ScanCallback = @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
++                        object : ScanCallback() {
++                            override fun onScanResult(callbackType: Int, result: ScanResult) {
++                                super.onScanResult(callbackType, result)
++                                scanHelper.processScanResult(
++                                    result.device,
++                                    result.rssi,
++                                    result.scanRecord?.bytes,
++                                    result.timestampNanos
++                                )
++                                beaconDetected = true
++                                try {
++                                    scanner.stopScan(this)
++                                } catch (e: IllegalStateException) { /* do nothing */
++                                } // caught if bluetooth is off here
++                            }
++
++                            override fun onBatchScanResults(results: List<ScanResult>) {
++                                super.onBatchScanResults(results)
++                            }
++
++                            override fun onScanFailed(errorCode: Int) {
++                                super.onScanFailed(errorCode)
++                                LogManager.d(TAG, "Sending onScanFailed event")
+                             }
+-                            if (System.currentTimeMillis() - scanStartTime > 30000L) {
+-                                LogManager.d(TAG, "Timeout running backup scan to look for beacons")
+-                                break
++                        }
++
++                        try {
++                            scanner.startScan(callback)
++                            while (!beaconDetected) {
++                                LogManager.d(TAG, "Waiting for beacon detection...")
++                                try {
++                                    Thread.sleep(1000L)
++                                } catch (e: InterruptedException) { /* do nothing */
++                                }
++                                if (System.currentTimeMillis() - scanStartTime > 30000L) {
++                                    LogManager.d(TAG, "Timeout running backup scan to look for beacons")
++                                    break
++                                }
+                             }
+-                            if (scanHelper.anyBeaconsDetectedThisCycle()) {
++                            scanner.stopScan(callback)
++                            if (beaconDetected) {
+                                 // We have detected beacons with the backup scan but we failed to do so with the regular scan
+                                 // this indicates a failure in the intent scanning technique.
+                                 if (strategyFailureDetectionCount == lastStrategyFailureDetectionCount) {
+-                                    LogManager.e(TAG, "We have detected a beacon with the backup scan without a filter.  We never detected one with the intent scan with a filter.  This technique will not work.")
++                                    LogManager.e(
++                                        TAG,
++                                        "We have detected a beacon with the backup scan without a filter.  We never detected one with the intent scan with a filter.  This technique will not work."
++                                    )
+                                 }
+                                 lastStrategyFailureDetectionCount = strategyFailureDetectionCount
+                                 strategyFailureDetectionCount++
+                             }
++
++                        } catch (e: IllegalStateException) {
++                            LogManager.d(TAG, "Bluetooth is off.  Cannot run backup scan")
++                        } catch (e: NullPointerException) {
++                            // Needed to stop a crash caused by internal NPE thrown by Android.  See issue #636
++                            LogManager.e(TAG, "NullPointerException. Cannot run backup scan", e)
+                         }
+-                        scanner.stopScan(callback)
+-                    } catch (e: IllegalStateException) {
+-                        LogManager.d(TAG, "Bluetooth is off.  Cannot run backup scan")
+-                    } catch (e: NullPointerException) {
+-                        // Needed to stop a crash caused by internal NPE thrown by Android.  See issue #636
+-                        LogManager.e(TAG, "NullPointerException. Cannot run backup scan", e)
++                    } else {
++                        LogManager.d(TAG, "Cannot get scanner")
+                     }
+-                } else {
+-                    LogManager.d(TAG, "Cannot get scanner")
++                }
++                LogManager.d(TAG, "backup scan complete")
++                if (disableOnFailure && strategyFailureDetectionCount > 0) {
++                    BeaconManager.getInstanceForApplication(context).handleStategyFailover()
++                }
++                // Call this a  second time to clear out beacons detected in the log 5-25 minute region
++                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                    this@IntentScanStrategyCoordinator.processScanResults(ArrayList<ScanResult?>())
+                 }
+             }
+-            LogManager.d(TAG, "backup scan complete")
+-            if (disableOnFailure && strategyFailureDetectionCount > 0) {
+-                BeaconManager.getInstanceForApplication(context).handleStategyFailover()
+-            }
+-            // Call this a  second time to clear out beacons detected in the log 5-25 minute region
+-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-                this@IntentScanStrategyCoordinator.processScanResults(ArrayList<ScanResult?>())
+-            }
+-        })
++        }
+     }
+ 
+     companion object {
+diff --git a/lib/src/main/java/org/altbeacon/beacon/service/ScanJob.java b/lib/src/main/java/org/altbeacon/beacon/service/ScanJob.java
+index db4bc7c..c486e2e 100644
+--- a/lib/src/main/java/org/altbeacon/beacon/service/ScanJob.java
++++ b/lib/src/main/java/org/altbeacon/beacon/service/ScanJob.java
+@@ -327,10 +327,6 @@ public class ScanJob extends JobService {
+             ProcessUtils processUtils = new ProcessUtils(ScanJob.this);
+             LogManager.i(TAG, "beaconScanJob PID is "+processUtils.getPid()+" with process name "+processUtils.getProcessName());
+         }
+-        if (Beacon.getDistanceCalculator() == null) {
+-            DistanceCalculator defaultDistanceCalculator =  new ModelSpecificDistanceCalculator(this, BeaconManager.getDistanceModelUpdateUrl());
+-            Beacon.setDistanceCalculator(defaultDistanceCalculator);
+-        }
+         return restartScanning();
+     }
+ 

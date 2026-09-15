@@ -68,8 +68,13 @@ the graded set.
 
 ## 2. A golden patch that omits a generated doc file turns a green repo test red
 
-`CLAUDE.md` Step 2 item 9 already says files the PR changed and golden omits are a finding. This
-is what that finding actually costs when the omitted file is **generated**.
+A file the PR touched and golden omits is normally **not** a finding, which LEDGER L59 measured
+and `.claude/rules/01-workflow-steps-1-to-5.5.md` Step 2 item 9 now says outright. This note is
+the narrow case that survives it, and the discriminator is not the file's extension but whether a
+**pre-existing test reads it**. A docs or changelog file nobody asserts on is the accepted shape.
+A **generated** file that a repo test compares against is a `pass_to_pass` guard wearing a docs
+extension, and leaving it out of golden turns a green test red. Check which kind you have before
+filing anything.
 
 firefly regenerates its API reference and swagger from `ffstruct` tags and a description
 registry, and it has two pre-existing tests that compare the generated output to the checked-in
@@ -216,9 +221,17 @@ of exiting 2 with no reward file written.
 | oracle (solve plus whole verifier) | 66 to 67 s |
 
 A 300 s `[verifier] timeout_sec` would have held, and it was raised to 900 anyway for headroom on
-a slower builder. The bundle shipped with `[verifier] timeout_sec` 300 against an
-`execution.timeout_sec` of 1800, so the inner limit could never fire. Check that pair on every
-task: the inner one has to be the smaller of the two.
+a slower builder. The bundle arrived with `[verifier] timeout_sec` 300 against an
+`execution.timeout_sec` of 1800, so the inner limit could never fire and the outer one would have
+killed a slow but correct run. Check that pair on every task: the inner one has to be the smaller
+of the two.
+
+This is documented as of the 2026-08-13 export, so it is no longer only a local habit.
+`docs/reviewer-rubric.md:101` makes a verifier timeout shorter than the task's own configured
+timeout **Secondary Requirement 1**, a Minor violation flagged in 18% of reviewer comments, and it
+names this exact 1800 against 300 pair as its example. It arrives that way from the generator in 10
+of 11 bundles measured here, so on the reviewer side it is filed as the arriving default the
+submitter did not correct, with both numbers named (LEDGER **L73**, which supersedes L58).
 
 ## 5. A logger that ends in `os.Exit` takes the whole package down, so isolate the call in a child test binary
 

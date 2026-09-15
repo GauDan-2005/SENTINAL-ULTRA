@@ -77,6 +77,20 @@ In almost every case a block is a **real, content-side result you need to act on
 
 The **one** infra case is when the message explicitly says **"the difficulty screen failed with an infra error"** — that's a sandbox/platform crash, no verdict was produced, so retry (see the [infra-failure FAQ](#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)). If you get the *same* review-gate block repeatedly across different tasks, or several in a short window with otherwise-clean checks, flag it on Slack with the UIDs — a cluster can indicate a platform-side issue rather than a problem with each task.
 
+## Difficulty checks are now capped — what is "Invalid Difficulty"? <a id="difficulty-checks-are-now-capped-what-is-invalid-difficulty"></a>
+
+Before **August 14, 2026**, a task could cycle through the difficulty check with no limit.
+
+As of **August 14, 2026**, once **4 difficulty checks** have run on a task without passing, the task is automatically classified as **Invalid Difficulty** and goes to review as it stands. **This is not a rejection, and it does not apply retroactively to earlier tasks.**
+
+We've introduced this classification to avoid endless cycles on tasks that can't reach validity. We know how frustrating it is to spend time on tasks that ultimately can't be validated, and this gives every task a clear, predictable endpoint.
+
+> **Note:** **Please note:** the Invalid Difficulty selection will still be reviewed by a human reviewer.
+
+-   **What you'll see.** 4 new read-only fields. Two of them — *Difficulty checks run* and *Difficulty checks remaining* — show how many checks have run on a task and how many are left.
+-   **What you need to do.** At the limit, we will automatically change your answer on the validity question to **Invalid Difficulty**. The task returns to you once with that verdict already on it: submit it again for review without changing anything, and leave the verdict as we set it.
+-   **What doesn't count.** The counter only increases when a difficulty check runs and returns a result. If your submission comes back to you before the difficulty check runs, or a technical issue prevents a result, that submission does not count against you. If a reviewer sends the task back, the count restarts at zero.
+
 ## The linter rejects my task as "easy" after a difficulty downgrade — what do I do? <a id="the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do"></a>
 
 This is a **known issue** the team is working through. If a task's measured difficulty comes back harder than its metadata, the fix is *not* to hand-edit the pass-rate/difficulty fields in `task.toml` to satisfy the reviewer, because the linter rejects tasks it reads as "easy" outright — so changing the metadata to match the measured difficulty and satisfying the linter can pull in opposite directions.

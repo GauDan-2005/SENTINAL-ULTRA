@@ -1,0 +1,7 @@
+# Docker reads only the .dockerignore at the root of the build context, which is
+# this directory. The upstream repo tracks .idea/ at the base commit, so it cannot
+# be deleted from the shipped tree; keeping it out of the image is done here and
+# again with an rm -rf after the COPY.
+repo/.idea
+repo/.vscode
+repo/.DS_Store

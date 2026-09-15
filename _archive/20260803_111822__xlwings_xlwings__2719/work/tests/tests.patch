@@ -1,0 +1,627 @@
+diff --git a/tests/test_sentinel_async_load.py b/tests/test_sentinel_async_load.py
+new file mode 100644
+index 00000000..d6e217b7
+--- /dev/null
++++ b/tests/test_sentinel_async_load.py
+@@ -0,0 +1,621 @@
++"""
++Tests for the async (lazy) book load semantics in the remote backend.
++
++Everything here is asserted through observable behaviour: whether a synchronous
++cell read succeeds, raises, or returns a stale value. Nothing reaches into the
++implementation's private state, so any correct design passes.
++
++``js`` / ``pyodide`` aren't available in the test environment and the load
++methods gate on ``sys.platform == "emscripten"``, so the fixtures below fake just
++enough of that surface to run the real branching logic.
++"""
++
++import re
++import sys
++import types
++from typing import Optional, Union
++from types import ModuleType, SimpleNamespace
++
++import pytest
++
++import xlwings as xw
++from xlwings import XlwingsError
++from xlwings.pro import _xlremote as R
++from xlwings.pro.udfs_officejs import custom_scripts_call, custom_scripts_meta, script
++
++SHEET1 = "SalesQ3"
++SHEET2 = "Archive"
++SHEET3 = "Forecast"
++
++# What the fake host returns for a full (non-lazy) fetch. Distinct from the
++# values a book is opened with, so "did this load actually happen" is visible.
++SERVER_VALUES = [[10, 20], [30, 40]]
++OPENED_VALUES = [[1, 2], [3, 4]]
++
++
++def _sheet(name, values):
++    return {
++        "name": name,
++        "values": values if values is not None else [[]],
++        "pictures": [],
++        "tables": [],
++    }
++
++
++def _book_json(values=None, names=None):
++    """Two sheets by default, so per-sheet behaviour is observable."""
++    return {
++        "client": "Office.js",
++        "version": xw.__version__,
++        "book": {"name": "B", "active_sheet_index": 0, "selection": "A1"},
++        "names": [],
++        "sheets": [_sheet(n, values) for n in (names or [SHEET1, SHEET2])],
++    }
++
++
++def _make_app():
++    """A real *remote* App, so reads go through the remote backend rather than
++    launching the native Excel engine."""
++    return R.App(R.Apps(), add_book=False)
++
++
++def _open_eager(values=None):
++    """A regular book, opened directly with its data."""
++    return _make_app().books.open(_book_json(values))
++
++
++async def _fetch_async():
++    """A book obtained the way the async API obtains one, on demand."""
++    return await _make_app().books.get_active()
++
++
++def _read(sheet):
++    """Synchronous top-left cell read on an implementation sheet."""
++    return R.Range(sheet=sheet, arg1=(1, 1)).raw_value
++
++
++def _points_at_an_await_route(msg):
++    """The instruction asks the message to point at an awaitable way to get the
++    value, and says either real route counts. A message naming only one of them
++    is a correct solution, so both spellings pass here."""
++    return re.search(r"get_value|\bload\s*\(", msg) is not None
++
++
++def _raises(sheet):
++    """True when a synchronous read on this sheet raises XlwingsError."""
++    try:
++        _read(sheet)
++    except XlwingsError:
++        return True
++    return False
++
++
++class _Host:
++    """Stands in for the Office.js host.
++
++    Mirrors the server: a metadata-only request comes back with no cell values, a
++    full one comes back with SERVER_VALUES. Records the options each request
++    arrived with, and lets a test change the sheet list between requests the way
++    someone adding a sheet in Excel would.
++    """
++
++    def __init__(self):
++        self.calls = []
++        self.sheet_names = [SHEET1, SHEET2]
++
++    async def get_book_data(self, opts=None):
++        opts = dict(opts) if opts else {}
++        self.calls.append(opts)
++        # `include` narrows the payload to the named sheets, the way the real
++        # host does for a single sheet load.
++        include = opts.get("include")
++        if isinstance(include, str):
++            include = [include]
++        names = list(include) if include else self.sheet_names
++        values = [[]] if opts.get("lazy", False) else SERVER_VALUES
++        return SimpleNamespace(to_py=lambda: _book_json(values, names))
++
++    def lazy_flags(self):
++        """What each request since the last clear asked for."""
++        return [c.get("lazy") for c in self.calls]
++
++    def included(self):
++        """Which sheets the most recent request named, as a list.
++
++        A single sheet load already sends `include` as a plain string, so a
++        request naming several sheets may reasonably arrive as a list or as one
++        delimited string. Both spellings mean the same thing and both are
++        accepted here.
++        """
++        if not self.calls:
++            return None
++        raw = self.calls[-1].get("include")
++        if raw is None:
++            return None
++        if isinstance(raw, str):
++            return [part.strip() for part in raw.split(",") if part.strip()]
++        return [str(part) for part in raw]
++
++
++@pytest.fixture
++def fake_emscripten(monkeypatch):
++    """Fake sys.platform + js/pyodide so the load paths run their real logic.
++
++    Hands back the fake host, so a test that cares can read what was requested or
++    change what the workbook looks like.
++    """
++    monkeypatch.setattr(sys, "platform", "emscripten")
++    host = _Host()
++
++    js = ModuleType("js")
++    js.xlwings = SimpleNamespace(getBookData=host.get_book_data)
++    # to_js(..., dict_converter=js.Object.fromEntries) references this; our fake
++    # to_js ignores it, but the attribute must exist to be passed as an arg.
++    js.Object = SimpleNamespace(fromEntries=lambda x: x)
++
++    pyodide = ModuleType("pyodide")
++    ffi = ModuleType("pyodide.ffi")
++    ffi.to_js = lambda obj, dict_converter=None: obj
++    pyodide.ffi = ffi
++
++    monkeypatch.setitem(sys.modules, "js", js)
++    monkeypatch.setitem(sys.modules, "pyodide", pyodide)
++    monkeypatch.setitem(sys.modules, "pyodide.ffi", ffi)
++    return host
++
++
++@pytest.fixture
++def anyio_backend():
++    return "asyncio"
++
++
++# --- how a book was obtained decides whether sync reads work ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_async_fetch_read_raises_with_actionable_message(
++    fake_emscripten,
++):
++    book = await _fetch_async()
++    sheet = book.sheets.active
++    with pytest.raises(XlwingsError) as exc_info:
++        _read(sheet)
++    msg = str(exc_info.value)
++    # says the values are not loaded, names the sheet, and offers both routes
++    assert sheet.name in msg
++    assert _points_at_an_await_route(msg)
++
++
++def test_sentinel_eager_book_value_read_works():
++    assert _read(_open_eager(OPENED_VALUES).sheets.active) == [(1,)]
++
++
++# --- Book.load(values=...) ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_async_book_load_value_states(fake_emscripten):
++    """Every state of the values argument on an async book, in one case.
++
++    One id rather than three, because this is a single contract - what the
++    argument means - asserted over the values it can take.
++    """
++    # no argument: metadata only, so reads still raise
++    book = await _fetch_async()
++    await book.load()
++    assert _raises(book.sheets.active)
++
++    # values=True: values arrive and the sheet reads normally
++    await book.load(values=True)
++    assert _read(book.sheets.active) == [(10,)]
++
++    # values=False: metadata only, whatever the book already is
++    fresh = await _fetch_async()
++    await fresh.load(values=False)
++    assert _raises(fresh.sheets.active)
++
++    # an empty selection asks for nothing, exactly like False
++    empty = await _fetch_async()
++    await empty.load(values=[])
++    assert _raises(empty.sheets.active)
++
++
++@pytest.mark.anyio
++async def test_sentinel_regular_book_load_defaults_to_full(fake_emscripten):
++    # A regular book with no argument loads values, so the server's data wins.
++    book = _open_eager(OPENED_VALUES)
++    await book.load()
++    assert _read(book.sheets.active) == [(10,)]
++
++
++@pytest.mark.anyio
++async def test_sentinel_regular_book_load_values_false_is_metadata_only(
++    fake_emscripten,
++):
++    # values=False forces metadata-only even on a regular book, so the values it
++    # was opened with survive instead of being replaced by the server's.
++    book = _open_eager(OPENED_VALUES)
++    await book.load(values=False)
++    assert _read(book.sheets.active) == [(1,)]
++
++
++@pytest.mark.anyio
++async def test_sentinel_metadata_only_load_does_not_clobber_loaded_values(
++    fake_emscripten,
++):
++    book = await _fetch_async()
++    await book.load(values=True)
++    assert _read(book.sheets.active) == [(10,)]
++    await book.load()  # metadata-only refresh must not wipe what was loaded
++    assert _read(book.sheets.active) == [(10,)]
++
++
++# --- Sheet.load(values=...) ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_sheet_load_affects_only_that_sheet(fake_emscripten):
++    book = await _fetch_async()
++    await book.sheets(SHEET1).load(values=True)
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++    assert _raises(book.sheets(SHEET2))
++
++
++@pytest.mark.anyio
++async def test_sentinel_regular_book_sheet_load_defaults_to_full(fake_emscripten):
++    # The other half of the bare-default rule. Every other check of it is either
++    # on Book.load or on an async book, so nothing held the regular book plus
++    # Sheet.load corner: on a regular book a bare load still pulls values down.
++    book = _open_eager(OPENED_VALUES)
++    assert _read(book.sheets(SHEET1)) == [(1,)]
++    await book.sheets(SHEET1).load()
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++    # and it is still a regular book afterwards, so reads never start raising
++    assert not _raises(book.sheets(SHEET2))
++
++
++@pytest.mark.anyio
++async def test_sentinel_sheet_load_defaults_to_metadata_only(fake_emscripten):
++    book = await _fetch_async()
++    await book.sheets(SHEET1).load()
++    assert _raises(book.sheets(SHEET1))
++
++
++@pytest.mark.anyio
++async def test_sentinel_sheet_load_values_false_is_metadata_only(fake_emscripten):
++    # On an async book, forcing metadata-only leaves reads raising.
++    book = await _fetch_async()
++    await book.sheets(SHEET1).load(values=False)
++    assert _raises(book.sheets(SHEET1))
++    # On a regular book, it leaves the values it already had.
++    regular = _open_eager(OPENED_VALUES)
++    await regular.sheets(SHEET1).load(values=False)
++    assert _read(regular.sheets(SHEET1)) == [(1,)]
++
++
++@pytest.mark.anyio
++async def test_sentinel_loaded_values_survive_a_sheet_rename(fake_emscripten):
++    # Regression: whatever records the loaded state must not be keyed on the
++    # sheet name, which can change without a round trip.
++    book = await _fetch_async()
++    sheet = book.sheets(SHEET1)
++    await sheet.load(values=True)
++    assert _read(sheet) == [(10,)]
++    sheet.api["name"] = "Renamed"
++    assert _read(sheet) == [(10,)]
++
++
++# --- through the public xw.Book / xw.Sheet wrappers ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_public_wrapper_read_raises_with_actionable_message(
++    fake_emscripten,
++):
++    book = xw.Book(impl=await _fetch_async())
++    with pytest.raises(XlwingsError) as exc_info:
++        book.sheets[0]["A1"].value
++    msg = str(exc_info.value)
++    assert book.sheets[0].name in msg
++    assert _points_at_an_await_route(msg)
++
++
++@pytest.mark.anyio
++async def test_sentinel_public_book_load_forwards_values(fake_emscripten):
++    book = xw.Book(impl=await _fetch_async())
++    await book.load(values=True)
++    assert book.sheets[0]["A1"].value == 10
++
++
++@pytest.mark.anyio
++async def test_sentinel_public_sheet_load_forwards_values(fake_emscripten):
++    book = xw.Book(impl=await _fetch_async())
++    sheet = book.sheets[0]
++    await sheet.load(values=True)
++    assert sheet["A1"].value == 10
++
++
++@pytest.mark.anyio
++async def test_sentinel_public_wrapper_load_values_false_still_raises(fake_emscripten):
++    book = xw.Book(impl=await _fetch_async())
++    await book.load(values=False)
++    with pytest.raises(XlwingsError):
++        book.sheets[0]["A1"].value
++
++
++# --- script parameter annotations ---
++
++SCRIPT_BOOK_JSON = {
++    "client": "Office.js",
++    "version": xw.__version__,
++    "book": {"name": "B", "active_sheet_index": 0, "selection": "A1"},
++    "names": [],
++    "sheets": [{"name": "S", "values": [[None]], "pictures": [], "tables": []}],
++}
++
++
++def _make_module(**funcs):
++    mod = types.ModuleType("test_scripts")
++    for name, func in funcs.items():
++        mod.__dict__[name] = func
++    return mod
++
++
++@pytest.mark.anyio
++async def test_sentinel_book_async_annotation_makes_injected_book_lazy():
++    # The caller builds the book eagerly and cannot see the annotation, so the
++    # laziness has to be applied to the book that gets injected.
++    @script
++    async def my_script(book: xw.BookAsync):
++        book.sheets.active["A1"].value  # sync read on an async book -> raises
++
++    book = xw.Book(json=SCRIPT_BOOK_JSON)
++    mod = _make_module(my_script=my_script)
++    with pytest.raises(XlwingsError):
++        await custom_scripts_call(mod, "my_script", typehint_to_value={xw.Book: book})
++    book.close()
++
++
++@pytest.mark.anyio
++async def test_sentinel_plain_book_annotation_stays_regular():
++    # Without BookAsync the injected book is untouched and sync reads work.
++    @script
++    async def my_script(book: xw.Book):
++        assert book.sheets.active["A1"].value is None  # must not raise
++
++    book = xw.Book(json=SCRIPT_BOOK_JSON)
++    mod = _make_module(my_script=my_script)
++    await custom_scripts_call(mod, "my_script", typehint_to_value={xw.Book: book})
++    book.close()
++
++
++# --- optional spellings of the book parameter annotation ---
++
++LEDGER = "Ledger"
++
++
++def _script_json():
++    """A one-sheet book with a distinctive sheet name, built eagerly."""
++    return {
++        "client": "Office.js",
++        "version": xw.__version__,
++        "book": {"name": "B", "active_sheet_index": 0, "selection": "A1"},
++        "names": [],
++        "sheets": [
++            {"name": LEDGER, "values": [[None]], "pictures": [], "tables": []}
++        ],
++    }
++
++
++async def _run(func, name):
++    """Call a script the way the host does and hand back what it returned.
++
++    The book is built eagerly by the caller, exactly as xlwings Lite builds it,
++    so nothing outside the annotation can tell the script apart.
++    """
++    book = xw.Book(json=_script_json())
++    mod = _make_module(**{name: func})
++    try:
++        return book, await custom_scripts_call(
++            mod, name, typehint_to_value={xw.Book: book}
++        )
++    finally:
++        book.close()
++
++
++@pytest.mark.anyio
++async def test_sentinel_optional_spellings_of_the_book_annotation():
++    """Every optional spelling of the async annotation, and the plain one.
++
++    One case rather than four, because this is a single contract - reading the
++    annotation through a union - asserted over the spellings that express it.
++    """
++    outcome = {}
++
++    @script
++    async def opt_script(book: Optional[xw.BookAsync]):
++        try:
++            book.sheets.active["A1"].value
++        except XlwingsError as exc:
++            outcome["opt"] = str(exc)
++
++    @script
++    async def pipe_script(book: xw.BookAsync | None):
++        try:
++            book.sheets.active["A1"].value
++        except XlwingsError:
++            outcome["pipe"] = True
++
++    @script
++    async def union_script(book: Union[xw.BookAsync, None]):
++        try:
++            book.sheets.active["A1"].value
++        except XlwingsError:
++            outcome["union"] = True
++
++    @script
++    async def plain_script(book: Optional[xw.Book]):
++        # A regular book, so this read must go through rather than raise.
++        outcome["plain"] = book.sheets.active["A1"].value
++
++    scripts = {
++        "opt_script": opt_script,
++        "pipe_script": pipe_script,
++        "union_script": union_script,
++        "plain_script": plain_script,
++    }
++    # each script has to receive its book, so its body runs at all, and hand the
++    # same book back to the caller
++    for name, func in scripts.items():
++        book, returned = await _run(func, name)
++        assert returned is book, name
++
++    # the async spellings raise inside the script, and say which sheet and what
++    # to await instead
++    assert LEDGER in outcome["opt"] and _points_at_an_await_route(outcome["opt"])
++    assert outcome["pipe"] is True
++    assert outcome["union"] is True
++    # reading the annotation through a union must not turn every optional book
++    # parameter into an async one
++    assert outcome["plain"] is None
++
++    # the host reads the script list before any script runs, so the choice has
++    # to be announced there too
++    announced = {
++        m["function_name"]: m["lazy"] for m in custom_scripts_meta(_make_module(**scripts))
++    }
++    assert announced == {
++        "opt_script": True,
++        "pipe_script": True,
++        "union_script": True,
++        "plain_script": False,
++    }
++
++
++# --- a sheet the book has not seen before ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_metadata_only_load_leaves_a_new_sheet_usable(fake_emscripten):
++    # The host is the authority on what the workbook holds, so a load can turn up
++    # a sheet the book has never seen. Bringing it in half-built is the failure
++    # this guards: on a regular book the new sheet reads as empty.
++    book = _open_eager(OPENED_VALUES)
++    fake_emscripten.sheet_names = [SHEET1, SHEET2, SHEET3]
++    await book.load(values=False)
++    assert _read(book.sheets(SHEET3)) == [(None,)]
++    # and the sheets that were already there keep the values they had
++    assert _read(book.sheets(SHEET1)) == [(1,)]
++
++    # on an async book the same new sheet raises the ordinary not-loaded error
++    async_book = await _fetch_async()
++    fake_emscripten.sheet_names = [SHEET1, SHEET2, SHEET3]
++    await async_book.load()
++    assert _raises(async_book.sheets(SHEET3))
++    # and loading values fills it in
++    await async_book.load(values=True)
++    assert _read(async_book.sheets(SHEET3)) == [(10,)]
++
++
++# --- metadata-only has to be metadata-only on the wire ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_metadata_only_load_asks_the_host_to_skip_values(
++    fake_emscripten,
++):
++    # Skipping the cell payload is the point of the feature, so the request has
++    # to carry the choice. Pulling everything down and hiding it locally looks
++    # identical from every other test's point of view.
++    fake_emscripten.calls.clear()
++    book = await _fetch_async()
++    assert fake_emscripten.lazy_flags() == [True]
++
++    fake_emscripten.calls.clear()
++    await book.load()
++    assert fake_emscripten.lazy_flags() == [True]
++
++    fake_emscripten.calls.clear()
++    await book.load(values=True)
++    assert fake_emscripten.lazy_flags() == [False]
++
++    fake_emscripten.calls.clear()
++    await book.sheets(SHEET1).load(values=True)
++    assert fake_emscripten.lazy_flags() == [False]
++
++    fake_emscripten.calls.clear()
++    await book.sheets(SHEET1).load()
++    assert fake_emscripten.lazy_flags() == [True]
++
++
++# --- loading values for only some of the sheets ---
++
++
++@pytest.mark.anyio
++async def test_sentinel_book_load_with_a_sheet_list_loads_only_those_sheets(
++    fake_emscripten,
++):
++    # Naming sheets asks for their values and nobody else's. The sheets left out
++    # keep exactly what they had, and none of them drops out of the book.
++    book = await _fetch_async()
++    fake_emscripten.sheet_names = [SHEET1, SHEET2, SHEET3]
++    await book.load()
++    await book.load(values=[SHEET1])
++
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++    # still in the book, and still unloaded rather than quietly empty
++    assert book.sheets(SHEET2).name == SHEET2
++    assert _raises(book.sheets(SHEET2))
++    assert book.sheets(SHEET3).name == SHEET3
++    assert _raises(book.sheets(SHEET3))
++
++
++@pytest.mark.anyio
++async def test_sentinel_a_selective_load_keeps_what_other_sheets_already_had(
++    fake_emscripten,
++):
++    # Naming sheets says which values to fetch, not which sheets count as loaded.
++    # A sheet loaded by an earlier call keeps its values and stays readable when a
++    # later call names a different sheet.
++    book = await _fetch_async()
++    fake_emscripten.sheet_names = [SHEET1, SHEET2, SHEET3]
++    await book.load()
++
++    await book.load(values=[SHEET1])
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++
++    await book.load(values=[SHEET2])
++    # the sheet named this time is readable, and so is the one named last time
++    assert _read(book.sheets(SHEET2)) == [(10,)]
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++    # the one never named is still unloaded rather than quietly empty
++    assert _raises(book.sheets(SHEET3))
++
++    # and a plain metadata-only load afterwards does not undo any of it
++    await book.load()
++    assert _read(book.sheets(SHEET1)) == [(10,)]
++    assert _read(book.sheets(SHEET2)) == [(10,)]
++
++
++@pytest.mark.anyio
++async def test_sentinel_book_load_with_a_sheet_list_asks_the_host_for_only_those_sheets(
++    fake_emscripten,
++):
++    # The saving is the point, so the request has to name the sheets it wants.
++    book = await _fetch_async()
++    fake_emscripten.sheet_names = [SHEET1, SHEET2, SHEET3]
++    await book.load()
++    fake_emscripten.calls.clear()
++    await book.load(values=[SHEET1])
++
++    assert fake_emscripten.lazy_flags() == [False]
++    assert fake_emscripten.included() == [SHEET1]
++
++
++@pytest.mark.anyio
++async def test_sentinel_book_load_with_an_unknown_sheet_name_raises(fake_emscripten):
++    # A name the book does not have is caught here rather than sent to the host.
++    book = await _fetch_async()
++    with pytest.raises(XlwingsError) as exc_info:
++        await book.load(values=["Nowhere"])
++    assert "Nowhere" in str(exc_info.value)

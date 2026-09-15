@@ -1,0 +1,11 @@
+## PDF outline / bookmarks missing after AsciiDoc → PDF
+
+Hey — when we convert a structured `.adoc` to PDF, the output has no document outline (the bookmark/sidebar tree PDF readers use to jump between sections). Chromium’s print-to-PDF path still does not emit one, so readers get a flat file even though the AsciiDoc has a clear section hierarchy.
+
+We want every converted PDF that has sections to carry a navigable outline that mirrors those sections. The outline should show up whether or not a visible table of contents was requested in the document body — including when `toc` is unset, disabled, or set to something like `macro` (TOC declared but not actually placed in the output).
+
+Depth should follow the document’s `toclevels` attribute (default `2` when unset): include a section only when its nesting level is within that depth. So with the default, top-level sections and their immediate children are included, but deeper ones are not; `toclevels=1` keeps only top-level sections; `toclevels=3` goes three levels deep. On a doc whose top-level sections are Section 1–4, where Section 1 nests `1.1` → `1.1.1` → `1.1.1.1`, Section 2 has `2.1`/`2.2`, Section 3 has `3.1` → `3.1.1`, and Section 4 has `4.1`, that means 9 outline entries at the default depth, 4 at `toclevels=1`, and 11 at `toclevels=3`.
+
+Each outline entry should use the section’s id as its destination and the section’s title as its label, with nested sections nested under their parents so the bookmark tree is well-formed. Concretely, parent entries that have children must expose the standard PDF outline linkage fields `First`, `Last`, and `Count`, and sibling entries at the same level must be linked with `Next` and `Prev`. If a section destination cannot be resolved in the PDF (Chromium sometimes drops anchors that contain characters like umlauts), emit a warning and keep going — do not fail the conversion. Documents with no sections in range can be left without an outline.
+
+Whatever path produces the final PDF bytes the caller receives (written to a file or sent to stdout) must be the post-processed document that includes this outline when one was generated. Section destinations only exist in the PDF if the rendered HTML actually links to those sections, so the HTML the converter feeds to Chromium needs those links available even when a visible TOC is not.

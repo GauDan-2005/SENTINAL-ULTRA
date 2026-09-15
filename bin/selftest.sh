@@ -190,6 +190,31 @@ else
   n_skip=$((n_skip + 1))
 fi
 
+# ---------------------------------- 3b. timed reviewer fast profile ----------
+
+FAST_ZIP=""
+for z in "$ACCEPTED"/upload/*.zip; do
+  [ -f "$z" ] || continue
+  FAST_ZIP="$z"
+  break
+done
+if [ -n "$FAST_ZIP" ] && [ -x "$PREFLIGHT" ]; then
+  out="$("$PREFLIGHT" --review-fast --list "$FAST_ZIP" 2>&1)"; rc=$?
+  selected="$(printf '%s\n' "$out" | sed -n 's/^  -- //p')"
+  expected="$(printf '%s\n' 10-static.sh 20-git.sh 30-package.sh 40-grader.sh)"
+  if [ "$rc" -eq 0 ] && [ "$selected" = "$expected" ]; then
+    echo "PASS selftest.preflight-review-fast selects only the four ZIP-only static reviewer checks"
+    n_pass=$((n_pass + 1))
+  else
+    echo "FAIL selftest.preflight-review-fast selected an unexpected reviewer profile"
+    printf '%s\n' "$out" | sed 's/^/     /'
+    n_fail=$((n_fail + 1))
+  fi
+else
+  echo "SKIP selftest.preflight-review-fast accepted upload zip or preflight script is unavailable"
+  n_skip=$((n_skip + 1))
+fi
+
 hr
 
 # ------------------------------------- 4. the live bundles, informational -----

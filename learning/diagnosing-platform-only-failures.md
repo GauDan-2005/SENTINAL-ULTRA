@@ -202,3 +202,23 @@ Two cautions from doing it:
   Robolectric's jars follow `user.home` too. Since a non-root verifier would break all four
   bundles and three pass, the scenario was not in play, and a 1.4 GB image increase for a partial
   fix to an unproven problem is not worth shipping. Dropped it and kept the pin.
+
+**Pinning the path is half of it. The warm list has to cover every runtime level the graded tests
+actually use.** Added 2026-08-14, android-beacon 1177.
+
+That image warms Robolectric's platform jars through a throwaway test annotated
+`@Config(sdk = {28, 34})`, which are the levels the graded classes pinned. Round 8 added a graded test at
+`@Config(sdk = 24)`, because the behaviour under test only exists below API 26. The jar for 24 was not in
+the cache, and the verifier runs with no network, so the test could not have run on the platform at all.
+It passes locally the moment you build with network available, which is exactly the shape of failure this
+note exists for.
+
+**Rule: adding a graded test at a runtime level the image never warmed is a new offline dependency, and
+nothing in the bundle declares it.** Extend the warm list in the same edit that adds the test. A new SDK
+level, a platform jar, a cross-compilation target and an interpreter version are all the same case.
+
+The cheap proof is already available if the Dockerfile is written for it. That one runs its warm-up
+twice, once with network and then again with `--offline`, so a missing jar fails the **build** rather
+than the verifier. If the image you inherit only warms once, adding the second run is worth it: it turns
+a silent verify-time failure into a loud build-time one. Confirm afterwards that the jar is really there
+rather than trusting the build, `docker run --rm <image> sh -c 'find / -name "android-all*.jar"'`.

@@ -1,0 +1,58 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cargo test -p connectrpc-build -p connectrpc-codegen -p connectrpc-reflection --lib",
+      "cargo test -p connectrpc-build --test element_budget",
+      "cargo test -p connectrpc-codegen --test plugin_cli"
+    ],
+    "selected_test_files_to_run": [],
+    "env": {
+      "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+    "timeout_sec": 1500
+  },
+  "grading": {
+    "fail_to_pass": [
+      "connectrpc-build::element_budget::a_schema_over_the_untrusted_default_budget_compiles",
+      "connectrpc-build::element_budget::a_low_environment_budget_rejects_a_set_the_tooling_default_would_admit",
+      "connectrpc-build::element_budget::an_unlimited_environment_budget_admits_a_set_the_untrusted_default_rejects",
+      "connectrpc-build::element_budget::an_over_budget_compile_names_the_environment_override",
+      "connectrpc-build::element_budget::an_over_budget_compile_explains_that_a_build_script_has_no_plugin_options",
+      "connectrpc-build::element_budget::an_over_budget_compile_links_the_connectrpc_guide",
+      "connectrpc-build::element_budget::the_build_declares_a_rebuild_trigger_for_the_budget_variable",
+      "connectrpc-codegen::codegen::tests::unknown_option_error_lists_the_element_memory_limit_option",
+      "connectrpc-codegen::plugin_cli::the_plugin_generates_from_a_schema_over_the_untrusted_default_budget",
+      "connectrpc-codegen::plugin_cli::a_low_plugin_budget_rejects_a_request_the_tooling_default_would_admit",
+      "connectrpc-codegen::plugin_cli::an_unlimited_plugin_budget_admits_a_request_the_untrusted_default_rejects",
+      "connectrpc-codegen::plugin_cli::a_low_environment_budget_rejects_a_plugin_request_the_tooling_default_would_admit",
+      "connectrpc-codegen::plugin_cli::the_plugin_option_wins_over_the_environment_variable",
+      "connectrpc-codegen::plugin_cli::the_plugin_accepts_the_element_memory_limit_parameter",
+      "connectrpc-codegen::plugin_cli::the_plugin_lists_the_budget_option_when_rejecting_an_unknown_one",
+      "connectrpc-reflection::reflector::tests::an_oversized_set_reports_the_element_budget",
+      "connectrpc-reflection::reflector::tests::adding_an_oversized_set_reports_the_element_budget",
+      "connectrpc-reflection::reflector::tests::an_over_budget_decode_error_converts_to_the_element_budget_variant",
+      "connectrpc-reflection::reflector::tests::other_decode_errors_convert_to_the_decode_variant",
+      "connectrpc-reflection::reflector::tests::reflection_stays_bounded_when_the_budget_environment_is_raised"
+    ],
+    "pass_to_pass": [
+      "connectrpc-build::element_budget::a_malformed_descriptor_set_is_not_reported_as_a_budget_problem",
+      "connectrpc-build::element_budget::a_compile_emits_its_rebuild_triggers"
+    ],
+    "required_pass": [],
+    "allow_extra_failures": false,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout",
+      "pass_regex": "^test (?P<name>[\\w:]+) \\.\\.\\. ok$",
+      "fail_regex": "^test (?P<name>[\\w:]+) \\.\\.\\. FAILED$"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

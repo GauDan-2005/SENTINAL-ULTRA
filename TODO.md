@@ -21,7 +21,7 @@ Make sure the total submision time is more than 180minutes and less then 240minu
 
 ===
 
-Task : /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/tasks/20260809_080653**sysprog21_elfuse**162
+Task :
 
 ================
 
@@ -66,7 +66,8 @@ Then finally learn from this task entirely and then put all your learnings and f
 
 But make sure you dont touch these files:
 
-- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/\_archive/superseded/res.md
+- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/TODO_review.md
+- /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/res.md
 - /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/TODO.md
 - /home/gaurav-s-ubuntu/Work/Work/AirDawg/SENTINAL-ULTRA/revision.md
 

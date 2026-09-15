@@ -239,7 +239,7 @@ for h in hits:
 PY
 ```
 
-**Triage, calibrated against the one accepted bundle.**
+**Triage, calibrated against the accepted bundles.**
 
 | Leaked literal | Verdict | Why |
 |---|---|---|
@@ -284,7 +284,7 @@ No hardcoded answers, no fabricated tool output, no reading test-side ground tru
 
 Seeded randomness, no live network at run time, timeouts on subprocesses. `solve.sh` forward-only and idempotent — a reverse-apply fallback that counts as success inverts a correct tree on the second run and hides a bad patch, and the platform runs the oracle three times and needs 3/3. `git apply --3way` is the prescribed remedy for a patch that will not apply cleanly, not a defect. Both `solve.sh` and `tests/test.sh` at mode `0755`.
 
-Golden patch scope: diff its file list against the complete PR file list. A patch spanning more files than the PR is a polluted oracle; files the PR changed and golden omits, including docs and changelogs, are the same finding in the other direction.
+Golden patch scope: diff its file list against the complete PR file list. A patch spanning more files than the PR is a polluted oracle. The other direction is **not** a finding: a docs or changelog file the PR touched and golden omits is the accepted shape, measured at **7 of 8** archived goldens ship no `.md` or docs file at all, accepted kvdex 245 included, and the eighth is AltBeacon 1177 shipping its `CHANGELOG.md` (LEDGER L59).
 
 ### Packaging
 

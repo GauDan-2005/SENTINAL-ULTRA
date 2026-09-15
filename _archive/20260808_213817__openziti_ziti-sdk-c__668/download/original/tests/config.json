@@ -1,0 +1,42 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "cmake --build build --target integ-tests",
+      "if ./build/tests/integ/integ-tests \"invalid_controller\"; then echo \"ZITI_TEST invalid_controller PASSED\"; else echo \"ZITI_TEST invalid_controller FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"ctrl_init_empty_endpoints\"; then echo \"ZITI_TEST ctrl_init_empty_endpoints PASSED\"; else echo \"ZITI_TEST ctrl_init_empty_endpoints FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"ctrl_init_multi_endpoint\"; then echo \"ZITI_TEST ctrl_init_multi_endpoint PASSED\"; else echo \"ZITI_TEST ctrl_init_multi_endpoint FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"config_legacy_controller_url_migrated\"; then echo \"ZITI_TEST config_legacy_controller_url_migrated PASSED\"; else echo \"ZITI_TEST config_legacy_controller_url_migrated FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"config_no_controller_rejected\"; then echo \"ZITI_TEST config_no_controller_rejected PASSED\"; else echo \"ZITI_TEST config_no_controller_rejected FAILED\"; fi",
+      "if ./build/tests/integ/integ-tests \"ctrl_failover_switches_endpoint\"; then echo \"ZITI_TEST ctrl_failover_switches_endpoint PASSED\"; else echo \"ZITI_TEST ctrl_failover_switches_endpoint FAILED\"; fi"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "invalid_controller",
+      "ctrl_init_empty_endpoints",
+      "ctrl_init_multi_endpoint",
+      "config_legacy_controller_url_migrated",
+      "config_no_controller_rejected",
+      "ctrl_failover_switches_endpoint"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "^ZITI_TEST (?P<name>\\S+) PASSED",
+      "fail_regex": "^ZITI_TEST (?P<name>\\S+) FAILED"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

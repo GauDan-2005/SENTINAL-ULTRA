@@ -1,10 +1,13 @@
 ---
 id: agent-writable-test-infrastructure
 status: locally-verified
-last_verified: 2026-08-11
+last_verified: 2026-08-18
 verified_by:
+  - 20260803_111822__nolabs-ai_deepfabric__297
+  - 20260805_220102__xaaha_hulak__118
   - 20260723_030152__mithriljs_mithril.js__2021
   - 20260720_144200__thomas4019_expressa__132
+  - 20260724_132921__gnmyt_MySpeed__1536
 evidence: "render/render.js left at base, one clause added to ospec/ospec.js record(), verifier returned reward 1.0 with 15/15 and git diff on render.js empty"
 applies_to:
   languages: [any]
@@ -85,13 +88,14 @@ under `node_modules` or a vendored `test/helpers`, `conftest.py` and any local `
 (pytest), a `testify` vendor directory or an in-repo `assert` package (Go), `src/test/.../TestUtils`
 (JVM). The tell is any path the graded test `require`s or imports that `tests.patch` does not create.
 
-## Three data points, and they differ
+## Four data points, and they differ
 
 | Task | assertion library neutered | Reading |
 |---|---|---|
 | mithril.js 2021 | base tree, **reward 1.0, 15 of 15** | fully gameable, filed as the review's lead finding |
 | expressa 132 | base tree, reached **15 of 21**, reward 0 | not trivially gameable, and the reviewer said so in the "what is right" section |
 | cista 172 | golden plus a broken stamp, **reward 1.0, 21 of 21** | partially gameable, and the split is the interesting part |
+| hulak 118 | **never run** | Go, where the route has no analogue and the residue is at its purest. Below |
 
 So the probe discriminates rather than always firing, which is what makes it worth running. A bundle
 that resists it has earned the sentence saying so.
@@ -166,6 +170,184 @@ fails is not evidence the route is closed.
   naive attack fails and the surgical one does not. **Do not answer this by lengthening the restore
   list.** What covers the residue is the exit-code gate in `verifier-fail-open.md`.
 
+
+## Go has no assertion-library route, and that is not the same as being safe (hulak 118, accepted 2026-08-16)
+
+The first Go bundle to meet this note, and it meets it by having nothing for the probe to aim at.
+The assertion layer is the stdlib `testing` package, which does not live in the agent's checkout, so
+the mithril route has no analogue: there is nothing under `environment/repo` to neuter. Measured on
+the accepted bundle, the two graded files import only `strings`, `testing`, `time`, bubbletea,
+lipgloss and two in-repo product packages, and `tests/test.sh` deletes every `*_test.go` and unpacks
+all 46 base test files before applying the patch.
+
+**What survives is the Section 10.11 residue in its purest form.** `tests/tests.patch` declares
+`package gqlexplorer` and `package tui`, so both graded files are **internal-package** tests, and
+every `.go` file the agent writes in those two directories compiles into the same test binary.
+`go.mod` and `go.sum` are not restored either. So the agent cannot touch the assertion library and
+does not need to: it shares a process, a package scope and a module graph with the thing grading it.
+
+That residue is closed only by the exit-code gate, and on a `-json` runner that is an **argument
+rather than a measurement**. This bundle's parser is `go-test` reading `stdout_stderr`, and
+`parse_go_test` accepts any `{`-leading line carrying an `Action` of pass, fail or skip from either
+stream. The open question nobody has run is whether a product-source `init()` can suppress the real
+run and emit output `test2json` converts into pass events while `go` still exits 0.
+
+**So on a Go task, Run 4 has a specific shape and it is not the JS one.** Solution unapplied, one
+`init()` added to a **non-test** file in a graded package that rewrites `os.Args` to
+`-test.run=^$` and prints `=== RUN` and `--- PASS:` lines for every graded id, then
+`sh /tests/test.sh`, reading `reward.txt` and `raw_exit_code`. Use `bin/hostile-probe.sh` so the
+edit proves it landed.
+
+**And the reason this row says "never run" is the finding.** hulak ran five batteries across four
+rounds. Run 4 appears in none of them, under any name. Four rounds of platform checks and two human-reviewer
+rounds passed it anyway, because **nothing in the loop reads a battery table for missing rows** -
+a table with three green rows looks exactly like a table with four minus one. Write the four Phase B
+runs by name into every round record, with a result or the words NOT RUN beside each, so an absent
+run is visible as an absence.
+
+## The pytest shape, and why the exit-code gate does not close it
+
+Fifth data point, deepfabric 297, measured 2026-08-17 with the solution never applied. On pytest the
+assertion library is the interpreter, so there is no `ospec.js` to neuter. The route is `conftest.py`,
+which pytest auto-loads from the rootdir and from the directory of every collected test file with no
+flag at all, and which nothing in a stock bundle creates, restores or deletes.
+
+```python
+# /app/conftest.py, six lines, no solution applied
+import pytest
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    rep.outcome = "passed"
+    rep.longrepr = None
+```
+
+`reward 1.0, 16 of 16, raw_exit_code 0`.
+
+**Read that exit code before assuming the Section 10.1 gate covers this.** It does not. The run really
+does succeed, because the hook rewrites the outcome before pytest counts failures, so there is no
+nonzero status for a gate to read. The neighbouring route on the same bundle, an `atexit` print of the
+graded ids each followed by `PASSED` from product source, exits **1** and the gate does close that one,
+which is exactly what makes the conftest route easy to believe is already covered.
+
+Four routes were enumerated by running them rather than by reading imports, and all four are closed by
+the same two changes:
+
+| Route | Before | After |
+|---|---|---|
+| `atexit` print of `<id> PASSED` from `deepfabric/__init__.py` | reward 1.0, `raw_exit 1` | reward 0 |
+| `conftest.py` hookwrapper, at the root and under `tests/` | **reward 1.0, `raw_exit 0`** | reward 0 |
+| `tests/__init__.py` rewritten, which runs before every graded module | n/a, tracked and unrestored | reward 0, file back at 0 bytes |
+| `/app/pytest.ini` added | n/a, absent at base | reward 0, file deleted before the run |
+
+The two changes are `--noconftest` on the graded command, which costs nothing when the base tree has no
+conftest, and a restore that removes the pytest hook and config surface that does not exist at the base
+commit before unpacking the base test tree: `conftest.py`, `tests/conftest.py`, `pytest.ini`,
+`setup.cfg`, `tox.ini`, `sitecustomize.py`, `usercustomize.py`. Deleting a path the base commit does
+not contain is restore-to-base rather than overreach.
+
+One design note that falls out of this. Restore the **whole** test directory rather than only the files
+`tests.patch` touches. `tests/__init__.py` is tracked, runs before every graded module and is not in the
+patch, so a targeted payload leaves it writable. On this bundle the whole tree gzips to 9.7 KB and
+base64s to 13 KB, so there is no reason to be selective.
+
+What remains open is the same residue as everywhere else. The graded tests import product source the
+agent legitimately owns, and site-packages is writable in the container. Neither can be restored. Say so
+rather than lengthening the delete list.
+
+### The route no restore can reach, and the check that does
+
+Sixth data point, deepfabric 297 round 1, measured 2026-08-17 with the solution never applied. The
+section above closes four pytest routes by deleting files. It does not close the fifth, and the fifth
+is the strongest, because it lives in **product source the agent owns outright**.
+
+The graded tests import the package under test at module scope, so `deepfabric/__init__.py` runs while
+pytest is still collecting, before any test executes. Ten lines appended there:
+
+```python
+try:
+    import _pytest.reports as _rep
+    _orig_init = _rep.TestReport.__init__
+    def _init(self, *a, **k):
+        _orig_init(self, *a, **k); self.outcome = "passed"; self.longrepr = None
+    _rep.TestReport.__init__ = _init
+except Exception:
+    pass
+```
+
+`reward 1.0, 44 of 44, raw_exit_code 0`. The exit-code gate cannot see it because the run genuinely
+succeeds. `--noconftest` does not apply. No restore can help, because a verifier may not restore
+product source.
+
+**Two weaker variants failed, and they are worth recording so nobody re-derives them.** Rebinding
+`_pytest.runner.pytest_runtest_makereport` from product source does nothing at all, because that hook
+is registered with the plugin manager before the package under test is imported, so rebinding the
+module attribute afterwards is a no-op. The `atexit` print of fake `PASSED` lines does work as a
+parse-level attack but exits nonzero, so the Section 10.1 gate already closes it.
+
+**The fix is to stop trusting the run to report on itself.** After the graded run, `test.sh` runs one
+deliberately failing test in a **second process that imports the same tree first**, so any import-time
+tampering is in force there too:
+
+```bash
+cat > "$CANARY_DIR/test_zz_runner_integrity.py" <<'CANARY_EOF'
+import deepfabric  # noqa: F401  - import-time effects of the tree under test apply here too
+
+
+def test_this_must_be_reported_as_a_failure():
+    assert False, "canary"
+CANARY_EOF
+python3 -m pytest -o addopts= --noconftest -q "$CANARY_DIR/test_zz_runner_integrity.py" > "$CANARY_DIR/canary.log" 2>&1
+CANARY_EXIT=$?
+```
+
+A canary exit of 0 means the runner called a deliberate failure a pass, so the graded results are
+worthless too. Write reward 0 with a named reason and `infrastructure_error: null`, so it reads as a
+grading failure rather than an invalid trial, which is the Section 10.1 rule about not poisoning the
+difficulty run.
+
+Measured on that bundle: oracle unaffected at 44 of 44 three cycles running, NOP unaffected at 24 of
+44, tampering caught at reward 0 with `runner_integrity: failed`. Cost is roughly two seconds.
+
+Import the package under test **by name** in the canary rather than importing nothing, or the canary
+runs in a clean interpreter and proves nothing about the tree that was graded.
+
+### Seventh data point, the transport itself: MySpeed 1536, measured 2026-08-18
+
+The routes above all attack the assertion layer or the report object. The node compact scaffold has a
+simpler exposure one level down: **the graded results travel on the runner's stdout, and the module
+under test can write to that stream directly**. The graded file imports the deliverable, the
+deliverable runs in a child of the runner, and the child's own prints are safe because the TAP
+reporter wraps them as comments. The parent's descriptor is not safe:
+
+```js
+import fs from "node:fs";
+// the whole of the deliverable, evaluated at import time
+fs.writeFileSync("/proc/" + process.ppid + "/fd/1", forged);  // 18 forged `ok N - <id>` lines
+process.exit(0);
+```
+
+Measured through the real `test.sh` in the bundle's own image, `--network none`, no implementation
+anywhere. The naive version scores **13 of 18, reward 0**: the write lands raw on the graded stream,
+but the reporter's trailing output lands on top of the forged block and tears its first few lines.
+That race is luck, not design. Front-pad the forged block with 60 decoy `ok` lines whose names match
+nothing required, and the pad absorbs the overwrite: **reward 1.0, 18 of 18, `raw_exit_code` 0**.
+
+Three things that do NOT close it, all measured on the same bundle. The exit-code gate does not,
+because the module exits itself cleanly at import and the runner reports 0. `allow_extra_failures:
+false` does not, because nothing is ever reported FAILED. And `--test-reporter-destination` does not:
+the child reads the destination path out of `/proc/<ppid>/cmdline`, waits 150 ms for the real report,
+and overwrites it, which also scored reward 1.0 at 18 of 18 on a probe copy of the verifier. What
+closes the class is a channel the child cannot address at all: a descriptor the harness opens and
+does not hand down, or hiding other processes under `/proc` in the verifier image. Until then the
+gate and the flag are narrowings worth taking, measured as narrowings.
+
+One recording caution from the same review. The two child-side routes (console.log and a direct fd-2
+write) were measured closed twice and written up as "the injection route is closed", and that sentence
+was wrong about the class while being right about both transports. A closed route is a fact about a
+transport; the class stays open until somebody has tried the descriptor the reporter itself writes to.
 
 ## Related
 

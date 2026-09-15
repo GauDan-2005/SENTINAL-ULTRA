@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260805_220102__aws_aws-lambda-web-adapter__183",
+  "submission_id": "68455bcb-e7b8-4b4a-b38b-f4273a2a4ac5_submission_2026-08-15T11_11_28.084Z",
+  "repo": "",
+  "pr": "",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-18",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2: read the bundle and cross-check the platform data block"
+}

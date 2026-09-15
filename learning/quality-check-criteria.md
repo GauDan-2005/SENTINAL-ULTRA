@@ -405,3 +405,41 @@ Add a fifth in practice: **say you did it in Comments for Reviewer.** A reflecti
 reviewer finds for themselves reads as sleight of hand; one you declare reads as the only available
 way to grade a real requirement.
 
+## The graded suite must compile against a compliant implementation, not just against golden
+
+Added 2026-08-14, `20260727_135618__AltBeacon_android-beacon-library__1177` round 8, found by a human
+reviewer after every automated check had passed.
+
+Every eval was green. The oracle ran, the panel passed, the task reached a reviewer. And **7 of the 8
+difficulty trials died in `compileDebugUnitTestKotlin`**, 24 errors of the form `inferred type is
+Boolean? but Boolean was required`. Each of those trials recorded all 230 graded ids as missing, the
+210 regression ids included, because the suite never ran. The difficulty tier was measuring a compile
+target nobody could hit.
+
+The cause is a class no existing check covers. The graded file read fields off the snapshot returned
+by `getActiveSettings()` and used them as ordinary values. The oracle returns a **separate type**
+whose fields are non-optional, so it compiles. The instruction said the delta type's fields are all
+optional and only that the snapshot has "every field filled in" - never that it is a different type.
+An agent returning a filled-in delta gets a **type error**, not a failing assertion.
+
+**Why nothing caught it:**
+
+| Check | Why it passed |
+|---|---|
+| Oracle Check | golden defines the type, so it compiles and scores 230/230 |
+| NOP | already fails; a compile error looks the same as a missing feature |
+| hostile-delete | runs on top of golden, so it compiles too |
+| bipartite instruction-to-tests mapping | walks identifiers and assertions, never **types** |
+| pre-upload item 10 | matches names, not signatures |
+
+**The check to add.** For every symbol the graded tests touch, ask whether a *compliant but different*
+implementation would produce a compatible signature. Concretely: nullability, Kotlin/Java platform
+types, generic parameters, `Long` vs `Int`, and any reliance on a data-class feature (`copy`, named
+arguments). Where the answer is no, the instruction has to constrain it.
+
+**When you then write that constraint, state exactly what the oracle does and no more.** The first fix
+here said every snapshot field is non-optional. The oracle declares **13 of 14**; the odd one out is
+read through `assertEquals`, which accepts a nullable, which is why it never appeared among the 24
+errors. Shipping the blanket version would have been the seventh round of this task promising
+something the PR does not keep.
+

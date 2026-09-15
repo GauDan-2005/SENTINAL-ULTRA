@@ -1,0 +1,58 @@
+{
+  "schema_version": "compact-swebench-harborized-v1",
+  "execution": {
+    "commands": [
+      "set -e\nBUILD=/tmp/mem-alloc-build\nrm -rf \"$BUILD\"\ncat > /tmp/mem_alloc_inject.cmake <<'CMK'\nfind_path(CMOCKA_INCLUDE_DIR cmocka.h)\nfind_library(CMOCKA_LIB NAMES cmocka)\nif(NOT CMOCKA_INCLUDE_DIR OR NOT CMOCKA_LIB)\n  message(FATAL_ERROR \"cmocka not found\")\nendif()\nif(NOT TARGET cmocka::cmocka)\n  add_library(cmocka::cmocka UNKNOWN IMPORTED)\n  set_target_properties(cmocka::cmocka PROPERTIES IMPORTED_LOCATION \"${CMOCKA_LIB}\" INTERFACE_INCLUDE_DIRECTORIES \"${CMOCKA_INCLUDE_DIR}\")\nendif()\nset(CMAKE_C_FLAGS \"${CMAKE_C_FLAGS} -include stdarg.h -include stddef.h -include setjmp.h\")\nCMK\ncmake -S tests/unit/mem-alloc -B \"$BUILD\" -DWAMR_BUILD_PLATFORM=linux -DLLVM_DIR=IGNORE -DCMAKE_PROJECT_test-mem-alloc_INCLUDE=/tmp/mem_alloc_inject.cmake\ncmake --build \"$BUILD\" -j\"$(nproc)\"\nset +e\nCMOCKA_MESSAGE_OUTPUT=STDOUT \"$BUILD/mem-alloc-test\"\nCMOCKA_MESSAGE_OUTPUT=STDOUT \"$BUILD/mem-alloc-gc-test\""
+    ],
+    "selected_test_files_to_run": [
+      "tests/unit/mem-alloc/CMakeLists.txt",
+      "tests/unit/mem-alloc/mem_alloc_test.c",
+      "tests/unit/mem-alloc/test_runner.c"
+    ],
+    "env": {},
+    "timeout_sec": 1800
+  },
+  "grading": {
+    "fail_to_pass": [
+      "test_normal_alloc_basic",
+      "test_aligned_alloc_valid_alignments",
+      "test_realloc_rejects_aligned",
+      "test_normal_realloc_works",
+      "test_aligned_alloc_invalid_not_power_of_2",
+      "test_aligned_alloc_size_not_multiple",
+      "test_mixed_alloc_interleaved",
+      "test_mixed_obj_to_hmu",
+      "test_aligned_alloc_many",
+      "test_mixed_alloc_many",
+      "test_free_freed_pointer",
+      "test_free_freed_pointer_aligned",
+      "test_wasm_runtime_aligned_alloc_valid",
+      "test_wasm_runtime_aligned_alloc_zero_size",
+      "test_wasm_runtime_aligned_alloc_zero_alignment",
+      "test_wasm_runtime_aligned_alloc_system_mode",
+      "test_wasm_runtime_realloc_rejects_aligned",
+      "test_wasm_runtime_aligned_alloc_multiple_alignments",
+      "test_normal_alloc_huge_size",
+      "test_aligned_alloc_huge_size",
+      "test_normal_alloc_until_oom",
+      "test_aligned_alloc_until_oom",
+      "test_mixed_alloc_until_oom"
+    ],
+    "pass_to_pass": [],
+    "required_pass": [],
+    "allow_extra_failures": true,
+    "parser": {
+      "framework": "custom",
+      "result_source": "stdout_stderr",
+      "pass_regex": "\\[\\s+OK\\s+\\]\\s+(?P<name>[A-Za-z0-9_]+)",
+      "fail_regex": "\\[\\s+(?:FAILED|ERROR)\\s+\\]\\s+(?P<name>[A-Za-z0-9_]+)"
+    }
+  },
+  "artifacts": {
+    "stdout_log": "/logs/verifier/test-stdout.txt",
+    "stderr_log": "/logs/verifier/test-stderr.txt",
+    "parsed_results": "/logs/verifier/output.json",
+    "report": "/logs/verifier/report.json",
+    "reward": "/logs/verifier/reward.txt"
+  }
+}

@@ -1,0 +1,92 @@
+Reviewer Answers
+Task: 20260804_160342__connectrpc_connect-rust__239
+Submitted zip: 8dc1922a-5dd5-4816-a273-cd91f063b0f7_submission_2026-08-18T19_40_06.421Z.zip
+Track: timed-static-v1
+Review duration: 2.5 minutes
+
+Q1. What is your verdict for this Submission?
+
+Needs Revision
+
+
+Q2b. If Needs Revision - Error Categories (select all that apply)
+
+- [ ] Instruction Styling
+- [ ] Instruction Prescriptiveness
+- [ ] Test <-> Instruction Misalignment
+- [ ] Test Coverage Issues
+- [x] Exposing Hints/Answers
+- [ ] Oracle Solution Issues
+- [ ] PR Scope Violation
+- [ ] Test Build Issues
+- [ ] Time-Based Tests
+- [ ] Task Difficulty
+- [x] Metadata Issues
+- [ ] Uses Internet
+- [ ] Agent Timeout
+- [ ] Wrong Coding Language
+- [ ] Test Dependency Location
+- [ ] Pinning Issues
+- [ ] Environment
+- [ ] PR Relevancy
+- [ ] Other
+
+
+Q3. Please explain in more detail what revisions are needed
+
+1) instruction.md line 11 tells the implementer that the message must say "well-formed." tests/tests.patch lines 643 through 647 check for that same phrase. The task should require the observable difference between an oversized complete descriptor set and malformed input without giving away the phrase the test expects. Remove the literal from the instruction and update the test to check that distinction without requiring those words.
+2) task.toml lines 41 through 47 omit the required operating system value from the environment block. Add os = "linux" to that block.
+
+
+Q4. Acknowledgement of Submitter Rebuttal
+
+- [ ] I read the submitter's rebuttal and it does not change my review outcome.
+- [ ] I read the submitter's rebuttal and revised my review outcome accordingly.
+- [x] No rebuttal comments available.
+
+
+Q5. What is the overall quality of the submission?
+
+2 / 5
+
+The source task and its intended change are intact. solution/solve.sh also resolves the earlier script concern. The prompt still gives away an exact phrase required by a graded test, and task.toml omits the environment operating system, so the submission needs a focused revision.
+
+
+Q6. How long (in minutes) did it take you to complete this review?
+
+2.5 minutes
+
+
+--- Not part of the paste. Record only. ---
+
+## Review timer
+Track: timed-static-v1
+Review UUID: 48b612fc-2115-4bab-a603-2ea915d737fa
+Started: 2026-08-19T19:01:21+05:30
+Base deadline: 2026-08-19T19:06:21+05:30
+Extension used: no. A page-to-panel contradiction was identified at 2026-08-19T19:02+05:30 and resolved by the focused static read before the base deadline.
+Form-ready: 2026-08-19T19:03:51+05:30
+Actual elapsed: 2.5 minutes
+
+## Evidence reviewed
+Submitted zip: 8dc1922a-5dd5-4816-a273-cd91f063b0f7_submission_2026-08-18T19_40_06.421Z.zip, sha256 a6c3ce6cee26c7b1
+Seed zip: ad572a7a-e077-4db5-b198-c10438377046_submission.zip, sha256 1653426cd2177220
+Reviewer page: UID 48b612fc-2115-4bab-a603-2ea915d737fa. Read the submitter's Fixable analysis, issue details, Files Changed, PR additions, difficulty explanation, Comments for Reviewer, prior feedback, difficulty counters, and displayed evaluation panels. No rebuttal comments appeared in the complete page supplied. No maximum-revisions dialog appeared.
+Page panels: headline all checks passed. Difficulty PASS HARD with codex-gpt-5-5 at 1/4. Agentic Judge OK. Oracle PASS 3/3. NOP PASS 0/1. Quality panel reports a remaining instruction disclosure. Difficulty counters were blank. Last counted submission version 38523be0-ca0a-4e4c-94e1-72d3cdfd8e4d. Last difficulty result hard.
+
+## Fast static gate
+bin/preflight.sh --review-fast submitted zip returned 10-static FAIL for missing [environment] os, 30-package FAIL for a missing empty .git/refs directory entry, and 40-grader FAIL for fail-closed and runner-errexit checks.
+Verified: task.toml lines 41 through 47 omit os.
+Non-counting observations: the archive contains environment/repo/.git/refs/heads/main, so its absent empty-parent directory entry does not prove a broken repository. tests/test.sh lines 522 through 526 read args.raw_exit_code in the success expression, so the reported fail-closed defect is not present. The remaining runner-errexit signal was not investigated further because the direct task findings already settle the review.
+
+## In-depth extension
+Not used. A possible page-to-panel contradiction was resolved within the base review. The page headline says all checks passed while its Quality panel shows an unresolved instruction disclosure finding. Focused static comparison confirmed instruction.md line 11 and tests/tests.patch lines 643 through 647 use the same exact phrase.
+
+## Rubric tally
+1. Confirmed Major. Pillar 3. Fixable. instruction.md line 11 gives the phrase "well-formed" and tests/tests.patch lines 643 through 647 require it. The Quality panel independently names the same disclosure.
+2. Confirmed Minor. Metadata. task.toml lines 41 through 47 omit required [environment] os.
+Verdict: Needs Revision. Score: 2 of 5.
+
+## Deferred maintenance
+Form-ready document created. Prior feedback showed a useful practice: distinguish a reverse check used only to detect an already-applied patch from a reverse apply that changes files. The current solve.sh uses the safe check at line 31 and forward applies at lines 25 and 36.
+Review tally, register, calibration, root ZIP cleanup, and archival status: deferred until the platform outcome.

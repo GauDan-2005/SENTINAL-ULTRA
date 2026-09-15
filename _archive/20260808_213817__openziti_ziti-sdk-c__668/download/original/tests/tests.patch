@@ -1,0 +1,144 @@
+diff --git a/tests/integ/legacy-auth.cpp b/tests/integ/legacy-auth.cpp
+index b8d0584..95edab2 100644
+--- a/tests/integ/legacy-auth.cpp
++++ b/tests/integ/legacy-auth.cpp
+@@ -107,7 +107,11 @@ TEST_CASE("invalid_controller", "[controller][GH-44]") {
+     resp_capture<ziti_version> version;
+ 
+     PREP(ziti);
+-    TRY(ziti, ziti_ctrl_init(loop, &ctrl, "https://not.a.ziti.controll.er", nullptr));
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void*)"https://not.a.ziti.controll.er");
++    TRY(ziti, ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr));
++    model_list_clear(&endpoints, nullptr);
++
+     WHEN("get version") {
+         ziti_ctrl_get_version(&ctrl, resp_cb, &version);
+         uv_run(loop, UV_RUN_DEFAULT);
+@@ -142,7 +146,7 @@ TEST_CASE("controller_test","[integ]") {
+     PREP(ziti);
+     TRY(ziti, ziti_load_config(&config, conf));
+     TRY(ziti, load_tls(&config, &tls));
+-    TRY(ziti, ziti_ctrl_init(loop, &ctrl, config.controller_url, tls));
++    TRY(ziti, ziti_ctrl_init(loop, &ctrl, &config.controllers, tls));
+ 
+     WHEN("get version and login") {
+         auto v = do_get(ctrl, ziti_ctrl_get_version);
+@@ -244,4 +248,103 @@ TEST_CASE("ztx-legacy-auth", "[integ]") {
+     uv_run(l, UV_RUN_DEFAULT);
+ 
+     free_ziti_config(&cfg);
++}
++
++TEST_CASE("ctrl_init_empty_endpoints", "[controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_INVALID_CONFIG);
++    model_list_clear(&endpoints, nullptr);
++}
++
++TEST_CASE("ctrl_init_multi_endpoint", "[controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    const char *ep1 = "https://ctrl1.example:1280";
++    const char *ep2 = "https://ctrl2.example:1280";
++    const char *ep3 = "https://ctrl3.example:1280";
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void*)ep1);
++    model_list_append(&endpoints, (void*)ep2);
++    model_list_append(&endpoints, (void*)ep3);
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++
++    CHECK(model_map_size(&ctrl.endpoints) == 3);
++
++    REQUIRE(ctrl.url != nullptr);
++    bool selected_from_set = strcmp(ctrl.url, ep1) == 0
++                          || strcmp(ctrl.url, ep2) == 0
++                          || strcmp(ctrl.url, ep3) == 0;
++    CHECK(selected_from_set);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
++}
++
++TEST_CASE("config_legacy_controller_url_migrated", "[config]") {
++    const char *legacy_cfg = R"({
++        "ztAPI": "https://legacy.example:1280",
++        "id": { "key": "pem:key", "cert": "pem:cert", "ca": "pem:ca" }
++    })";
++
++    ziti_config cfg;
++    REQUIRE(ziti_load_config(&cfg, legacy_cfg) == ZITI_OK);
++
++    CHECK(model_list_size(&cfg.controllers) == 1);
++    CHECK(cfg.controller_url == nullptr);
++
++    auto *url = (const char *) model_list_head(&cfg.controllers);
++    REQUIRE(url != nullptr);
++    CHECK(strcmp(url, "https://legacy.example:1280") == 0);
++
++    free_ziti_config(&cfg);
++}
++
++TEST_CASE("config_no_controller_rejected", "[config]") {
++    const char *no_ctrl_cfg = R"({
++        "id": { "key": "pem:key", "cert": "pem:cert", "ca": "pem:ca" }
++    })";
++
++    ziti_config cfg;
++    CHECK(ziti_load_config(&cfg, no_ctrl_cfg) == ZITI_INVALID_CONFIG);
++    free_ziti_config(&cfg);
++}
++
++TEST_CASE("ctrl_failover_switches_endpoint", "[controller]") {
++    ziti_controller ctrl;
++    uv_loop_t *loop = uv_default_loop();
++
++    model_list endpoints = {nullptr};
++    model_list_append(&endpoints, (void*)"https://ctrl1.invalid.example:1280");
++    model_list_append(&endpoints, (void*)"https://ctrl2.invalid.example:1280");
++    model_list_append(&endpoints, (void*)"https://ctrl3.invalid.example:1280");
++
++    REQUIRE(ziti_ctrl_init(loop, &ctrl, &endpoints, nullptr) == ZITI_OK);
++    REQUIRE(ctrl.url != nullptr);
++
++    // every endpoint is unreachable, so each version request fails at the
++    // transport level and, once nothing else is in flight, the controller
++    // should rotate ctrl.url to another endpoint from the set.
++    std::string start = ctrl.url;
++    bool switched = false;
++    for (int i = 0; i < 50 && !switched; i++) {
++        resp_capture<ziti_version> version;
++        ziti_ctrl_get_version(&ctrl, resp_cb, &version);
++        uv_run(loop, UV_RUN_DEFAULT);
++        REQUIRE(version.error.err != 0);
++        REQUIRE_THAT(version.error.code, Equals("CONTROLLER_UNAVAILABLE"));
++        REQUIRE(ctrl.url != nullptr);
++        if (start != ctrl.url) { switched = true; }
++    }
++    CHECK(switched);
++
++    model_list_clear(&endpoints, nullptr);
++    ziti_ctrl_close(&ctrl);
++    uv_run(loop, UV_RUN_DEFAULT);
+ }
+\ No newline at end of file
+diff --git a/tests/integ/oidc-tests.cpp b/tests/integ/oidc-tests.cpp
+index 14fbdc4..65ed25d 100644
+--- a/tests/integ/oidc-tests.cpp
++++ b/tests/integ/oidc-tests.cpp
+@@ -36,7 +36,7 @@ TEST_CASE_METHOD(LoopTestCase, "ha-oidc", "[integ]") {
+     tls->set_own_cert(tls, key, cert);
+ 
+     oidc_client_t oidcClient;
+-    oidc_client_init(l, &oidcClient, cfg.controller_url, tls);
++    oidc_client_init(l, &oidcClient, (const char*)model_list_head(&cfg.controllers), tls);
+     struct oidc_cfg_result {
+         bool called;
+         int status;

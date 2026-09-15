@@ -1,0 +1,40 @@
+schema_version = "1.3"
+
+[metadata]
+pass_at_k_opus_4_8 = "0/3"
+pass_at_k_gpt_5_5 = "1/3"
+author_name = "anonymous"
+author_email = "anonymous@snorkel.ai"
+# --- swe_ultra_requirements §4 field names ---
+category = "implementation"
+subcategory = "feature"
+coding_language = "javascript"
+repo_name = "asciidoctor-web-pdf"
+repo_license = ""
+source_pr_url = "https://github.com/ggrossetie/asciidoctor-web-pdf/pull/79"
+base_commit_sha = "fd41ce026f06d6013b4a1d69290ed73d29d5e575"
+model_difficulty = "hard"
+tags = ["pdf", "pdf-lib", "asciidoctor", "outline", "puppeteer", "toc"]
+# --- legacy aliases (kept for backward-compatible internal consumers) ---
+difficulty = "hard"
+task_type = "implementation"
+task_subtype = "feature"
+source = "https://github.com/ggrossetie/asciidoctor-web-pdf/pull/79"
+language = "javascript"
+expert_time_estimate_min = 120.0
+junior_time_estimate_min = 420.0
+pr_created_at = "2019-10-25T07:20:13Z"
+pr_merged_at = "2019-10-30T11:17:34Z"
+
+[verifier]
+timeout_sec = 1800.0
+
+[agent]
+timeout_sec = 1800.0
+
+[environment]
+build_timeout_sec = 900.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0

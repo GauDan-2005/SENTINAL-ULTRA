@@ -20,6 +20,7 @@
 #   --zip             force the built zip in the task folder's upload/
 #   --only <pat>      run only checks whose filename contains <pat>
 #   --skip <pat>      skip checks whose filename contains <pat>
+#   --review-fast     run the ZIP-only reviewer static profile: 10, 20, 30 and 40
 #   --list            print the checks that would run, then stop
 #   -v, --verbose     stream every line each check prints
 #   -h, --help        this text
@@ -47,7 +48,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECK_DIR="$ROOT/bin/checks"
 FACTS_FILE="${FACTS_FILE:-$ROOT/facts.yml}"
 
-ONLY=""; SKIP_PAT=""; VERBOSE=0; LIST=0; MODE="auto"; TARGET=""
+ONLY=""; SKIP_PAT=""; REVIEW_FAST=0; VERBOSE=0; LIST=0; MODE="auto"; TARGET=""
 TMPDIR_EXTRACT=""
 
 die() { echo "SKIP preflight $*" >&2; exit 2; }
@@ -65,6 +66,7 @@ while [ $# -gt 0 ]; do
     --zip)  MODE="zip";  shift ;;
     --only) ONLY="${2:-}"; shift 2 ;;
     --skip) SKIP_PAT="${2:-}"; shift 2 ;;
+    --review-fast) REVIEW_FAST=1; shift ;;
     --list) LIST=1; shift ;;
     -v|--verbose) VERBOSE=1; shift ;;
     -h|--help) sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -75,6 +77,10 @@ done
 
 [ -n "$TARGET" ] || die "no target given. Usage: bin/preflight.sh [options] <task-dir|bundle-dir|zip>"
 [ -e "$TARGET" ] || die "target does not exist: $TARGET"
+if [ "$REVIEW_FAST" = "1" ]; then
+  [ -z "$ONLY" ] && [ -z "$SKIP_PAT" ] || die "--review-fast cannot be combined with --only or --skip"
+  case "$TARGET" in *.zip) ;; *) die "--review-fast requires the submitted .zip, not a work tree" ;; esac
+fi
 
 # ── resolve the target ───────────────────────────────────────────────────────
 is_bundle() { [ -f "$1/task.toml" ] && [ -d "$1/tests" ]; }
@@ -138,11 +144,13 @@ esac
 [ -n "$BUNDLE_DIR" ] || die "could not resolve a bundle directory from $TARGET"
 
 # ── collect the checks ───────────────────────────────────────────────────────
+FAST_CHECKS="10-static.sh 20-git.sh 30-package.sh 40-grader.sh"
 CHECKS=()
 if [ -d "$CHECK_DIR" ]; then
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     base="$(basename "$f")"
+    if [ "$REVIEW_FAST" = "1" ] && [[ " $FAST_CHECKS " != *" $base "* ]]; then continue; fi
     if [ -n "$ONLY" ] && [[ "$base" != *"$ONLY"* ]]; then continue; fi
     if [ -n "$SKIP_PAT" ] && [[ "$base" == *"$SKIP_PAT"* ]]; then continue; fi
     CHECKS+=("$f")
@@ -152,7 +160,7 @@ fi
 # stage 0: the pristine baseline, when the tooling and the manifest are both there
 PRISTINE="$ROOT/bin/pristine-verify.sh"
 RUN_PRISTINE=0
-if [ -x "$PRISTINE" ] && [ -n "$TASK_DIR" ] && [ -f "$TASK_DIR/download/original.manifest.tsv" ]; then
+if [ "$REVIEW_FAST" != "1" ] && [ -x "$PRISTINE" ] && [ -n "$TASK_DIR" ] && [ -f "$TASK_DIR/download/original.manifest.tsv" ]; then
   if [ -z "$ONLY" ] || [[ "pristine-verify.sh" == *"$ONLY"* ]]; then
     if [ -z "$SKIP_PAT" ] || [[ "pristine-verify.sh" != *"$SKIP_PAT"* ]]; then
       RUN_PRISTINE=1
@@ -186,6 +194,7 @@ export FACTS_FILE
 export PREFLIGHT_BUNDLE_DIR="$BUNDLE_DIR"
 export PREFLIGHT_ZIP="$ZIP"
 export PREFLIGHT_TASK_DIR="$TASK_DIR"
+export PREFLIGHT_REVIEW_FAST="$REVIEW_FAST"
 
 passed=0; failed=0; skipped=0; warns=0
 failed_names=()

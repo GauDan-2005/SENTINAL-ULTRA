@@ -1,0 +1,209 @@
+diff --git a/test/helpers/secretKeys.test.js b/test/helpers/secretKeys.test.js
+new file mode 100644
+index 00000000..00000001
+--- /dev/null
++++ b/test/helpers/secretKeys.test.js
+@@ -0,0 +1,163 @@
++const test = require("node:test");
++const assert = require("node:assert");
++const os = require("os");
++const path = require("path");
++const fs = require("fs");
++const Module = require("module");
++
++// Mock electron and the OS keyring before environment.js / secretCrypto load,
++// so secrets take the plaintext (process.env) fallback path instead of writing
++// to the developer's real keychain.
++const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), "ow-secret-test-"));
++process.resourcesPath = tmpUserData; // Electron-only global; harmless dummy for the .env fallback scan
++const fakeElectron = {
++  app: { getPath: () => tmpUserData },
++  safeStorage: { isEncryptionAvailable: () => false },
++};
++const origLoad = Module._load;
++Module._load = function (request, ...rest) {
++  if (request === "electron") return fakeElectron;
++  if (request === "@napi-rs/keyring") throw new Error("keyring disabled in tests");
++  return origLoad.call(this, request, ...rest);
++};
++
++const { BYOK_API_KEYS } = require("../../src/config/secretKeys");
++const EnvironmentManager = require("../../src/helpers/environment");
++
++test("manifest entries are unique and complete", () => {
++  const seen = { base: new Set(), env: new Set(), storeKey: new Set() };
++  for (const k of BYOK_API_KEYS) {
++    for (const field of ["base", "env", "get", "save", "storeKey"]) {
++      assert.ok(k[field], `${field} present on ${k.base}`);
++    }
++    for (const field of ["base", "env", "storeKey"]) {
++      assert.ok(!seen[field].has(k[field]), `duplicate ${field}: ${k[field]}`);
++      seen[field].add(k[field]);
++    }
++  }
++});
++
++test("every BYOK key round-trips through the generated accessors", () => {
++  const env = new EnvironmentManager();
++  for (const k of BYOK_API_KEYS) {
++    assert.equal(typeof env[k.get], "function", `${k.get} generated`);
++    assert.equal(typeof env[k.save], "function", `${k.save} generated`);
++
++    const secret = `sk-test-${k.base}-123`;
++    env[k.save](secret);
++    assert.equal(env[k.get](), secret, `${k.base} round-trips`);
++    assert.equal(process.env[k.env], secret, `${k.base} persisted to its env var`);
++
++    env[k.save]("");
++    assert.equal(env[k.get](), "", `${k.base} clears`);
++    assert.equal(process.env[k.env], undefined, `${k.base} env var removed on clear`);
++  }
++});
++
++test("openrouter is a first-class secret", () => {
++  const or = BYOK_API_KEYS.find((k) => k.base === "openrouter");
++  assert.ok(or, "openrouter present in manifest");
++  assert.equal(or.env, "OPENROUTER_API_KEY");
++  const env = new EnvironmentManager();
++  env.saveOpenrouterKey("sk-or-abc");
++  assert.equal(env.getOpenrouterKey(), "sk-or-abc");
++});
++
++test("preload BYOK_KEY_BRIDGES mirror the manifest exactly", () => {
++  // preload.js can't require the manifest under sandbox, so it inlines the
++  // {base, get, save} tuples. Assert they stay in lockstep with the manifest.
++  const preloadSrc = fs.readFileSync(path.join(__dirname, "../../preload.js"), "utf8");
++  const block = preloadSrc.match(/BYOK_KEY_BRIDGES = \[([\s\S]*?)\];/);
++  assert.ok(block, "BYOK_KEY_BRIDGES declared in preload.js");
++  for (const k of BYOK_API_KEYS) {
++    const entry = new RegExp(
++      `\\{\\s*base:\\s*"${k.base}",\\s*get:\\s*"${k.get}",\\s*save:\\s*"${k.save}"\\s*\\}`
++    );
++    assert.match(block[1], entry, `preload mirrors ${k.base}`);
++  }
++  const bridgeCount = (block[1].match(/base:/g) || []).length;
++  assert.equal(bridgeCount, BYOK_API_KEYS.length, "no extra/missing preload bridges");
++});
++
++test("manifest contains exactly eight providers", () => {
++  assert.equal(BYOK_API_KEYS.length, 8, "exactly 8 BYOK entries");
++});
++
++test("manifest ordering: openai first, tinfoil last, openrouter seventh", () => {
++  assert.equal(BYOK_API_KEYS[0].base, "openai", "first entry is openai");
++  assert.equal(BYOK_API_KEYS[6].base, "openrouter", "seventh entry is openrouter");
++  assert.equal(BYOK_API_KEYS[7].base, "tinfoil", "last entry is tinfoil");
++});
++
++test("BYOK env vars are included in the EnvironmentManager secret set", () => {
++  // The manager treats BYOK keys as secrets eligible for encryption.
++  // Saving a non-empty value to a BYOK key always writes to process.env,
++  // and clearing it (empty string) always removes the env var.
++  const env = new EnvironmentManager();
++  for (const k of BYOK_API_KEYS) {
++    // After save, env var must be set.
++    env[k.save]("test-value-" + k.base);
++    assert.equal(process.env[k.env], "test-value-" + k.base,
++      `${k.env} written to process.env after save`);
++    // After clearing, env var must be gone.
++    env[k.save]("");
++    assert.equal(process.env[k.env], undefined,
++      `${k.env} removed from process.env after clear`);
++  }
++});
++
++test("save methods return a success object", () => {
++  const env = new EnvironmentManager();
++  for (const k of BYOK_API_KEYS) {
++    const result = env[k.save]("test-key");
++    assert.ok(result && result.success === true, `${k.save} returns { success: true }`);
++    env[k.save]("");
++  }
++});
++
++test("BYOK get/save method names are unique across the manifest", () => {
++  const getMethods = new Set();
++  const saveMethods = new Set();
++  for (const k of BYOK_API_KEYS) {
++    assert.ok(!getMethods.has(k.get), `duplicate get method: ${k.get}`);
++    assert.ok(!saveMethods.has(k.save), `duplicate save method: ${k.save}`);
++    getMethods.add(k.get);
++    saveMethods.add(k.save);
++  }
++});
++
++test("non-BYOK accessors are still present on EnvironmentManager", () => {
++  // These pre-existing methods must not be removed; they serve non-BYOK secrets.
++  const env = new EnvironmentManager();
++  const nonByokMethods = [
++    "getAssemblyAIKey", "saveAssemblyAIKey",
++    "getDeepgramKey", "saveDeepgramKey",
++    "getCortiClientId", "saveCortiClientId",
++    "getCortiClientSecret", "saveCortiClientSecret",
++    "getCustomTranscriptionKey", "saveCustomTranscriptionKey",
++    "getCleanupCustomKey", "saveCleanupCustomKey",
++  ];
++  for (const name of nonByokMethods) {
++    assert.equal(typeof env[name], "function", `${name} still present`);
++  }
++});
++
++test("openrouter key is isolated from other providers", () => {
++  const env = new EnvironmentManager();
++  env.saveOpenrouterKey("sk-or-isolated");
++  // Setting OpenRouter key must not overwrite another provider's slot.
++  assert.equal(env.getOpenAIKey(), "", "OpenAI key unaffected");
++  assert.equal(env.getAnthropicKey(), "", "Anthropic key unaffected");
++  assert.equal(env.getOpenrouterKey(), "sk-or-isolated");
++  env.saveOpenrouterKey("");
++});
++
++test("each BYOK entry has exactly the five required fields and no others from base/env/get/save/storeKey", () => {
++  for (const k of BYOK_API_KEYS) {
++    const fields = ["base", "env", "get", "save", "storeKey"];
++    for (const f of fields) {
++      assert.ok(typeof k[f] === "string" && k[f].length > 0,
++        `${f} is a non-empty string on ${k.base}`);
++    }
++  }
++});
+diff --git a/test/helpers/snippetsDatabase.test.js b/test/helpers/snippetsDatabase.test.js
+index ed7a5ece..248c33d4 100644
+--- a/test/helpers/snippetsDatabase.test.js
++++ b/test/helpers/snippetsDatabase.test.js
+@@ -25,6 +25,13 @@ process.env.NODE_ENV = "test";
+
+ const DatabaseManager = require("../../src/helpers/database.js");
+
++function isNativeBindingUnavailable(error) {
++  const message = String(error?.message || error);
++  return (
++    message.includes("NODE_MODULE_VERSION") || message.includes("Could not locate the bindings file")
++  );
++}
++
+ function createDb(t) {
+   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "openwhispr-snippets-db-"));
+   try {
+@@ -33,8 +40,8 @@ function createDb(t) {
+     probe.close();
+     fs.rmSync(path.join(userDataDir, "probe.db"), { force: true });
+   } catch (error) {
+-    if (String(error?.message || error).includes("NODE_MODULE_VERSION")) {
+-      t.skip("better-sqlite3 native binding is not compiled for this Node runtime");
++    if (isNativeBindingUnavailable(error)) {
++      t.skip("better-sqlite3 native binding is not available for this Node runtime");
+       return null;
+     }
+     throw error;
+@@ -43,8 +50,8 @@ function createDb(t) {
+   try {
+     return new DatabaseManager();
+   } catch (error) {
+-    if (String(error?.message || error).includes("NODE_MODULE_VERSION")) {
+-      t.skip("better-sqlite3 native binding is not compiled for this Node runtime");
++    if (isNativeBindingUnavailable(error)) {
++      t.skip("better-sqlite3 native binding is not available for this Node runtime");
+       return null;
+     }
+     throw error;

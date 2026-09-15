@@ -2,7 +2,7 @@ _Owner of CLAUDE.md **Section 1**, Steps 6 through 11. The filename still reads 
 
 ### STEP 6: Draft the form answers
 
-On the Fixable path, do NOT start this step until the whole Step 5.5 battery has passed against the built zip (oracle 3/3 at 1.0, NOP 0.0, hostile-delete 0.0 with its test id named, failures resolved) and that zip is still the newest thing in `tasks/<name>/upload/`. Use Section 2 of this file - it lists every question per path and the basis for answering it.
+On the Fixable path, do NOT start this step until all four runs of the Step 5.5 Phase B battery have passed against the built zip (oracle 3/3 at 1.0, NOP 0.0, hostile-delete 0.0 with its test id named, Run 4, the gaming probe, at 0.0 with the file it edited named, failures resolved) and that zip is still the newest thing in `tasks/<name>/upload/`. Use Section 2 of this file - it lists every question per path and the basis for answering it.
 
 The Fixable form is answered in TWO phases, because the zip upload field sits BELOW the first set of questions:
 
@@ -17,27 +17,47 @@ The Fixable form is answered in TWO phases, because the zip upload field sits BE
 
 ### STEP 7: Eval loop (Fixable only)
 
-Before uploading the fixed zip for Check feedback, enter the Phase 1 answers in the platform - the verdict (both occurrences + [Internal] Validity), where-issues, what-issues, and the numbered issue details all sit ABOVE the upload field and must be answered first. Then write the upload-ledger row in `task.md` (Step 5 re-zip item 7) and upload the zip from `tasks/<name>/upload/` as `<all-task-content>`. After upload the platform runs Static Checks, Difficulty Check, Oracle Check, and the Quality Check judge. Iterate per Section 4 until the Send gate below is fully green. Expect that the Phase 2 answers are only completed AFTER the checks pass. Every revision round happens in the working copy under `tasks/<name>/work/` and produces a fresh zip into `tasks/<name>/upload/` via the Step 5 re-zip rule, overwriting the previous one - which is why each round needs its own ledger row. Once `submission_answer.txt` exists, every round through this loop also updates it - that is Step 10.
+Before uploading the fixed zip for Check feedback, enter the Phase 1 answers in the platform - the verdict (both occurrences + [Internal] Validity), where-issues, what-issues, and the numbered issue details all sit ABOVE the upload field and must be answered first. Then write the upload-ledger row in `task.md` (Step 5 re-zip item 7) and upload the zip from `tasks/<name>/upload/` as `<all-task-content>`. After upload the platform runs Static Checks, Difficulty Check, Oracle Check, and the Quality Check judge. Iterate per Section 4 until the pre-submit gate below is fully green. Expect that the Phase 2 answers are only completed AFTER the checks pass. Every revision round happens in the working copy under `tasks/<name>/work/` and produces a fresh zip into `tasks/<name>/upload/` via the Step 5 re-zip rule, overwriting the previous one - which is why each round needs its own ledger row. Once `submission_answer.txt` exists, every round through this loop also updates it - that is Step 10.
 
-**The Send-to-reviewer gate.** Read this list before checking the box. Any single unmet condition means Send = No, and the reason gets recorded on the `Send to reviewer:` line of the answers file:
+**The pre-submit gate.** Read this list before you press Submit. There is no "Send to reviewer" checkbox any more (`docs/tasking-guide.md:251`) - submitting runs the post-submission evals on their own, a pass routes the task straight to the reviewer queue, and a fail returns it to you to fix and resubmit. So this is the list you clear first, and any single unmet condition means the gate is not clear, with the reason recorded on the `Pre-submit gate:` line of the answers file:
 
 1. **Static Checks green.** The build stops at the first failing phase, so a green static check only means the next phase could run - it is a precondition, not a pass
 2. **Difficulty Check green with ZERO invalid trials.** An `invalid trial` / `harness failure` count above zero voids the round: you learn nothing about difficulty, nothing about the quality panel's test axes and nothing about agent behaviour, so a "passing" difficulty summary alongside invalid trials is not a pass
 3. **Oracle Check 3/3.** Anything below 3/3 blocks. On the Fixable path it is a task defect, not flake - see Section 4 for what 0/3 versus 1/3 tells you
 4. **Quality Check pass.** Both test axes above 3.0 with no judge at ≤ 2, AND zero failing must-have criteria - a `criterion: Instructions` failure blocks on its own even with clean test axes
 5. **Task Instruction Sufficiency is not FAIL.** See Section 4 troubleshooting for the 0%-agents / 100%-oracle signature
-6. **The Step 5.5 battery passed against the CURRENT zip.** NOP 0.0, oracle 3/3 at 1.0, hostile-delete 0.0 naming its test id, all run on an extract of the zip now sitting in `tasks/<name>/upload/`
-7. **The zip is newer than every file in `work/`.** `find tasks/<name>/work -newer tasks/<name>/upload/<name>.zip` prints nothing. If it prints anything, an edit landed after the battery and both the zip and the battery are void
+6. **The Step 5.5 Phase B battery passed against the CURRENT zip, all four runs.** NOP 0.0, oracle 3/3 at 1.0, hostile-delete 0.0 naming its test id, and Run 4, the gaming probe, leaving the reward at 0.0 with the file it edited named, each on its own fresh extract of the zip now sitting in `tasks/<name>/upload/`
+7. **The zip is newer than every file in `work/`.** `find tasks/<name>/work -newer tasks/<name>/upload/<name>.zip` prints nothing. **When it prints something, find out WHAT before concluding the battery is void.** The overwhelmingly common cause is the `.git` **directory** mtime with no content change at all, because any git read inside `work/environment/repo` writes `.git/index` - `git status`, `git apply --check`, `git apply --numstat`. xlwings 2719 tripped this four times in two days, twice from a `git status` in a verification step and once from an audit agent checking tracked source. Settle it in one command: extract the zip and `diff -rq <extract> work`. **Identical content means the battery transfers** and the fix is a rebuild for gate hygiene, not a re-run. Different content means an edit really did land and the battery is void. **Never touch the mtime to silence the gate** - that is the self-confirming check Section 11 bans. The durable fix is ordering: do every git read BEFORE the zip is built (LEDGER L82)
 8. **The upload ledger in `task.md` has a row for this zip**, with its sha256 and the checks it returned
 
-Sending with a failing condition is allowed only deliberately, and then Comments for Reviewer must say which condition failed, why you sent anyway, and what you tried. Checking the box with unexplained failing checks always comes back as revision.
+There is no deliberate send any more, because the box that allowed one is gone and the `AlwaysNoPass` message with it (`docs/tasking-guide.md:251`). Conditions 1 to 5 are the ones the post-submission evals re-run for you, so submitting with any of them red spends a whole round and the task comes back to you without a person having read it. Conditions 6 to 8 are local and the platform never sees them, so a gap there ships silently and only the reviewer catches it. A red condition is fixed, never explained: record it on the `Pre-submit gate:` line as Not clear with the condition named, and do not submit until it is green. What does carry across a bounce is the written text, so when a returned submission has been fixed and is going back up, re-read Comments for Reviewer and the `Pre-submit gate:` line before pressing Submit again. Both have to be true of the round where the evals finally pass, not of the round that failed.
+
+**The difficulty check is a budgeted resource now, and this gate is where it gets spent.** Until 2026-08-14 a task could cycle through the difficulty check with no limit. As of that date the budget is **four difficulty checks**: once four have run on a task without passing, the platform classifies it **Invalid Difficulty** on its own and sends it to review as it stands (`docs/faq.md`, "Difficulty checks are now capped"). The submission carries four new read-only fields and two of them belong to this gate, **Difficulty checks run** and **Difficulty checks remaining**. Read both before every upload, and write both into the round record in `task.md` (Step 10), because nothing else in this workspace records them and they cannot be reconstructed after the fact.
+
+What spends the budget is a difficulty check that runs AND returns a result. A submission that comes back to you before the check runs costs nothing, and a technical issue that prevents a result costs nothing. A reviewer sending the task back restarts the count at zero, so the cap is **per review cycle and not per task lifetime** - do not write it as a lifetime limit. Reaching it is not a rejection, it is not retroactive to tasks that arrived before 2026-08-14, and a human reviewer still reads the task afterwards. Step 10 says what to do with the task when it comes back with that verdict already on it.
+
+**The consequence is the one worth changing a habit over: the measurement work moves BEFORE the upload.** Spending a check to find out whether a lever you picked by reasoning does anything is a quarter of the budget, and nothing local costs you a check. This workspace already knows which measurements find a lever. Build three or four implementations of the feature from `instruction.md` alone, blind to the oracle, the tests and the upstream commit, and read what each one reports it was unsure about (`learning/implementation-control-is-the-lever-generator.md`). Run every candidate lever as a throwaway probe against every implementation you have and discard each row where they all agree, which killed 13 of 15 candidates on xlwings 2719 (`learning/difficulty-levers-must-discriminate.md`). Split the sentences you already wrote into clauses and check a test fails when each one is violated, which moved xlwings from 87.5% to 37.5% solves on a round that added no requirement at all (`learning/probe-the-instruction-you-already-wrote.md`). All three were advisable while the rounds were free. They are what the budget is for now. The person standing at this gate is the person deciding whether the round is worth a quarter of it, so decide it here rather than after the screen has answered.
+
+**One consequence that is a reading of the FAQ rather than something measured here.** `learning/platform-announcements.md` carries a difficulty rerun ladder - rerun a failed Difficulty Check once, then a second time, before diagnosing. Read the FAQ sentence directly and every rerun that returns a result spends budget, so a ladder that used to cost only wall-clock time can now cost half the cap. Nobody in this workspace has hit the cap yet, so treat that as a reading to check against the **Difficulty checks remaining** field on the form before you rerun anything, not as a measured rule.
 
 ### STEP 8: Ask for the handling times
 
 Ask the user for the real numbers - never generate them. The live form shows **five** time
 lines: four independently asked fields, plus the total, which is computed from three of them
 (verified on a real submission, 2026-08-01 - `docs/tasking-guide.md` documents fewer). The
-Section 6 templates print all five for that reason:
+Section 6 templates print all five for that reason.
+
+**Weakened 2026-08-18, and not refuted.** A capture of the whole submission page renders exactly
+**four** submitter time labels (`sample_review_page.md:401`, `:403`, `:405`, `:407`) and a grep for
+"total" and "entire submission" across all 473 of its lines returns nothing. That is not enough to
+drop the fifth line, for one specific reason: a **computed display** is not an input, and the same
+conversion renders all four of those inputs label-only with no values, so it demonstrably drops what
+it cannot represent. `docs/tasking-guide.md:229` also still describes a whole-submission total. So
+the fifth line is now an open caveat rather than a measurement, the 1 + 2 + 3 inference below is
+unchanged and still an inference, and what would settle both is one screenshot of that block with
+values in it. The same capture also puts the **rewrite-only time inside the handling block**
+(`:403`), after the difficulty question (`:359`) and the senior estimate (`:365`), where Step 6's
+Phase 2 ordering puts it before both. Everything up to the confirmation checklist matches.
 
 | # | Field | Asked or computed | What it covers |
 |---|---|---|---|
@@ -71,7 +91,7 @@ an error**:
   so the band describes typical work rather than a permitted range.
 - **All revisions (4)** starts at zero and grows **50 to 70 minutes per round** after the
   first. The accepted bundle shipped **195** minutes of revision time across its rounds
-  (same file, line 193) and libcrux is at 240. Do not clamp a real cumulative figure into a
+  (same file, line 193) and libcrux is at **370**, re-measured 2026-08-16 from its own answers file. Across all eight accepted submissions the totals run 195 to 260 and the revision figures 0 to 370, so seven of the eight totals sit inside the 180-240 band and kvdex is the one above it. Do not clamp a real cumulative figure into a
   60 to 120 window - read it off the task's handling-time ledger (Step 10) instead.
 
 Sanity-check before writing anything: the total has to equal fields 1 + 2 + 3 exactly, and it
@@ -94,9 +114,18 @@ What the pass must not change: file paths, function and test names, commands, di
 
 ### STEP 10: Revision rounds (expect at least one - this is the normal path)
 
-A task is rarely done in one pass. It comes back either from a failing platform check during the Step 7 eval loop, or from the reviewing EC with **Needs Revision** and a list of findings after Send to reviewer. Both are the same job: address the feedback, re-validate, re-zip, and bring the answers back in line with what the task now is.
+A task is rarely done in one pass. It comes back one of three ways: from a failing platform check during the Step 7 eval loop, from the post-submission evals returning it to you automatically after you submit (`docs/tasking-guide.md:251`), or from the reviewing EC with **Needs Revision** and a list of findings once those evals passed and the task reached the queue. All three are the same job: address the feedback, re-validate, re-zip, and bring the answers back in line with what the task now is.
 
 Run this loop every time feedback arrives, however small it looks.
+
+**Since 2026-08-14 there is a fourth way it comes back, and it is the one round that changes nothing.** When four difficulty checks have run on a task without passing, the platform writes **Invalid Difficulty** onto the validity question itself and returns the task to you once with that verdict already set (`docs/faq.md`, "Difficulty checks are now capped"). The right action is to submit it again without changing anything and to leave the verdict where the platform put it. Do not rewrite the bundle, do not restore your own verdict, and do not work it as a bounce to fix. It is not a rejection and a human reviewer still reads it. This is the only situation in this workspace where resubmitting an unchanged bundle is correct, so items 3 through 6 below do not fire - there is nothing to edit, nothing to re-zip, no battery to re-run and nothing in the answers file that the round made false. The answers file is not rewritten either: a verdict the platform set is not a verdict change of yours, so the Section 6 template does not move and the archive-then-rewrite rule in item 5 stays shut. Record the platform's verdict and its date in `task.md` under item 7, as a round that deliberately changed nothing, or it reads later as a skipped step. That last part follows from the FAQ's instruction to submit again without changing anything rather than from anything measured here. Reaching the cap is the platform's verdict and never yours, so it is not licence to write Unfixable - Difficulty into an answer, and every condition Section 3 puts in front of that verdict still stands.
+
+**Establish WHICH of the three it is before you plan the round, because the third one behaves differently in two ways that change what you do.** Measured on android-beacon 1177, whose round 8 was the first human-reviewer round in this workspace and the round it was accepted on.
+
+- **A human reviewer reads Comments for Reviewer. The automated panel does not.** LEDGER **L18** says the judge does not read it, and that is true and scoped to the panel, which scores the instruction, the tests, the oracle and the task directory and nothing else. `docs/tasking-guide.md` defines the reviewing EC's job as repeating the document and logic review **and reading Comments for Reviewer**. So on a judge round an explanation buys nothing and the fix has to be in the artefact; on a reviewer round the explanation is a real channel. Answer their findings there **point by point, including the ones you decline and the ones you cannot reproduce** (LEDGER L77)
+- **A human reviewer finds defect classes no automated check can reach.** All four of AltBeacon's round-8 findings had survived every eval. The blocking one was that the graded file only compiled against a type the instruction never specified, so seven of eight difficulty trials died at compile with all 230 graded ids recorded missing. No panel sees that, because the oracle defines the type and therefore compiles, and the NOP fails either way. **Do not treat "every check passed" as evidence the bundle is sound**, and do not argue a reviewer finding down on the strength of a green pipeline
+
+**Say so plainly when a reviewer finding does not reproduce, and fix the cause anyway if they identified it.** AltBeacon's fourth finding was that the shipped repo had no usable `refs` directory. It did not reproduce: the zip carries the entries and an extract gives a working repository. The reviewer was still right about the cause, which was that the pre-zip `git gc` packs the loose ref away and leaves an empty directory the bundle then depends on surviving. Reporting "did not reproduce, here is the cause you found, here is the fix" is a better answer than either agreeing silently or disagreeing.
 
 **0. Confirm WHICH task the feedback belongs to, from the feedback itself.** Do not trust the path or task name in the message that carries it. Feedback gets pasted with the previous task's path attached, and the `__` in a directory name renders as markdown bold, so `20260728_153118__jqno_equalsverifier__1166` arrives as `20260728_153118**jqno_equalsverifier**1166` and is easy to mistake for a different task. The report always identifies itself: judge justifications cite `task.toml` line numbers with the source PR, repo paths under `environment/repo/`, and file names from the bundle. Match those against the task folders before touching anything, and say plainly which task you concluded it is. Working the wrong folder costs a whole round.
 
@@ -123,7 +152,15 @@ Paste the feedback verbatim into the task's `task.md` under a dated revision hea
 
 **One round counter per task, shared by all three files.** The counter increments **once per platform feedback received** - not per fix, not per re-upload, not per part of a bundled report. No part-numbered sub-headings (`round 2-part-3`); if new feedback arrives, that is the next round, and if it does not, it is the same round. The highest round heading in `task.md`, the round number in the answers `Comments for Reviewer` opener, and the number in the `INDEX.md` status cell must all read the same.
 
-**2. Turn the feedback into a numbered item list, then work it.** One line per finding, each with the file it touches and the fix. Findings arrive in prose and bundle several asks into one paragraph - split them, or you will address four of six and think you are done. Reply to every item, including the ones you decide not to act on, with the reason.
+**The round counter and the platform's difficulty-check counter are two different counters, and conflating them will cost somebody a task.** The round counter above counts feedback received, whatever the feedback was about. The platform's counter, shown as **Difficulty checks run** with **Difficulty checks remaining** beside it, only moves when a difficulty check runs and returns a result (`docs/faq.md`, "Difficulty checks are now capped"). So a round that came back on a static check, an oracle failure or a quality finding leaves that counter exactly where it was, and so does a round the difficulty check never finished because of a technical problem. They reset differently too: a reviewer sending the task back restarts the platform's counter at zero while the round number keeps climbing, so a task at round 7 can legitimately be sitting at zero checks run with four remaining. Never derive either number from the other and never estimate one of them. Read both off the form and write both into the round record.
+
+**2. Turn the feedback into a numbered item list, then work it.** One line per finding, each with the file it touches, **its provenance**, and the fix. Findings arrive in prose and bundle several asks into one paragraph - split them, or you will address four of six and think you are done. Reply to every item, including the ones you decide not to act on, with the reason.
+
+**Provenance is a column, not a memory.** Mark every item **seed / source PR / created in round N**, because that is what decides where the fix goes. A PR-inherited finding is answered in `instruction.md` and never in `golden.patch`; a finding the bundle itself created is answered wherever the bundle created it. **Decide it per finding.** android-beacon 1177 kept a running tally instead, recorded in its own notes table as "confirmed six times, every oracle finding on this task has been PR-inherited", while the same file records one marked "true, and self-inflicted" - and a tally that hardens into a default routes a self-inflicted defect to an instruction-side fix (LEDGER **L79**).
+
+**From about round 4, add the bundle's own diff to what you review.** By then most findings are yours rather than the seed's. On the task above, **all five findings of the round it was accepted on had been authored by earlier rounds**, and the most expensive had survived since the first rewrite. `diff -rq download/original work -x '.git'` and read the new material as an unreviewed submission (`learning/self-inflicted-defects-dominate-late-rounds.md`).
+
+**Sweep the class, not the instance the report quoted.** When a report names one instance of a defect class, the same round sweeps the class across the whole bundle and records the sweep command in `task.md`. On that task the snapshot-shape class fired three times and was fixed pointwise three times, and the surviving instance is what a human reviewer found after every automated check had passed.
 
 **Read the Guidelines section a finding cites before working it.** Reviewers are asked to cite the relevant section of the Guidelines in their notes for specific or easily-missed rules (`docs/tasking-guide.md`, reviewer form question 4), so a Needs Revision item may name the exact rule behind it. Open that section first - it settles what the finding is actually asking for faster than re-deriving the ask from the prose.
 
@@ -136,6 +173,17 @@ Paste the feedback verbatim into the task's `task.md` under a dated revision hea
 | Oracle Check 0/3 | 2, 3, 4 | solve.sh idempotency; -3way apply; mode fix | 3 |
 ```
 
+**Keep a refusals table beside it, and re-read it before any round that reverses course.** A refusal that names a *mechanism* is a measurement, and it can only be reversed by refuting the mechanism, never by a change of instruction such as "take every item this time".
+
+```
+## Refusals
+| Round | Item refused | Mechanism that makes the fix wrong | Predicted failure if reversed | Still holds? |
+|---|---|---|---|---|
+| 1 | compare the notification in strategy equality | Android `Notification` has no value equality | two identically configured strategies compare unequal | yes, and the contract was rewritten to match in round 6 |
+```
+
+On android-beacon 1177 that exact refusal was correct, was reversed on a change of instruction rather than a refutation, and five rounds later the contract was rewritten to say what the refusal had been describing.
+
 A strike count of **2 forces the remove-the-dependency path**. It is not a nudge: a fix you verified locally that comes back failing a second time means your model of the environment is wrong, so shipping a third variation of the same theory is forbidden. Remove whatever the failure depends on instead (Section 4, two strikes). AltBeacon ran oracle 0/3 across three consecutive rounds and only invoked the rule afterwards, because nothing was counting.
 
 **A stage that never ran is not a failure signature.** `Not run: difficulty screen` in a review-gate summary means the agentic judge blocked first, so the second stage never started. It is expected, not a second error to diagnose, and it does not get a row in the strike table (`docs/faq.md`, the "Review gate blocked at the agentic judge / difficulty screen" FAQ). The judge block is the one signature that round scored.
@@ -144,7 +192,13 @@ A strike count of **2 forces the remove-the-dependency path**. It is not a nudge
 
 **3. Make the edits in `tasks/<name>/work/`, under the same rules as the first pass.** Every hard boundary from Step 5 still applies - no tracked source edits, no pre-existing test file left modified in the shipped tree, no PR reduction, only the listed Dockerfile fixes. Feedback from a reviewer does not widen what you are allowed to edit. If a requested change would cross one of those lines, say so plainly in Comments for Reviewer and explain what you did instead.
 
-**4. Re-run everything, not just the part you touched.** The full Step 5 Phase A pre-upload checklist including `git fsck --unreachable`, then the Step 5 re-zip rule into `tasks/<name>/upload/` overwriting the previous zip, then the WHOLE Step 5.5 Phase B battery - NOP, oracle 3/3, hostile delete - from fresh extracts of that new zip. Git hygiene comes immediately before zipping, every round, because the revision work recreates `.git/logs`, a stash and dangling objects exactly the way the first pass did. Write the new upload-ledger row after the zip verifies.
+**4. Re-run everything, and add one probe aimed at what this round changed.** The Step 5.5 battery is invariant while the bundle changes every round, so on its own it re-proves what earlier rounds established and is silent on the edit in front of it. Every round adds at least one hostile probe targeting its own change, and the round record names it and the test it kills. Measured on android-beacon 1177, where probe counts by round ran 1, 1, 2, 5, 7 and every probe answered a finding an earlier round had already been given. **A battery that has not grown since the last round is evidence the round was not verified, not evidence that it was.**
+
+**Name all four Phase B runs in the round record, with a result or the words NOT RUN beside each.** A battery table with three green rows looks exactly like a table with four minus one, and nothing in the loop reads a table for **missing** rows. hulak 118 ran five batteries across four rounds with **Run 4, the gaming probe, absent from every one of them** under any name, and four rounds of platform checks, two agentic-judge passes and a human reviewer all went by without noticing (LEDGER L85).
+
+**Re-run every standing audit, not only this round's probe.** When an earlier round removes a defect class, the command that proved it gone goes into a list in `task.md` beside the strike table, and runs before every zip from then on. The list only grows, the same way the probe battery does, and for the same reason: on hulak 118 round 0 removed six graded calls to unexported names, **round 2 put one back** while fixing something else, and round 3 was blocked on it by the agentic judge (LEDGER L83). Two supporting changes to the strike table, both cheap: give a round 0 finding a row at **strike 0**, so a signature is in the table before the round that recreates it, and add an **authored-in** column, because `Rounds seen` records detections and not authorship.
+
+**4b. Re-run everything, not just the part you touched.** The full Step 5 Phase A pre-upload checklist including `git fsck --unreachable`, then the Step 5 re-zip rule into `tasks/<name>/upload/` overwriting the previous zip, then the WHOLE Step 5.5 Phase B battery - NOP, oracle 3/3, hostile delete, and Run 4, the gaming probe - from four fresh extracts of that new zip. Git hygiene comes immediately before zipping, every round, because the revision work recreates `.git/logs`, a stash and dangling objects exactly the way the first pass did. Write the new upload-ledger row after the zip verifies.
 
 **5. Update `submission_answer.txt` - this is the step that gets skipped.** The file has to describe the bundle you are actually uploading now, not the one you uploaded last week. Do not regenerate it from scratch and do not leave it alone: edit the answers your changes affected and add the ones the changes created, and leave everything else as it stands.
 
@@ -158,7 +212,29 @@ grep -c '^diff --git'   tasks/<name>/work/solution/golden.patch   # golden file 
 grep -nE '[0-9]+ to [0-9]+|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b' tasks/<name>/answers/submission_answer.txt
 ```
 
-**The spelled-out half of that grep is the half that matters** - three of redisshake's four stale numbers were words, not digits, so a numeric grep could never have found them. And re-decide the `Send to reviewer:` line every round: that accepted file still read `Send to reviewer: No ... the checks have not run against it` while the task sat in front of a reviewer.
+**The spelled-out half of that grep is the half that matters** - three of redisshake's four stale numbers were words, not digits, so a numeric grep could never have found them. And re-decide the `Pre-submit gate:` line every round: that accepted file still carried the old `Send to reviewer: No ... the checks have not run against it` while the task sat in front of a reviewer.
+
+**A careful re-read of the answers file is not a check, and three measurements say so.** xlwings 2719
+audited the file against measured ground truth three times, each audit run after a hand pass judged
+clean, and they returned **9, then 11, then 6** confirmed defects the hand pass had missed every time.
+The reason is structural: the recurring defect is not a wrong number but **a sentence that was true
+when it was written and a later round made false**, and that does not read as wrong when you scan
+past it. So the round's answers check is not "are the numbers right", it is **"what did this round
+make false"**, run against the bundle rather than against the previous draft. Two mechanical checks in
+`bin/checks/60-answers.sh` now cover the part that can be automated - `answers.count-*` reconciles any
+count stated in more than one place, and `answers.graded-total` reads `tests/config.json` and fails on
+any total-sized `N of N` in the prose that disagrees with it. Run `bash bin/checks/60-answers.sh
+tasks/<name>` every round.
+
+**Verify each finding yourself before you act on it, because a hurried fix is where the next false
+statement comes from.** On that task two new false statements were created *while fixing old ones*:
+one asserted a base-image pin had caused a build failure that a `git update-index` call actually
+caused, and one added a correct round-count sentence without deleting the contradicting sentence it
+was meant to replace, which is this section's own supersede rule broken inside the pass enforcing it.
+And **annotating a superseded figure is not removing it** - relabelling an old total "numbers from
+that round" still leaves a reviewer reading a stale figure in a reviewer-facing field. Superseded
+numbers go to `task.md` (LEDGER L81).
+
 
 **Supersede, do not only append.** A round that replaces a mechanism makes every earlier block describing that mechanism false, and appending a new block does not repair them - the file then describes two mutually exclusive verifiers, which is what a reviewer reads. Before adding anything, grep the answers file for the mechanism you replaced and edit **every** block that still describes it, noting the superseded design in a single clause rather than deleting the history. libcrux shipped a round where issue 2 and Files Changed entry 2 still described a git-based test-tree restore that a later entry in the same file explained had been removed. List the greps you ran in `task.md`, so the next round can see what was checked.
 
@@ -177,13 +253,13 @@ What typically moves after a revision round:
 | What makes this task difficult | If the fixes changed what the task actually demands |
 | Comments for Reviewer | Every round. Say which revision this is, what you changed, what you deliberately did not change and why, and the fresh oracle/NOP numbers |
 | Handling times | The revision field only, **copied from the last Cumulative cell of the task.md ledger**, never remembered. The other three are first-pass numbers and do not move |
-| Send to reviewer | Re-decide it against the Step 7 gate every round. It is a template line, so it always carries either Yes or No with a reason |
+| Pre-submit gate | Re-decide it against the Step 7 pre-submit gate every round. It is a template line, so it always carries either Clear or Not clear with a reason |
 
 **6. Re-humanize the file after editing it.** Run the `humanizer` skill over the answers you touched, and re-check the whole file against Section 5 afterwards - the same no-wrap and no-LLM-tells rules, on the edited text and on the joins where new text meets old. New text pasted next to already-humanized text is where the tells reappear. Same exempt list: paths, test names, commands, code, checkbox lines, and the numbers.
 
 **7. Record the round in `task.md` and update `submission_answer.txt` in the SAME action.** These were two separate steps and they drifted apart every time - AltBeacon's answers file carried a revision figure its own `task.md` still flagged as needing a fresh number after five rounds, and libcrux recorded outright that "the round-2 increment had been lost somewhere". Treat them as one write, never one after the other with thinking in between.
 
-Into `task.md`: what the feedback said, the freshness-check result, what you changed, the new NOP / oracle 3/3 / hostile-delete results, the check outcomes, the updated strike table, and the new upload-ledger row. Plus the handling-time ledger, which is the only place the revision number is derived from:
+Into `task.md`: what the feedback said, the freshness-check result, what you changed, the new NOP / oracle 3/3 / hostile-delete / gaming-probe results, the check outcomes, the **Difficulty checks run** and **Difficulty checks remaining** values as the form read them this round, the updated strike table, and the new upload-ledger row. Plus the handling-time ledger, which is the only place the revision number is derived from:
 
 ```
 ## Handling time ledger
@@ -194,6 +270,16 @@ Into `task.md`: what the feedback said, the freshness-check result, what you cha
 ```
 
 The answers file's "all revisions" figure is **copied from the last Cumulative cell**, not recalled and not re-estimated. Then update the status and the round number in `INDEX.md`. The record is what makes the next round cheap; without it you re-derive the history every time.
+
+**The two difficulty-check numbers get a ledger of their own, for the reason this step already gives about the difficulty artifact and Step 11 gives about the closing numbers: nothing else holds them.** They are read-only fields on the submission, they are gone as soon as the page moves on, and a reviewer bounce silently resets them, so a run of rounds with no record leaves you unable to say how much of the current review cycle's budget has actually been spent. One row per round:
+
+```
+## Difficulty check budget
+| Round | Date | Checks run | Checks remaining | Reset since last round? |
+|---|---|---|---|---|
+| 3 | 2026-08-15 | 2 | 2 | no |
+| 4 | 2026-08-17 | 0 | 4 | yes, reviewer sent it back |
+```
 
 **And the open-caveat table, which is the one that stops a limit quietly turning into its opposite.** A caveat has no owner: a finding gets a file:line and a probe, a caveat gets a clause at the end of a paragraph that each round writes a little shorter because it was in the last one too. redisshake 1005 stated "the control runs on a newer model than the screen, so 4 of 4 is a ceiling not a forecast" in round 2, demoted it in round 3, and in round 4 wrote "two independent measurement systems now agree" with nothing measured in between. The platform then refuted it.
 
@@ -215,11 +301,15 @@ A task ends when the reviewer returns Accept or Reject, and the ending has work 
 
 **1. Confirm the outcome and which task it belongs to.** Same discipline as Step 10 item 0. Identify the task from what the message itself cites, never from the path pasted alongside it.
 
+**Ask for the closing numbers in the same message that receives the acceptance.** An acceptance usually arrives as one line, and the three things the calibration row and the next task want are gone the moment the conversation moves on: the **final difficulty screen result**, the reviewer's **Submission Quality Score**, and any **reviewer notes**. None of them can be reconstructed later. ziti-sdk-c 668 closed without all three, so its row records an accepted bundle whose final measured difficulty nobody here knows. Ask once, immediately, and record `not supplied` if they do not come.
+
 **2. Write the closing block into `task.md`.** The reviewer's verdict verbatim under a dated heading, the Submission Quality Score if one was given, the final round number, and the last row of the handling-time ledger. This is the last write to that file.
 
 **3. Update `INDEX.md` in the same action.** Status becomes `accepted` or `rejected`, the two closing tokens the register defines. Round keeps the final round number. Then update the `pending-revision: N of 2` line under `## Active`, because closing a task is the thing that frees a slot and that count is what blocks the next claim (Step 1 item 5).
 
 **4. Harvest before the folder moves.** Answer two questions in writing. What did this task prove that no note yet says, and what did it disprove that a note still says. A new fact gets a `learning/` note with frontmatter plus a row in `learning/README.md`. A disproved claim gets a `LEDGER.md` row. The Step 1 write-back rule says how to write one. **This step is when it fires.**
+
+**On a Fixable task the reviewer ACCEPTED, the harvest has a named target and this step never said so.** `learning/accepted-bundle-reference.md` holds one row per `accepted` row in `INDEX.md` and its rows were all written by hand, because nothing in this list pointed at it. Re-derive the count with `grep -c '^| \[.*| accepted |' INDEX.md` rather than quoting the figure in that file, which measured stale by two on 2026-08-18. Add the row here: the measured shape (f2p, p2p, graded total, the battery results, the restore shape), **what acceptance validated**, and separately **what merely was not caught**, which is the distinction that file exists to keep. Write the second column honestly, because it is the one that decays: an acceptance validates what previously failed and was then changed, and anything a reviewer would have had to open the bundle to check is unproven rather than endorsed. If the reviewer supplied only the word accepted, say so in the row, since four of the ten already close with numbers unsupplied and their check panels are simply unknown. The reviewer-path counterpart, a bundle **you** accepted while reviewing, is a different population and goes in `learning/bundles-i-accepted-as-reviewer.md` under Section 13 F6 deferred maintenance, never in this one.
 
 **5. Fill in the task's `learning/calibration.tsv` row.** Set `verdict` to the path submitted, set `outcome` to what the reviewer returned, and refresh every number the rounds moved: revision minutes, upload rounds, and any measured column that changed. A row left at its mid-flight values is worse than a missing one, because the next task reads it as measured.
 

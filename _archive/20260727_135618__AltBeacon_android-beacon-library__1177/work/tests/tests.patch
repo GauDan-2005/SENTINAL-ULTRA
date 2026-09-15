@@ -1,0 +1,706 @@
+diff --git a/lib/src/test/java/org/altbeacon/beacon/SettingsJavaTest.java b/lib/src/test/java/org/altbeacon/beacon/SettingsJavaTest.java
+new file mode 100644
+index 0000000..f943b42
+--- /dev/null
++++ b/lib/src/test/java/org/altbeacon/beacon/SettingsJavaTest.java
+@@ -0,0 +1,94 @@
++package org.altbeacon.beacon;
++
++import android.app.Notification;
++import android.content.Context;
++
++import org.altbeacon.beacon.logging.LogManager;
++import org.altbeacon.beacon.logging.Loggers;
++import org.junit.Before;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.RuntimeEnvironment;
++import org.robolectric.annotation.Config;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertTrue;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk = 28)
++public class SettingsJavaTest {
++
++    private BeaconManager beaconManager;
++
++    @Before
++    public void before() {
++        org.robolectric.shadows.ShadowLog.stream = System.err;
++        LogManager.setLogger(Loggers.verboseLogger());
++        LogManager.setVerboseLoggingEnabled(true);
++        BeaconManager.setsManifestCheckingDisabled(true);
++        beaconManager = BeaconManager.getInstanceForApplication(RuntimeEnvironment.getApplication());
++        // Start every test from the library defaults so the tests do not depend on each other.
++        beaconManager.revertSettings();
++        BeaconManager.setsManifestCheckingDisabled(true);
++    }
++
++    @Test
++    public void builderIsUsableFromJava() {
++        Context context = RuntimeEnvironment.getApplication();
++        Settings settings = new Settings.Builder()
++                .setDebug(true)
++                .setDistanceModelUpdateUrl("https://s3.amazonaws.com/android-beacon-library/android-distance.json")
++                .setScanPeriods(new Settings.ScanPeriods(1100, 0, 10000, 0))
++                .setScanStrategy(new Settings.ForegroundServiceScanStrategy(
++                        new Notification.Builder(context, "BeaconReferenceApp").build(), 1))
++                .setLongScanForcingEnabled(true)
++                .build();
++
++        assertEquals(Boolean.TRUE, settings.getDebug());
++        assertEquals("https://s3.amazonaws.com/android-beacon-library/android-distance.json",
++                settings.getDistanceModelUpdateUrl());
++        assertEquals(1100L, settings.getScanPeriods().getForegroundScanPeriodMillis());
++        assertEquals(10000L, settings.getScanPeriods().getBackgroundScanPeriodMillis());
++        assertEquals(Boolean.TRUE, settings.getLongScanForcingEnabled());
++        assertTrue(settings.getScanStrategy() instanceof Settings.ForegroundServiceScanStrategy);
++        // Fields the builder was never given stay unset.
++        assertNull(settings.getHardwareEqualityEnforced());
++        assertNull(settings.getRegionExitPeriodMillis());
++    }
++
++    @Test
++    public void defaultsAreReadableFromJava() {
++        beaconManager.revertSettings();
++        Settings.ScanPeriods periods = beaconManager.getActiveSettings().getScanPeriods();
++        assertEquals(1100L, periods.getForegroundScanPeriodMillis());
++        assertEquals(0L, periods.getForegroundBetweenScanPeriodMillis());
++        assertEquals(30000L, periods.getBackgroundScanPeriodMillis());
++        assertEquals(0L, periods.getBackgroundBetweenScanPeriodMillis());
++        assertEquals("", beaconManager.getActiveSettings().getDistanceModelUpdateUrl());
++        assertEquals(30000L, beaconManager.getActiveSettings().getRegionExitPeriodMillis());
++        assertFalse(beaconManager.getActiveSettings().getDebug());
++        assertTrue(beaconManager.getActiveSettings().getUseTrackingCache());
++    }
++
++    @Test
++    public void settingsAppliedFromJavaAreReadableBack() {
++        Settings settings = new Settings.Builder()
++                .setDebug(true)
++                .setScanPeriods(new Settings.ScanPeriods(1100, 0, 10000, 0))
++                .build();
++        beaconManager.adjustSettings(settings);
++
++        assertTrue(beaconManager.getActiveSettings().getDebug());
++        assertEquals(10000L,
++                beaconManager.getActiveSettings().getScanPeriods().getBackgroundScanPeriodMillis());
++        assertEquals(10000L, beaconManager.getBackgroundScanPeriod());
++
++        beaconManager.revertSettings();
++        assertFalse(beaconManager.getActiveSettings().getDebug());
++        assertEquals(30000L,
++                beaconManager.getActiveSettings().getScanPeriods().getBackgroundScanPeriodMillis());
++    }
++}
+diff --git a/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt b/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt
+new file mode 100644
+index 0000000..c50a5ff
+--- /dev/null
++++ b/lib/src/test/java/org/altbeacon/beacon/SettingsTest.kt
+@@ -0,0 +1,600 @@
++package org.altbeacon.beacon
++
++import androidx.core.app.NotificationCompat
++import org.altbeacon.beacon.distance.DistanceCalculator
++import org.altbeacon.beacon.distance.DistanceCalculatorFactory
++import org.altbeacon.beacon.logging.LogManager
++import org.altbeacon.beacon.logging.Loggers
++import org.altbeacon.beacon.distance.ModelSpecificDistanceCalculator
++import org.altbeacon.beacon.service.RangeState
++import org.altbeacon.beacon.service.RangedBeacon
++import org.altbeacon.beacon.service.RunningAverageRssiFilter
++import org.altbeacon.beacon.service.ScanJob
++import org.altbeacon.beacon.service.IntentScanStrategyCoordinator
++import org.altbeacon.beacon.service.BeaconService
++import org.altbeacon.beacon.service.scanner.CycledLeScanner
++import org.robolectric.Robolectric
++import org.altbeacon.beacon.simulator.BeaconSimulator
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotEquals
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNotSame
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertSame
++import org.junit.Assert.assertTrue
++import org.junit.After
++import org.junit.Before
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++import org.robolectric.shadows.ShadowLog
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [28])
++class SettingsTest {
++    private lateinit var beaconManager: BeaconManager
++
++    private var boundConsumer: InternalBeaconConsumer? = null
++
++    @After
++    fun after() {
++        // The manager is a process singleton, so a consumer left bound here would follow the
++        // suite into the next test class. Release it even when an assertion above failed.
++        boundConsumer?.let { beaconManager.unbindInternal(it) }
++        boundConsumer = null
++        beaconManager.revertSettings()
++    }
++
++    @Before
++    fun before() {
++        ShadowLog.stream = System.err
++        LogManager.setLogger(Loggers.verboseLogger())
++        LogManager.setVerboseLoggingEnabled(true)
++        BeaconManager.setsManifestCheckingDisabled(true)
++        beaconManager = BeaconManager.getInstanceForApplication(RuntimeEnvironment.getApplication())
++        // Start every test from the library defaults so the tests do not depend on each other.
++        beaconManager.revertSettings()
++        BeaconManager.setsManifestCheckingDisabled(true)
++    }
++
++    /** The distance the library itself reports, which the default factory has to preserve. */
++    private fun libraryDistance(txPower: Int, rssi: Double): Double =
++        ModelSpecificDistanceCalculator(
++            RuntimeEnvironment.getApplication(),
++            BeaconManager.getDistanceModelUpdateUrl()
++        ).calculateDistance(txPower, rssi)
++
++    @Test
++    fun everySettingsFieldIsUnsetByDefault() {
++        val settings = Settings()
++        assertNull(settings.debug)
++        assertNull(settings.distanceModelUpdateUrl)
++        assertNull(settings.scanPeriods)
++        assertNull(settings.scanStrategy)
++        assertNull(settings.longScanForcingEnabled)
++        assertNull(settings.distanceCalculatorFactory)
++        assertNull(settings.regionStatePersistenceEnabled)
++        assertNull(settings.hardwareEqualityEnforced)
++        assertNull(settings.regionExitPeriodMillis)
++        assertNull(settings.useTrackingCache)
++        assertNull(settings.maxTrackingAgeMillis)
++        assertNull(settings.manifestCheckingDisabled)
++        assertNull(settings.beaconSimulator)
++        assertNull(settings.rssiFilterImplClass)
++    }
++
++    @Test
++    fun defaultsHoldTheLibraryDefaultForEachField() {
++        assertFalse(Settings.Defaults.debug)
++        assertEquals("", Settings.Defaults.distanceModelUpdateUrl)
++        assertFalse(Settings.Defaults.longScanForcingEnabled)
++        assertFalse(Settings.Defaults.hardwareEqualityEnforced)
++        assertEquals(30000L, Settings.Defaults.regionExitPeriodMillis.toLong())
++        assertTrue(Settings.Defaults.useTrackingCache)
++        assertEquals(10000L, Settings.Defaults.maxTrackingAgeMillis.toLong())
++        assertFalse(Settings.Defaults.manifestCheckingDisabled)
++        assertTrue(Settings.Defaults.regionStatePersistenceEnabled)
++        // The task runs on API 28, so the Android 8+ default applies.
++        assertTrue(Settings.Defaults.scanStrategy is Settings.JobServiceScanStrategy)
++
++        // The remaining fields also carry a library default.
++        val defaultPeriods = Settings.Defaults.scanPeriods
++        assertEquals(1100L, defaultPeriods.foregroundScanPeriodMillis)
++        assertEquals(0L, defaultPeriods.foregroundBetweenScanPeriodMillis)
++        assertEquals(30000L, defaultPeriods.backgroundScanPeriodMillis)
++        assertEquals(0L, defaultPeriods.backgroundBetweenScanPeriodMillis)
++        // The default simulator supplies no beacons, so simulation is off unless asked for.
++        assertTrue(Settings.Defaults.beaconSimulator.beacons.isEmpty())
++        // The default rssi filter is the running-average one the library already falls back to.
++        assertEquals(RunningAverageRssiFilter::class.java, Settings.Defaults.rssiFilterImplClass)
++        // The default factory is the one that preserves the library's own distance calculation.
++        val defaultCalculator = Settings.Defaults.distanceCalculatorFactory
++            .getInstance(RuntimeEnvironment.getApplication())
++        assertEquals(
++            libraryDistance(-59, -59.0),
++            defaultCalculator.calculateDistance(-59, -59.0),
++            0.0001
++        )
++    }
++
++    @Test
++    fun scanPeriodsCarryTheirDefaultsAndAcceptPositionalOrNamedArguments() {
++        val fallback = Settings.ScanPeriods()
++        assertEquals(1100L, fallback.foregroundScanPeriodMillis)
++        assertEquals(0L, fallback.foregroundBetweenScanPeriodMillis)
++        assertEquals(30000L, fallback.backgroundScanPeriodMillis)
++        assertEquals(0L, fallback.backgroundBetweenScanPeriodMillis)
++
++        val libraryDefault = Settings.Defaults.scanPeriods
++        assertEquals(1100L, libraryDefault.foregroundScanPeriodMillis)
++        assertEquals(0L, libraryDefault.foregroundBetweenScanPeriodMillis)
++        assertEquals(30000L, libraryDefault.backgroundScanPeriodMillis)
++        assertEquals(0L, libraryDefault.backgroundBetweenScanPeriodMillis)
++
++        val positional = Settings.ScanPeriods(1000, 2000, 3000, 4000)
++        assertEquals(1000L, positional.foregroundScanPeriodMillis)
++        assertEquals(2000L, positional.foregroundBetweenScanPeriodMillis)
++        assertEquals(3000L, positional.backgroundScanPeriodMillis)
++        assertEquals(4000L, positional.backgroundBetweenScanPeriodMillis)
++
++        val named = Settings.ScanPeriods(
++            foregroundScanPeriodMillis = 1000,
++            foregroundBetweenScanPeriodMillis = 2000,
++            backgroundScanPeriodMillis = 3000,
++            backgroundBetweenScanPeriodMillis = 4000
++        )
++        assertEquals(positional.foregroundScanPeriodMillis, named.foregroundScanPeriodMillis)
++        assertEquals(positional.foregroundBetweenScanPeriodMillis, named.foregroundBetweenScanPeriodMillis)
++        assertEquals(positional.backgroundScanPeriodMillis, named.backgroundScanPeriodMillis)
++        assertEquals(positional.backgroundBetweenScanPeriodMillis, named.backgroundBetweenScanPeriodMillis)
++    }
++
++    @Test
++    fun builderReturnsItselfAndSetsOnlyTheFieldsItWasGiven() {
++        val builder = Settings.Builder()
++        val periods = Settings.ScanPeriods(1100, 0, 10000, 0)
++        val strategy = Settings.BackgroundServiceScanStrategy()
++        assertSame(builder, builder.setDebug(true))
++        assertSame(builder, builder.setDistanceModelUpdateUrl("https://example.com/models.json"))
++        assertSame(builder, builder.setScanPeriods(periods))
++        assertSame(builder, builder.setScanStrategy(strategy))
++        assertSame(builder, builder.setLongScanForcingEnabled(true))
++
++        val settings = builder.build()
++        assertTrue(settings.debug!!)
++        assertEquals("https://example.com/models.json", settings.distanceModelUpdateUrl)
++        assertEquals(10000L, settings.scanPeriods!!.backgroundScanPeriodMillis)
++        assertEquals(strategy, settings.scanStrategy)
++        assertTrue(settings.longScanForcingEnabled!!)
++
++        // Anything the builder was never given stays unset.
++        assertNull(settings.hardwareEqualityEnforced)
++        assertNull(settings.regionStatePersistenceEnabled)
++        assertNull(settings.regionExitPeriodMillis)
++        assertNull(settings.useTrackingCache)
++        assertNull(settings.maxTrackingAgeMillis)
++        assertNull(settings.manifestCheckingDisabled)
++        assertNull(settings.distanceCalculatorFactory)
++    }
++
++    @Test
++    fun adjustSettingsAppliesOnlyTheFieldsThatAreSet() {
++        beaconManager.adjustSettings(Settings(debug = true))
++        assertTrue(beaconManager.activeSettings.debug)
++        // Untouched fields keep the value they already had.
++        assertEquals(30000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++        assertTrue(beaconManager.activeSettings.useTrackingCache)
++
++        beaconManager.adjustSettings(Settings(regionExitPeriodMillis = 45000))
++        assertEquals(45000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++        // The earlier delta is still in force.
++        assertTrue(beaconManager.activeSettings.debug)
++    }
++
++    @Test
++    fun replaceSettingsResetsEveryUnsetFieldToTheDefault() {
++        beaconManager.adjustSettings(
++            Settings(debug = true, regionExitPeriodMillis = 45000, useTrackingCache = false)
++        )
++        assertTrue(beaconManager.activeSettings.debug)
++        assertEquals(45000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++
++        beaconManager.replaceSettings(Settings(hardwareEqualityEnforced = true))
++        assertTrue(beaconManager.activeSettings.hardwareEqualityEnforced)
++        assertFalse(beaconManager.activeSettings.debug)
++        assertEquals(30000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++        assertTrue(beaconManager.activeSettings.useTrackingCache)
++    }
++
++    @Test
++    fun revertSettingsRestoresEveryDefault() {
++        beaconManager.adjustSettings(
++            Settings(
++                debug = true,
++                hardwareEqualityEnforced = true,
++                regionStatePersistenceEnabled = false,
++                regionExitPeriodMillis = 45000,
++                useTrackingCache = false,
++                maxTrackingAgeMillis = 20000,
++                manifestCheckingDisabled = true,
++                distanceModelUpdateUrl = "https://example.com/models.json",
++                longScanForcingEnabled = true,
++                scanPeriods = Settings.ScanPeriods(2200, 100, 60000, 200)
++            )
++        )
++        beaconManager.revertSettings()
++
++        val active = beaconManager.activeSettings
++        assertFalse(active.debug)
++        assertFalse(active.hardwareEqualityEnforced)
++        assertTrue(active.regionStatePersistenceEnabled)
++        assertEquals(30000L, active.regionExitPeriodMillis.toLong())
++        assertTrue(active.useTrackingCache)
++        assertEquals(10000L, active.maxTrackingAgeMillis.toLong())
++        assertFalse(active.manifestCheckingDisabled)
++        assertEquals("", active.distanceModelUpdateUrl)
++        assertFalse(active.longScanForcingEnabled)
++        assertEquals(1100L, active.scanPeriods.foregroundScanPeriodMillis)
++        assertEquals(0L, active.scanPeriods.foregroundBetweenScanPeriodMillis)
++        assertEquals(30000L, active.scanPeriods.backgroundScanPeriodMillis)
++        assertEquals(0L, active.scanPeriods.backgroundBetweenScanPeriodMillis)
++    }
++
++    @Test
++    fun scanPeriodsAndModelUrlArePushedToTheManager() {
++        beaconManager.adjustSettings(
++            Settings.Builder().setDistanceModelUpdateUrl("https://example.com/models.json").build()
++        )
++        assertEquals("https://example.com/models.json", BeaconManager.getDistanceModelUpdateUrl())
++        assertEquals("https://example.com/models.json", beaconManager.activeSettings.distanceModelUpdateUrl)
++
++        beaconManager.adjustSettings(
++            Settings(scanPeriods = Settings.ScanPeriods(2200, 100, 60000, 200))
++        )
++        assertEquals(2200L, beaconManager.foregroundScanPeriod)
++        assertEquals(100L, beaconManager.foregroundBetweenScanPeriod)
++        assertEquals(60000L, beaconManager.backgroundScanPeriod)
++        assertEquals(200L, beaconManager.backgroundBetweenScanPeriod)
++
++        val readBack = beaconManager.activeSettings.scanPeriods
++        assertEquals(2200L, readBack.foregroundScanPeriodMillis)
++        assertEquals(100L, readBack.foregroundBetweenScanPeriodMillis)
++        assertEquals(60000L, readBack.backgroundScanPeriodMillis)
++        assertEquals(200L, readBack.backgroundBetweenScanPeriodMillis)
++    }
++
++    @Test
++    fun hardwareEqualityAndRegionOptionsArePushedToTheManager() {
++        beaconManager.adjustSettings(
++            Settings(
++                hardwareEqualityEnforced = true,
++                regionExitPeriodMillis = 45000,
++                regionStatePersistenceEnabled = false
++            )
++        )
++        assertTrue(Beacon.getHardwareEqualityEnforced())
++        assertEquals(45000L, BeaconManager.getRegionExitPeriod())
++        assertFalse(beaconManager.isRegionStatePersistenceEnabled)
++
++        beaconManager.adjustSettings(
++            Settings(
++                hardwareEqualityEnforced = false,
++                regionStatePersistenceEnabled = true
++            )
++        )
++        assertFalse(Beacon.getHardwareEqualityEnforced())
++        assertTrue(beaconManager.isRegionStatePersistenceEnabled)
++    }
++
++    @Test
++    fun debugSwitchesTheLibraryLogLevel() {
++        beaconManager.adjustSettings(Settings(debug = false))
++        assertFalse(LogManager.isVerboseLoggingEnabled())
++        assertFalse(beaconManager.activeSettings.debug)
++
++        beaconManager.adjustSettings(Settings(debug = true))
++        assertTrue(LogManager.isVerboseLoggingEnabled())
++        assertTrue(beaconManager.activeSettings.debug)
++    }
++
++    @Test
++    fun activeSettingsHandsOutAnIndependentSnapshot() {
++        beaconManager.adjustSettings(Settings(debug = true, regionExitPeriodMillis = 45000))
++        val snapshot = beaconManager.activeSettings
++        assertTrue(snapshot.debug)
++        assertEquals(45000L, snapshot.regionExitPeriodMillis.toLong())
++
++        beaconManager.adjustSettings(Settings(debug = false, regionExitPeriodMillis = 20000))
++        // The snapshot handed out earlier does not move with the live configuration.
++        assertTrue(snapshot.debug)
++        assertEquals(45000L, snapshot.regionExitPeriodMillis.toLong())
++        assertFalse(beaconManager.activeSettings.debug)
++        assertEquals(20000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++
++        // ...and the other direction: reshaping a snapshot must not reach the live
++        // configuration or any snapshot handed out afterwards.
++        val edited = beaconManager.activeSettings.copy(debug = true, regionExitPeriodMillis = 99000)
++        assertTrue(edited.debug)
++        assertEquals(99000L, edited.regionExitPeriodMillis.toLong())
++        assertFalse(beaconManager.activeSettings.debug)
++        assertEquals(20000L, beaconManager.activeSettings.regionExitPeriodMillis.toLong())
++        assertEquals(20000L, BeaconManager.getRegionExitPeriod())
++    }
++
++    @Test
++    fun theRemainingFieldsAreAppliedAndReadableBack() {
++        // Nothing has asked for long scan forcing yet, so a service started now must not have it on.
++        // This is what stops an implementation switching it on unconditionally from passing below.
++        val cleanService = Robolectric.buildService(BeaconService::class.java).get()
++        cleanService.onCreate()
++        val cleanHelper = BeaconService::class.java.getDeclaredField("mScanHelper")
++            .apply { isAccessible = true }.get(cleanService)
++        val cleanScanner = cleanHelper.javaClass.getDeclaredMethod("getCycledScanner")
++            .apply { isAccessible = true }.invoke(cleanHelper)
++        assertFalse(
++            CycledLeScanner::class.java.getDeclaredField("mLongScanForcingEnabled")
++                .apply { isAccessible = true }.get(cleanScanner) as Boolean
++        )
++
++        // Fields the library pushes onto its existing configuration surface.
++        val simulator = MyBeaconSimulator()
++        beaconManager.adjustSettings(Settings(beaconSimulator = simulator))
++        assertSame(simulator, BeaconManager.getBeaconSimulator())
++        assertSame(simulator, beaconManager.activeSettings.beaconSimulator)
++
++        // ...and fields the resolved snapshot carries.
++        beaconManager.adjustSettings(
++            Settings(
++                useTrackingCache = false,
++                maxTrackingAgeMillis = 25000,
++                longScanForcingEnabled = true,
++                manifestCheckingDisabled = true,
++                rssiFilterImplClass = RunningAverageRssiFilter::class.java
++            )
++        )
++        val applied = beaconManager.activeSettings
++        assertFalse(applied.useTrackingCache)
++        assertEquals(25000L, applied.maxTrackingAgeMillis.toLong())
++        assertTrue(applied.longScanForcingEnabled)
++        assertEquals(RunningAverageRssiFilter::class.java, applied.rssiFilterImplClass)
++        // ...and each of them is readable back off the configuration surface it belongs to.
++        assertFalse(RangeState.getUseTrackingCache())
++        assertEquals(25000L, RangedBeacon.maxTrackingAge)
++        assertTrue(BeaconManager.getLongScanForcingEnabled())
++        // GAP1: it has to reach the scanner the service drives, not just sit on the manager.
++        val svc = Robolectric.buildService(BeaconService::class.java).get()
++        svc.onCreate()
++        val hf = BeaconService::class.java.getDeclaredField("mScanHelper").apply { isAccessible = true }
++        val helper = hf.get(svc)
++        val scanner = helper.javaClass.getDeclaredMethod("getCycledScanner").apply { isAccessible = true }.invoke(helper)
++        assertNotNull(scanner)
++        val ff = CycledLeScanner::class.java.getDeclaredField("mLongScanForcingEnabled").apply { isAccessible = true }
++        assertTrue(ff.get(scanner) as Boolean)
++        assertTrue(BeaconManager.getManifestCheckingDisabled())
++        assertEquals(RunningAverageRssiFilter::class.java, BeaconManager.getRssiFilterImplClass())
++        // The delta merge left the simulator from the previous call alone.
++        assertSame(simulator, applied.beaconSimulator)
++
++        // revertSettings puts every one of them back to the library default.
++        beaconManager.revertSettings()
++        val defaults = beaconManager.activeSettings
++        assertTrue(defaults.beaconSimulator.beacons.isEmpty())
++        // The default is a simulator that supplies no beacons. Whether the library records that
++        // as no simulator at all or as an empty one is its own business; nothing is simulated.
++        val revertedSimulator = BeaconManager.getBeaconSimulator()
++        assertTrue(revertedSimulator == null || revertedSimulator.beacons.isEmpty())
++        assertTrue(defaults.useTrackingCache)
++        assertEquals(10000L, defaults.maxTrackingAgeMillis.toLong())
++        assertFalse(defaults.longScanForcingEnabled)
++        assertFalse(BeaconManager.getManifestCheckingDisabled())
++        assertTrue(RangeState.getUseTrackingCache())
++        assertEquals(10000L, RangedBeacon.maxTrackingAge)
++        assertFalse(BeaconManager.getLongScanForcingEnabled())
++    }
++
++    @Test
++    fun configuredDistanceCalculatorFactoryInstallsItsOwnCalculator() {
++        // GAP2: nothing installs a calculator on behalf of a caller who never applies settings.
++        Beacon.setDistanceCalculator(null)
++        IntentScanStrategyCoordinator(RuntimeEnvironment.getApplication()).ensureInitialized()
++        assertNull(Beacon.getDistanceCalculator())
++
++        beaconManager.adjustSettings(Settings(distanceCalculatorFactory = MyDistanceCalculatorFactory()))
++        assertEquals(
++            MyDistanceCalculatorFactory.MyDistanceCalculator::class.java,
++            Beacon.getDistanceCalculator().javaClass
++        )
++    }
++
++    @Test
++    fun theDefaultFactoryPreservesTheLibraryDistanceCalculation() {
++        // With no factory configured the active calculator has to agree with the calculation the
++        // library already performs, whatever that calculation happens to produce.
++        assertEquals(
++            libraryDistance(-59, -59.0),
++            Beacon.getDistanceCalculator().calculateDistance(-59, -59.0),
++            0.0001
++        )
++
++        beaconManager.adjustSettings(Settings(distanceCalculatorFactory = MyDistanceCalculatorFactory()))
++        assertEquals(0.0, Beacon.getDistanceCalculator().calculateDistance(-59, -59.0), 0.0001)
++
++        beaconManager.revertSettings()
++        assertEquals(
++            libraryDistance(-59, -59.0),
++            Beacon.getDistanceCalculator().calculateDistance(-59, -59.0),
++            0.0001
++        )
++    }
++
++    @Test
++    @Config(sdk = [24])
++    fun theDefaultScanStrategyBelowAndroid8IsTheBackgroundService() {
++        // Every other test in this class runs on API 28, where the job service strategy is the
++        // default, so nothing else can tell a correct implementation from one that hands back the
++        // job service strategy whatever the platform is.
++        assertTrue(Settings.Defaults.scanStrategy is Settings.BackgroundServiceScanStrategy)
++        assertEquals(
++            Settings.BackgroundServiceScanStrategy(),
++            beaconManager.activeSettings.scanStrategy
++        )
++    }
++
++    @Test
++    fun scanStrategiesCompareEqualOnlyToAMatchingStrategy() {
++        assertEquals(Settings.BackgroundServiceScanStrategy(), Settings.BackgroundServiceScanStrategy())
++        assertEquals(Settings.IntentScanStrategy(), Settings.IntentScanStrategy())
++        assertEquals(
++            Settings.JobServiceScanStrategy(
++                immediateJobId = 1234,
++                periodicJobId = 1235,
++                jobPersistenceEnabled = true
++            ),
++            Settings.JobServiceScanStrategy(
++                immediateJobId = 1234,
++                periodicJobId = 1235,
++                jobPersistenceEnabled = true
++            )
++        )
++        assertNotEquals(
++            Settings.JobServiceScanStrategy(
++                immediateJobId = 1234,
++                periodicJobId = 1235,
++                jobPersistenceEnabled = true
++            ),
++            Settings.JobServiceScanStrategy(
++                immediateJobId = 9999,
++                periodicJobId = 1235,
++                jobPersistenceEnabled = true
++            )
++        )
++        assertNotEquals(Settings.IntentScanStrategy(), Settings.BackgroundServiceScanStrategy())
++        assertNotEquals(Settings.BackgroundServiceScanStrategy(), Settings.IntentScanStrategy())
++
++        // A foreground strategy is identified by everything it was configured with, the
++        // notification included.
++        val context = RuntimeEnvironment.getApplication()
++        val notification = NotificationCompat.Builder(context, "BeaconReferenceApp").build()
++        assertEquals(
++            Settings.ForegroundServiceScanStrategy(notification, 1),
++            Settings.ForegroundServiceScanStrategy(notification, 1)
++        )
++        assertNotEquals(
++            Settings.ForegroundServiceScanStrategy(notification, 1),
++            Settings.ForegroundServiceScanStrategy(notification, 2)
++        )
++        // The notification counts by identity, so two of them built the same way are still two.
++        val separateNotification = NotificationCompat.Builder(context, "BeaconReferenceApp").build()
++        assertNotEquals(
++            Settings.ForegroundServiceScanStrategy(notification, 1),
++            Settings.ForegroundServiceScanStrategy(separateNotification, 1)
++        )
++
++    }
++
++    @Test
++    fun everyScanStrategyCanBeAppliedAndReadBack() {
++        val context = RuntimeEnvironment.getApplication()
++
++        val foreground = Settings.ForegroundServiceScanStrategy(
++            NotificationCompat.Builder(context, "BeaconReferenceApp").build(), 1
++        )
++        beaconManager.adjustSettings(Settings(scanStrategy = foreground))
++        assertEquals(foreground, beaconManager.activeSettings.scanStrategy)
++        // Applying it has to leave the library actually scanning that way.
++        assertFalse(beaconManager.scheduledScanJobsEnabled)
++        assertEquals(1, beaconManager.foregroundServiceNotificationId)
++        assertNotNull(beaconManager.foregroundServiceNotification)
++
++        val job = Settings.JobServiceScanStrategy(
++            immediateJobId = 1234,
++            periodicJobId = 1235,
++            jobPersistenceEnabled = true
++        )
++        beaconManager.adjustSettings(Settings(scanStrategy = job))
++        assertEquals(job, beaconManager.activeSettings.scanStrategy)
++        // Applying the strategy has to configure the job ids it was given, not just store them.
++        assertTrue(beaconManager.scheduledScanJobsEnabled)
++        assertEquals(1234, ScanJob.getImmediateScanJobId(context))
++        assertEquals(1235, ScanJob.getPeriodicScanJobId(context))
++        // Applied as true here and as false further down, so a reader that always answers one of
++        // the two cannot satisfy both.
++        assertTrue(ScanJob.getJobPersistenceEnabled())
++
++        val background = Settings.BackgroundServiceScanStrategy()
++        beaconManager.adjustSettings(Settings(scanStrategy = background))
++        assertEquals(background, beaconManager.activeSettings.scanStrategy)
++        // Scheduled scan jobs are what the background service replaces, so they go off, and the
++        // library is not in intent-scanning mode either.
++        assertFalse(beaconManager.scheduledScanJobsEnabled)
++        assertNull(beaconManager.intentScanStrategyCoordinator)
++
++        val intent = Settings.IntentScanStrategy()
++        beaconManager.adjustSettings(Settings(scanStrategy = intent))
++        assertEquals(intent, beaconManager.activeSettings.scanStrategy)
++        assertFalse(beaconManager.scheduledScanJobsEnabled)
++        // ...and unlike the background service strategy, this one really is intent scanning.
++        assertNotNull(beaconManager.intentScanStrategyCoordinator)
++
++        // A strategy change while a consumer is bound has to leave that consumer bound and
++        // freshly connected to the new mode by the time the call returns.
++        beaconManager.adjustSettings(Settings(beaconSimulator = MyBeaconSimulator()))
++        val consumer = RecordingConsumer(context)
++        boundConsumer = consumer
++        beaconManager.bindInternal(consumer)
++        assertTrue(beaconManager.isAnyConsumerBound)
++        assertEquals(1, consumer.connectCount)
++
++        beaconManager.adjustSettings(
++            Settings(
++                scanStrategy = Settings.JobServiceScanStrategy(
++                    immediateJobId = 4321,
++                    periodicJobId = 4322,
++                    jobPersistenceEnabled = false
++                )
++            )
++        )
++        // Still bound, connected a second time, and the new strategy's values are in force.
++        assertTrue(beaconManager.isAnyConsumerBound)
++        assertEquals(2, consumer.connectCount)
++        assertTrue(beaconManager.scheduledScanJobsEnabled)
++        assertEquals(4321, ScanJob.getImmediateScanJobId(context))
++        assertFalse(ScanJob.getJobPersistenceEnabled())
++        // The mode it started under is off, not left running alongside the new one.
++        assertNull(beaconManager.intentScanStrategyCoordinator)
++    }
++}
++
++class MyDistanceCalculatorFactory : DistanceCalculatorFactory {
++    override fun getInstance(context: android.content.Context): DistanceCalculator {
++        return MyDistanceCalculator()
++    }
++
++    class MyDistanceCalculator : DistanceCalculator {
++        override fun calculateDistance(txPower: Int, rssi: Double): Double {
++            return 0.0
++        }
++    }
++}
++
++/** Counts how many times the library connects it, so a rebind is observable. */
++class RecordingConsumer(private val ctx: android.content.Context) : InternalBeaconConsumer {
++    var connectCount = 0
++    override fun onBeaconServiceConnect() {
++        connectCount++
++    }
++    override fun getApplicationContext(): android.content.Context = ctx
++    override fun unbindService(connection: android.content.ServiceConnection) {}
++    override fun bindService(
++        intent: android.content.Intent,
++        connection: android.content.ServiceConnection,
++        mode: Int
++    ): Boolean = true
++}
++
++class MyBeaconSimulator : BeaconSimulator {
++    override fun getBeacons(): MutableList<Beacon> = mutableListOf()
++}

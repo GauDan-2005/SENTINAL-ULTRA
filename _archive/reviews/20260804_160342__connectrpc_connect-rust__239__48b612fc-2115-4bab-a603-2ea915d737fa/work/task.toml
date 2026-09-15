@@ -1,0 +1,47 @@
+schema_version = "1.3"
+
+[metadata]
+hardening_cycles = "2"
+agent_hardened = "true"
+author_name = "anonymous"
+author_email = "anonymous@snorkel.ai"
+# --- swe_ultra_requirements §4 field names ---
+category = "implementation"
+subcategory = "bug_fix"
+coding_language = "rust"
+repo_name = "connect-rust"
+repo_license = "Apache-2.0"
+source_pr_url = "https://github.com/connectrpc/connect-rust/pull/239"
+base_commit_sha = "8b3c3b05d3b54af547477a9e3b3a77d62f68e229"
+model_difficulty = "hard"
+difficulty_explanation = "The work spans three crates and is more judgement than volume. The solver has to treat compiler output as trusted and reflection input as untrusted, then honour two overrides on both codegen entry points in both directions. The hard part is precedence: the plugin option is per-plugin and must beat BUFFA_ELEMENT_MEMORY_LIMIT when both are set, while the env var is the only knob a build script has and must still reach the plugin when the option is absent. Accepting leftover option text after a fixed high decode does not pass. Reflection must stay on the untrusted default even if that env var is unlimited. Diagnostics and the cargo rebuild trigger are easy to miss because they only show up on the failing or stale-rebuild path."
+tags = ["protobuf", "code-generation", "decode-limits", "error-handling", "rust", "descriptor-set"]
+# --- legacy aliases (kept for backward-compatible internal consumers) ---
+difficulty = "hard"
+task_type = "implementation"
+task_subtype = "bug_fix"
+source = "https://github.com/connectrpc/connect-rust/pull/239"
+language = "rust"
+expert_time_estimate_min = 90.0
+junior_time_estimate_min = 300.0
+pr_created_at = "2026-07-21T20:07:11Z"
+pr_merged_at = "2026-07-24T23:16:57Z"
+
+[verifier]
+timeout_sec = 1800.0
+network_mode = "no-network"
+
+[agent]
+timeout_sec = 1800.0
+network_mode = "allowlist"
+allowed_hosts = [
+    "api.portkey.ai",
+]
+
+[environment]
+build_timeout_sec = 1800.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+network_mode = "public"

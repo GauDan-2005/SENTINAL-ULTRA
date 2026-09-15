@@ -2,7 +2,7 @@
 
 Source: https://snorkel-ai.github.io/Sentinel_Ultra_Hub/
 
-Exported: 2026-08-06T08:15:55Z
+Exported: 2026-08-18T01:10:00+05:30 (2026-08-17T19:40:00Z)
 
 Every tab of the Sentinel Ultra Hub, concatenated in navigation order.
 
@@ -17,13 +17,25 @@ Latest updates to the Sentinel Ultra contributor guidelines
 
 📢 Latest update
 
-Review-gate blocks now point you to the reason
+Difficulty checks are now capped
 
-When an eval says the **review gate** blocked at the **agentic judge**, the actual per-axis reasons (`DISCUSS`/`REMOVE` + cited axes/files) are in the **"Agentic Judge Quality Report"** field on your submission — it's collapsed and marked *optional*, lower down the form, so it's easy to miss. **Expand it** to see exactly what to fix. The gate runs in two stages (agentic judge, then a difficulty screen); `"Not run: difficulty screen"` just means the judge blocked first — expected, not a second error.
+As of **August 14, 2026**, once **4 difficulty checks** have run on a task without passing, it's automatically classified as **Invalid Difficulty** and goes to review as it stands — **not** a rejection, and not applied retroactively. You'll see two new read-only fields (*Difficulty checks run* / *remaining*); at the limit, we set the verdict for you — resubmit as-is and leave it in place.
 
-[See the review-gate FAQ →](faq.md#my-eval-says-review-gate-blocked-at-the-agentic-judge-difficulty-screen-what-does-that-mean)
+[What is Invalid Difficulty? →](faq.md#difficulty-checks-are-now-capped-what-is-invalid-difficulty)
 
 ## Recent updates <a id="recent-updates"></a>
+
+-   Aug 14, 2026
+
+    **Difficulty checks capped at 4 → "Invalid Difficulty."** Once 4 difficulty checks run on a task without passing, it's automatically classified **Invalid Difficulty** and goes to review as-is (not a rejection, not retroactive). At the limit we set the verdict for you — resubmit without changes and leave it in place. [FAQ →](faq.md#difficulty-checks-are-now-capped-what-is-invalid-difficulty)
+
+-   Aug 12, 2026
+
+    **New: Reviewer Rubric tab.** A dedicated tab defining the technical bar every task must clear and how to assess it — the two paths to Needs Revision, the five Major Pillars, the accumulating Secondary Requirements, and reviewer integrity. [Reviewer Rubric →](reviewer-rubric.md)
+
+-   Aug 5, 2026
+
+    **"Send to Reviewer" checkbox removed.** Passing post-submission evals now route your task to the reviewer queue automatically; failing ones come back to fix and resubmit. No box to check, and the `AlwaysNoPass` message is gone. [Submission flow →](tasking-guide.md#section-3-run-evals)
 
 -   Aug 5, 2026
 
@@ -384,8 +396,8 @@ You may make only specific, allowed fixes to the environment (chiefly `environme
 > `frozenrequirementsautocorrect`, are left exactly as the Hub writes them - they look like
 > identifiers that lost their separators, but nothing in the Hub or in this export shows the
 > real spelling, so they are quoted rather than guessed. Wording is otherwise untouched, and
-> this table is the only place `docs/` departs from the live site. Re-applied 2026-08-06 after
-> the re-export, which reintroduced the damage exactly as predicted.
+> this table is the only place `docs/` departs from the live site. Re-applied 2026-08-13 after
+> the re-export, which reintroduced the damage for the second time exactly as predicted.
 
 | Issue | What's happening | Fix |
 | --- | --- | --- |
@@ -480,7 +492,7 @@ Sentinel Ultra submission and review steps
 4.  **If Fixable, rewrite** the instruction, tests, and/or oracle.
     4b. **Prepare your upload:** zip only the contents of the `task/` folder — not the folder itself, and not `runs/`. The zip should unpack directly to `instruction.md`, `task.toml`, `environment/`, `solution/`, and `tests/`.
 5.  **Run evals** via the platform button; iterate until checks pass.
-6.  **Submit** — check *Send to reviewer* and submit.
+6.  **Submit** — submit the task. When the post-submission evals pass, it's sent to the reviewer queue automatically; if they don't pass, it comes back to you to fix and resubmit. There's no box to check.
 
 📹[Sentinel Ultra Submission Flow Walkthrough](https://www.loom.com/share/52a317cb90674f8eb18b9bd208d7b01a)
 
@@ -712,11 +724,11 @@ After your bundle runs, three read-only summaries are populated:
 
 You can also **Download difficulty check results** for the full logs, useful for debugging specific failures. Run the checks as many times as you need; each run produces fresh feedback.
 
-**Send to Reviewer**
+**Submitting to the reviewer**
 
-Check **Send to reviewer** to send the task to the reviewer once difficulty and quality checks are passing. If checks are failing when this is checked, the task will always result in revision — if you are intentionally sending it with failing checks, leave detailed comments for the reviewer explaining why.
+There is **no "Send to reviewer" checkbox** — it has been removed from the submission form. When you submit, the post-submission evals run automatically: if they **pass**, your submission is sent straight to the reviewer queue; if they **don't pass**, it comes back to you to fix and resubmit. You no longer check any box, and the old `AlwaysNoPass` message no longer appears.
 
-*Note: In-app checks have a 5-minute runtime limit. If your task needs longer agent runs to fully evaluate, iterate with the box unchecked first.*
+*Note: The in-app eval button has a 5-minute runtime limit. If your task needs longer agent runs to fully evaluate, run and iterate with those checks until they pass before you submit.*
 
 **What to Do When Checks Fail**
 
@@ -724,8 +736,8 @@ The goal is to revise and re-run until there are no failures before sending to t
 
 1.  Review the summaries and download the full logs to understand the failure.
 2.  Revise your task (instruction, tests, solution, or Dockerfile as needed — within editing rules).
-3.  Re-upload and re-run with Send to reviewer unchecked.
-4.  Repeat until checks pass, then check Send to reviewer and submit.
+3.  Re-upload and re-run the evals.
+4.  Repeat until the checks pass — a passing submission is sent to the reviewer automatically.
 
 #### Quality Check — the agentic rubric-panel judge <a id="quality-check-agentic-judge"></a>
 
@@ -806,7 +818,7 @@ The other eight axes appear in the Quality Check report and in what your reviewe
 
 1.  Download the report and read the per-axis justifications — they cite the exact files, line ranges, and quoted instruction text behind each score.
 2.  Fix the cited defect. For coverage gaps, add or strengthen assertions; for faithfulness defects, either move the requirement into the instruction or relax the assertion.
-3.  Keep instruction, tests, and oracle in lockstep (per the existing editing rules), re-upload, and re-run with Send to reviewer unchecked until the check passes.
+3.  Keep instruction, tests, and oracle in lockstep (per the existing editing rules), re-upload, and re-run the evals until the check passes.
 
 ## Step-by-Step Reviewer Form Questions <a id="step-by-step-reviewer-form-questions"></a>
 
@@ -923,6 +935,169 @@ You’ll then give the submission an overall quality score. This rating should r
 | **3** | The task is correct and complete; any remaining issues are too minor to warrant sending back for revision. | **ACCEPT** |
 | **4** | All components (instruction, oracle solution, tests, bundle) are thorough and accurate with no significant issues. | **ACCEPT** |
 | **5** | Every component is precise, well-reasoned, and clearly written — a reference-quality submission requiring no changes. | **ACCEPT** |
+
+
+---
+
+# Reviewer Rubric
+
+# Reviewer Rubric
+
+Reviewer Quality & Assessment Standards
+
+Last updated: August 7, 2026
+
+This guide defines the technical bar every Sentinel Ultra task must clear to be accepted, and the bar a reviewer's assessment of that task must itself meet. A Sentinel task exists to train and evaluate frontier coding agents, so the only thing that matters is that each task is **correct, complete, and impossible to game**: no broken oracle, no ungraded behavior, no way for an agent to pass without doing the real engineering work.
+
+Reviewers are the **last human gate before delivery**. A miscalled verdict either ships a gameable task or bounces a clean one back into the backlog. Read this before your first review and return to it whenever you are unsure whether a task passes or a defect is real.
+
+## 1. The Assessment Threshold <a id="the-assessment-threshold"></a>
+
+Every task is assessed against a tiered system. There are **two independent paths to Needs Revision** — both must be clear for a task to be accepted.
+
+> **Note:** **Path 1 · Single Major Defect.** One confirmed violation of any Major Pillar is sufficient for Needs Revision. A Major defect means the task is gameable, unsolvable, or does not verify what it claims — severity overrides everything else in the task.
+
+> **Note:** **Path 2 · 5 or more Minor violations.** Five or more Minor violations across any combination of Secondary Requirements trigger Needs Revision on systemic low quality. Tasks with 1–4 minor violations may be accepted with mandatory coaching comments.
+
+### Invalid vs. Fixable — call it correctly <a id="invalid-vs-fixable"></a>
+
+Before assigning severity, decide which of three buckets the task is in. This is the distinction that costs ECs the most time.
+
+| Bucket | Meaning | Reviewer action |
+| --- | --- | --- |
+| **Fixable** | Defect is mechanical or content-level and the EC can correct it within scope (bad oracle, miscounted tests, git dirt, timeout mismatch, leaked hint, over-prescriptive instruction). | Needs Revision, with the specific fix named. |
+| **Unfixable — Structure** | The only fix is to change/reduce the source PR scope, or the environment has issues ECs are not allowed to touch. | Mark Not Fixable; state the structural reason. Do not ask for revisions the EC cannot make. |
+| **Unfixable — Difficulty** | Task is genuinely too easy/too hard and cannot be recalibrated without leaving the PR scope. | Mark Not Fixable for difficulty; keep distinct from structure so pay/routing treat it differently. |
+
+**Reviewers must tag Unfixable-Structure and Unfixable-Difficulty separately.** Lumping them as "invalid" is what sends ECs into 3+ unpaid revision loops on tasks that were never fixable.
+
+## 2. Major Pillars <a id="major-pillars"></a>
+
+A single confirmed violation in any pillar → Needs Revision, regardless of the rest of the task. Ordered by reviewer-flag frequency.
+
+### Pillar 1 — Oracle / Golden-Solution Correctness <a id="pillar-1-oracle-correctness"></a>
+
+**Major** · flagged in 51% of reviewer comments.
+
+**Standard:** The golden patch must actually implement the solution the instruction describes, pass the graded tests deterministically, and introduce no behavior, files, or re-exports the instruction doesn't account for.
+
+**Meets:** Oracle applies cleanly, all fail-to-pass tests pass on it, and every file/module/config it introduces is either stated in the instruction or derivable from the base repo.
+
+**Soft signal:** Oracle passes but introduces a minor unstated helper or a config default an agent could still reasonably infer.
+
+**Needs Revision:** Oracle fails its own tests, a NOP passes the tests, or the oracle depends on a path/module/value that appears only in the golden patch and is not stated or derivable.
+
+### Pillar 2 — Verifiability: `fail_to_pass` / `pass_to_pass` Integrity <a id="pillar-2-verifiability"></a>
+
+**Major** · flagged in 45% of reviewer comments.
+
+**Standard:** The declared `fail_to_pass` / `pass_to_pass` lists must match what the verifier actually grades. At least 10 outcome-based fail-to-pass tests, a regression test, deterministic.
+
+**Meets:** Declared lists equal the verifier's real graded set; count ≥ 10; tests run real code and check real behavior.
+
+**Soft signal:** A single test miscounted or misnamed but the graded behavior is still fully covered.
+
+**Needs Revision:** Declared list undercounts/omits tests that gate reward, a static list-length check passes while the true graded count differs materially, or tests are trivial/gameable.
+
+### Pillar 3 — No Leakage / Not Reward-Hackable <a id="pillar-3-no-leakage"></a>
+
+**Major** · hints exposed in 21% of reviewer comments.
+
+**Standard:** Nothing in the instruction or environment lets an agent shortcut the real work.
+
+**Meets:** No PR URL, no solution spoilers, no hidden test details, no way to pass by editing tests.
+
+**Soft signal:** Instruction is slightly over-prescriptive ("look in X") but does not hand over the solution.
+
+**Needs Revision:** Solution hints, PR links, answer text, or test internals exposed; or the tests can be satisfied by editing them rather than solving the task.
+
+### Pillar 4 — Airgapped-Verifier / Network Integrity <a id="pillar-4-airgapped-verifier"></a>
+
+**Major** · flagged in 41% of reviewer comments.
+
+**Standard:** All graded behavior must be verifiable inside the airgapped verifier; network access must be correctly restricted in the shipped environment.
+
+**Meets:** Tests pass with networking disabled; no graded behavior depends on external hosts; `network_mode` / allowed-hosts set correctly.
+
+**Soft signal:** A non-graded setup step reaches the network but the graded path does not.
+
+**Needs Revision:** Graded behavior requires internet the verifier won't have, or the shipped environment leaves network open where it should be restricted.
+
+### Pillar 5 — Git State / Repo Cleanliness <a id="pillar-5-git-state"></a>
+
+**Major (early gate)** · flagged in 31% of reviewer comments.
+
+**Standard:** The shipped repo is a clean, single-history starting state with no leaked fix, no dangling objects, no stray remotes/worktrees/stash, `HEAD == base`.
+
+**Meets:** `git fsck` clean (no dangling/unreachable), no refs/stash, no `.git/logs` leaking the fix, no extra remotes, HEAD matches the declared base commit.
+
+**Soft signal:** Local artifacts (`.venv`, `__pycache__`, `.DS_Store`) left in the tree but no history leakage.
+
+**Needs Revision:** Dangling commits / stash entries / reflog that expose the fix, leftover remotes or worktrees, or a HEAD/base-commit mismatch. Check this *before* assessing content.
+
+## 3. Secondary Requirements (Minor — they accumulate) <a id="secondary-requirements"></a>
+
+Reach **5 or more** across any combination → Needs Revision. Tasks with 1–4 are accepted with mandatory coaching comments.
+
+1.  **Verifier timeout vs. config timeout mismatch (18%)** — Verifier timeout set shorter than the task's own configured timeout (e.g. 1800s config, 300s verifier), which can kill valid solutions early. Mechanical; name the two numbers.
+2.  **Base image / environment pinning (17%)** — Unpinned base image or deps that make the build non-reproducible.
+3.  **PR-scope violation (13%)** — Task reduces/replaces the source PR rather than preserving or expanding it. If the ONLY fix is reducing PR scope, this escalates to Unfixable-Structure.
+4.  **Test coverage gap (13%)** — A behavior described in the instruction is not graded by any test, but core verifiability still holds.
+5.  **Metadata mismatch (10%)** — Files-changed counts or writeup don't match the actual diff.
+6.  **Over-prescriptive instruction** — Names exact functions/files/line numbers, removing the engineering challenge (short of full leakage).
+7.  **Templated / AI-generated instruction** — Reads like a generated prompt, not real engineering communication.
+8.  **Instruction ambiguity** — A choice the tests require is neither stated nor reasonably derivable, forcing guesswork.
+9.  **Non-deterministic test** — A graded test flakes across runs without a fixed seed/order.
+10.  **Missing regression test** — No test guards against reintroducing the bug.
+11.  **Difficulty drift (recoverable)** — Slightly under-difficult but raisable by expanding PR scope; only Minor if actually recoverable in-scope.
+
+## 4. Reviewer Integrity — No LLM-Generated Reviews <a id="reviewer-integrity"></a>
+
+**Major.** Applies to the reviewer's own written assessment, not the task.
+
+**Standard:** Review content must be 100% original human engineering judgment, grounded in the actual task bundle and eval logs. Larger repos hit context limits; pasting LLM output or unrelated text into the review is a breach of review integrity.
+
+**Meets:** Comments are specific and idiosyncratic — cite exact files, tests, config keys, or eval results from this task.
+
+**Soft signal (any 4 in one review = Major):** uniform em-dash usage, exhaustive parallel bullet lists, mirrored instruction language, academic filler, zero natural typos, rubric-aware framing.
+
+**Needs Revision / flag:** pasted LLM output or garbage text left in the review, meta-commentary ("as an AI", "the pasted diff"), references to content not in the task, or claiming logs are inaccessible when they are visibly present.
+
+## 5. Quick Reference <a id="quick-reference"></a>
+
+### Major Pillars <a id="quick-reference-major-pillars"></a>
+
+| # | Pillar | Severity | Key trigger for Needs Revision |
+| --- | --- | --- | --- |
+| 1 | Oracle / Golden-Solution Correctness | Major | Oracle fails its tests, NOP passes, or unstated golden-only dependency |
+| 2 | `fail_to_pass` / `pass_to_pass` Integrity | Major | Declared list ≠ graded set; <10 F2P; gameable tests |
+| 3 | No Leakage / Not Reward-Hackable | Major | Hints/PR link/test internals exposed; passable by editing tests |
+| 4 | Airgapped-Verifier / Network | Major | Graded behavior needs internet; network left open |
+| 5 | Git State / Repo Cleanliness | Major (gate) | Leaked history, stash/reflog/dangling, HEAD≠base |
+| — | Reviewer Integrity (LLM use) | Major | Pasted LLM/garbage text, or 4+ soft signals |
+
+### Secondary Requirements (accumulate — 5 = Needs Revision) <a id="quick-reference-secondary-requirements"></a>
+
+| # | Requirement | Trigger |
+| --- | --- | --- |
+| 1 | Timeout mismatch | Verifier timeout < config timeout |
+| 2 | Base image / pinning | Unpinned image or deps |
+| 3 | PR-scope violation | Scope reduced/replaced (→ Structure if only fix) |
+| 4 | Coverage gap | Instructed behavior ungraded |
+| 5 | Metadata mismatch | Files-changed / writeup ≠ diff |
+| 6 | Over-prescriptive instruction | Names exact funcs/files/lines |
+| 7 | Templated / AI-generated instruction | Reads generated |
+| 8 | Instruction ambiguity | Required choice not derivable |
+| 9 | Non-deterministic test | Flakes without seed/order |
+| 10 | Missing regression test | No guard against re-break |
+| 11 | Difficulty drift (recoverable) | Under-difficult but raisable in-scope |
+
+### Verdict decision <a id="quick-reference-verdict-decision"></a>
+
+-   Any **Major** → Needs Revision (name the fix), or Not Fixable if the fix is out of EC scope.
+-   **5+ Minor** → Needs Revision (systemic).
+-   **1–4 Minor** → Accept + mandatory coaching comments.
+-   **Unfixable** → tag Structure vs Difficulty separately.
 
 
 ---
@@ -1183,6 +1358,20 @@ In almost every case a block is a **real, content-side result you need to act on
 -   **"Not run: difficulty screen"** in the summary just means the judge blocked first, so the later stage never ran — expected, not a second error.
 
 The **one** infra case is when the message explicitly says **"the difficulty screen failed with an infra error"** — that's a sandbox/platform crash, no verdict was produced, so retry (see the [infra-failure FAQ](#an-eval-failed-with-an-infra-platform-error-or-came-back-with-blank-feedback-is-my-task-broken)). If you get the *same* review-gate block repeatedly across different tasks, or several in a short window with otherwise-clean checks, flag it on Slack with the UIDs — a cluster can indicate a platform-side issue rather than a problem with each task.
+
+## Difficulty checks are now capped — what is "Invalid Difficulty"? <a id="difficulty-checks-are-now-capped-what-is-invalid-difficulty"></a>
+
+Before **August 14, 2026**, a task could cycle through the difficulty check with no limit.
+
+As of **August 14, 2026**, once **4 difficulty checks** have run on a task without passing, the task is automatically classified as **Invalid Difficulty** and goes to review as it stands. **This is not a rejection, and it does not apply retroactively to earlier tasks.**
+
+We've introduced this classification to avoid endless cycles on tasks that can't reach validity. We know how frustrating it is to spend time on tasks that ultimately can't be validated, and this gives every task a clear, predictable endpoint.
+
+> **Note:** **Please note:** the Invalid Difficulty selection will still be reviewed by a human reviewer.
+
+-   **What you'll see.** 4 new read-only fields. Two of them — *Difficulty checks run* and *Difficulty checks remaining* — show how many checks have run on a task and how many are left.
+-   **What you need to do.** At the limit, we will automatically change your answer on the validity question to **Invalid Difficulty**. The task returns to you once with that verdict already on it: submit it again for review without changing anything, and leave the verdict as we set it.
+-   **What doesn't count.** The counter only increases when a difficulty check runs and returns a result. If your submission comes back to you before the difficulty check runs, or a technical issue prevents a result, that submission does not count against you. If a reviewer sends the task back, the count restarts at zero.
 
 ## The linter rejects my task as "easy" after a difficulty downgrade — what do I do? <a id="the-linter-rejects-my-task-as-easy-after-a-difficulty-downgrade-what-do-i-do"></a>
 

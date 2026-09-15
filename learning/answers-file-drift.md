@@ -1,10 +1,12 @@
 ---
 id: answers-file-drift
 status: platform-confirmed
-last_verified: 2026-08-11
+last_verified: 2026-08-16
 verified_by:
+  - 20260805_220102__xaaha_hulak__118
   - 20260805_080500__statrs-dev_statrs__315
   - 20260807_080545__tair-opensource_redisshake__1005
+  - 20260803_111822__xlwings_xlwings__2719
 evidence: "One submission_answer.txt edited across five rounds. An adversarial audit run as five independent lenses returned 34 findings that deduplicated to about nine real ones, and several would have shipped. Separately, two batches of edits were silently discarded by a python script that asserted its way to an error before its single write at the end, both caught only by a later re-read"
 applies_to:
   languages: [any]
@@ -176,9 +178,11 @@ grep -ohE '\b(tests|solution|environment)/[A-Za-z0-9_./-]+' "$A" | sort -u | whi
 ```
 
 Then rewrite, do not edit, the three fields that describe **this round** rather than the bundle:
-the Send-to-reviewer line, Comments for Reviewer, and the difficulty answer. Editing a paragraph
+the pre-submit gate line, Comments for Reviewer, and the difficulty answer. Editing a paragraph
 written for a previous round leaves the previous round's reasoning underneath the new sentence,
-which is exactly how the Send line drifted here.
+which is exactly how that line drifted here. It was called the Send-to-reviewer line until the
+platform removed the checkbox on 2026-08-05, and the field survives as the record of whether the
+pre-submit gate was clear when the task was submitted.
 
 ## The question that was never no
 
@@ -215,6 +219,12 @@ itself on the same page** and neither the round audit nor a reviewer flagged it.
 not evidence that this is acceptable (LEDGER L53): it is evidence that a reviewer did not open
 `tests/config.json` to check.
 
+As of the 2026-08-13 export this is a named defect rather than only a workspace habit.
+`docs/reviewer-rubric.md:105` makes files-changed counts or a writeup that do not match the actual
+diff **Secondary Requirement 5**, a Minor violation flagged in 10% of reviewer comments, and five
+Minors across any combination is Needs Revision. So the counts below are worth a Minor each to the
+next reviewer who does open the config.
+
 **Why the existing checklist missed it.** Lens 1 below measures the live numbers and greps the
 file for what it claims, which catches a stale count in a headline sentence. It does not walk
 **Files Changed entry by entry**, and Files Changed is where a per-file "changed X to Y" sentence
@@ -236,9 +246,11 @@ grep -nE '[0-9]+ to [0-9]+|(one|two|three|four|five|six|seven|eight|nine|ten|el
 The spelled-out half of that grep is the part that matters. Every one of redisshake's four stale
 numbers except entry 5 was a **word**, not a digit, so a numeric grep could never have found them.
 
-**And re-decide the `Send to reviewer:` line every round.** redisshake's accepted file still read
+**And re-decide the pre-submit gate line every round.** redisshake's accepted file still read
 `Send to reviewer: No. This is the round 4 resubmission and the checks have not run against it`
-while the task was in front of a reviewer.
+while the task was in front of a reviewer. That field was named for a checkbox the platform removed
+on 2026-08-05. It is now the record of whether the pre-submit gate was clear at submit time, and it
+goes stale in exactly the same way.
 
 ## Your own six lenses are not an independent read
 
@@ -291,3 +303,199 @@ Two rules follow, and the second is the one that costs discipline:
   one here returned reward 1.0, meaning the edit missed its target and the run measured nothing
   (`bin/hostile-probe.sh` exits 3 for exactly this). The correct response was to state the measured
   reward drop and name only the ids that resolve, not to keep guessing at the name.
+
+## The console prints OK for edits that were never written
+
+Third instance, firefly 1123 round 5. The one-write-per-edit rule above exists because two edit
+batches were silently dropped. Here is the mechanism, which neither earlier instance recorded, and
+it is the reason the rule cannot be satisfied by "being careful".
+
+Three replacements went into one `python3` block, each printing a confirmation as it ran:
+
+```python
+s = read(p)
+rep(a1, b1, 'edit 1')   # prints OK
+rep(a2, b2, 'edit 2')   # prints OK
+rep(a3, b3, 'edit 3')   # AssertionError: anchor no longer present
+write(p, s)             # never reached
+```
+
+The console showed **OK for edits 1 and 2**, and neither reached the file, because the single
+`write()` sits after all three and the exception jumped over it. The transcript is then actively
+misleading rather than merely incomplete: a later audit that greps for edit 1 and finds it missing
+reads as drift that reappeared, when it never landed at all.
+
+Two rules, and the second is the one that catches it when the first is forgotten:
+
+- **One write per edit.** Each replacement reads, replaces and writes on its own, so a failure can
+  only lose the edit that failed. The output line is then evidence, because it is printed after the
+  write rather than before it.
+- **Grep the file for what you just changed, not the console.** `grep -c` on the new string, per
+  edit, after the batch. A count of zero means it did not land whatever the log said.
+
+The audit that caught it also shows why this matters more than it looks. Both dropped edits were
+Files Changed entries recording what the round changed. Losing them does not corrupt a number, it
+makes the round's own work invisible in the field the reviewer reads to see what moved, which is
+indistinguishable from not having done it.
+
+
+## Third instance, and the finding is that a careful re-read is not a check (xlwings 2719, accepted 2026-08-16)
+
+Nine rounds of editing, six of Check feedback and three of revision. The file was audited three
+separate times against measured ground truth, each audit run **after** a hand pass I had judged
+clean. They returned **9, then 11, then 6** confirmed defects, and the hand pass had missed every
+single one.
+
+**The defect is almost never a wrong number. It is a sentence that was true when written.** That is
+why re-reading fails: a sentence you wrote correctly does not look wrong when you scan past it, and
+a grep for numbers cannot see it at all. The three audits between them caught:
+
+| Sentence | Why it went false |
+|---|---|
+| "the golden patch now carries **one** addition" | a later round made it two, then three. **The most scope-sensitive claim in a submission** and it was understated twice |
+| "pinning the base image removes the drift" | the pin was reverted three rounds earlier, and the same file said so three times |
+| "**Nothing here has been submitted yet**" | the task had been submitted, and the same field said so three lines lower |
+| "five rounds of Check feedback, four returned results" | six did, and two other counts of the same thing disagreed |
+| "twenty two guards" / "forty one of forty one" | later rounds moved them to 23 and 43 |
+| "the three that pass" | in the same clause as "four passes" |
+
+### Two false statements I created while fixing other ones
+
+This is the part worth carrying. Fixing the base-image finding I wrote that **pinning the image is
+what broke the platform build**, when the cause was a `git -C /app update-index` call exiting 128
+under a non-owning uid, recorded in the same `task.md`. And fixing the round-count staleness I
+**added** a correct sentence without deleting the one that contradicted it, which is the
+supersede-do-not-append failure committed inside the pass meant to fix it.
+
+**A fix written quickly is where the next false statement comes from.** Verify each finding against
+the bundle yourself before acting, and re-read the sentence you just wrote against the record.
+
+### Annotating a superseded number is not removing it
+
+An earlier round's figures were relabelled "numbers from that round, kept as the record" and pointed
+forward to the current ones. That is not enough. A reviewer skimming a reviewer-facing field sees
+`forty one of forty one` and has to work out it is history. Superseded figures belong in `task.md`.
+The mechanical check below failed on the annotated version, correctly.
+
+## Two checks that catch this class mechanically, in `bin/checks/60-answers.sh`
+
+The per-round checklist above is a human procedure and it missed all of the above. These do not
+depend on anyone remembering:
+
+- **`answers.count-*`** reconciles any count stated in more than one place: additions to the source
+  PR, Check-feedback rounds, hostile probes. A disagreement is a FAIL. Added after the additions
+  count went wrong **three rounds running**, always in the same buried prose sentence while the two
+  prominent ones were updated.
+- **`answers.graded-total`** does not guess wording at all. It reads `tests/config.json`, computes
+  the graded total, and fails on any total-sized `N of N` in the prose that disagrees. This exists
+  because `answers.count-*` could not catch spelled-out figures like "forty one of forty one", and
+  guessing phrasings is a losing game.
+
+**Both were negative-tested when added**, by re-breaking the sentence in a scratch copy and
+confirming a FAIL. A check that has never failed is not evidence, and this workspace already has a
+rule about verifications built so they cannot fail on the thing they exist to catch.
+
+## Fourth instance, and the four classes a self-audit structurally cannot reach (hulak 118, accepted 2026-08-16)
+
+Four upload rounds, and the file was audited by three independent readers before the last one.
+Thirteen defects survived verification. The author's own mechanical pass had already caught **nine**,
+and the four it had not are the ones worth naming, because each is invisible to a whole lens rather
+than missed by a tired reader.
+
+**1. A sentence the author wrote in the same session.** "The tier itself has not been edited in any
+round" denies a change round 1 made at a reviewer's direct request. Every lens above measures the
+answers against the bundle in `upload/`, and **none of them measures against `download/original/`**,
+so a claim about what has NOT changed has nothing to fail against. The Attribution lens is the near
+miss and it runs one way only, checking work a round is credited with. Add the other direction: any
+sentence saying something was **not** touched gets `diff -rq download/original work -x '.git'` run
+against it before it ships.
+
+**2 and 3. Two counts nobody thought to derive.** "331 of the 350 graded ids live outside the
+patched files" is off by one, because one `pass_to_pass` entry is created **by** the patch, and "all
+331 measured passing at the base commit" inherits the same error. The Numbers checklist measures
+`fail_to_pass` and `pass_to_pass` lengths and file counts and stops there. The outside-the-patch
+figure has a command already, the Section 10.3 snippet, and the base-commit figure needs the tests
+run at base. **A count that took a script to produce needs that script re-run, not a re-read.**
+
+**4. A fact about somebody else's pull request.** The file said PR 155's "own tests and its second
+file are left out" when PR 155 has two files and the second one **is** its tests, so the sentence
+invented a third and double-counted. The Verifiability lens passes it, because that lens asks
+whether a claim names its source and this claim named PR 155. **Naming the source is not fetching
+it.** Any sentence describing what an upstream PR contains gets the API paged again before it ships.
+
+The lesson is one line and it is the same one xlwings measured from the other side. **A self-audit
+checks the claims it thought to make.** Every number verified was a number chosen for verification,
+and the four that got through were a sentence written minutes earlier, two counts nobody had derived
+separately, and an upstream fact recalled instead of re-fetched.
+
+## The pre-submit gate line is the field that goes stale most often
+
+Measured 2026-08-16 across all **eight** accepted answers files in `_archive/`. Two carry no such
+line, kvdex 245 because it predates the field and libcrux 1165 because Path C has none. Of the six
+that do:
+
+| Bundle | Line | Reads |
+|---|---|---|
+| statrs 315 | :119 | `Send to reviewer: No, for one pass.` |
+| xlwings 2719 | :122 | `Send to reviewer: Yes, once the checks come back green on this exact zip.` |
+| redisshake 1005 | :137 | `Send to reviewer: No. ... the checks have not run against it` |
+| elfuse 162 | :126 | `Send to reviewer: No. The zip has not been uploaded yet` |
+| hulak 118 | :129 | `Send to reviewer: No, not yet.` |
+| AltBeacon 1177 | :334 | `Send to reviewer: Yes. Every evaluation check passed on the last upload` |
+
+**Four of the six say No in a file that reached a reviewer and was accepted.** A fifth ships a Yes
+conditioned on checks that had not run. Only AltBeacon's is settled at the moment it shipped.
+
+And **all six use the retired name.** The checkbox was removed from the form on 2026-08-05
+(`docs/tasking-guide.md:251`) and the template at `.claude/rules/07-answer-templates.md` has said
+`Pre-submit gate:` ever since, so four of the six promise to tick a box that no longer exists, in
+front of the person deciding whether to accept the task.
+
+Nothing catches it. `bin/checks/60-answers.sh` has no check that reads this field, and the pre-send
+check only compares the file's mtime against the zip. **Rewrite this line every round rather than
+editing it**, and rename it while you are there. It is the one line in the file whose whole content
+is a statement about a moment that has already passed.
+
+See also [[self-inflicted-defects-dominate-late-rounds]], [[probe-the-instruction-you-already-wrote]].
+
+## Fifth instance, ziti-sdk-c 668, and it names an operation that invalidates a whole class of sentence
+
+The four earlier instances are stale **counts**. This one is a stale **enumeration**, and it has a
+trigger that can be written down.
+
+Round 6 folded `sentinel_ctrl_failover_stays_in_endpoint_set` into
+`sentinel_ctrl_failover_switches_endpoint`, keeping every assertion, to free a slot under the
+20-id ceiling. That edit silently falsified a sentence written in round 1: an issue block listing
+every graded id by name. It still named the folded test as current and it never named the id that
+took the slot. Both halves were wrong, and the file had already passed the per-round grep
+checklist, a full humanizer pass, and my own read.
+
+**The rule: any operation that merges, splits, renames or retires a graded id invalidates every
+enumeration of the graded set, not just every count of it.** Counts are what the checklist looks
+for and enumerations are what it misses, because an enumeration has no number in it to compare.
+
+The check is a set comparison rather than a grep, and it is worth running every round:
+
+```python
+import json, re
+cfg = json.load(open('work/tests/config.json'))['grading']
+a   = open('answers/submission_answer.txt', encoding='utf-8').read()
+graded = set(cfg['fail_to_pass']) | set(cfg['pass_to_pass'])
+named  = set(re.findall(r'\b(?:sentinel_[a-z_]+|invalid_controller)\b', a))   # your id shape
+print("named but not graded :", sorted(named - graded))    # ghosts
+print("graded but never named:", sorted(graded - named))   # omissions
+```
+
+Read both directions. Ghosts are the stale half and omissions are the missing half, and this fold
+produced one of each in the same sentence.
+
+**Two refinements from running it.** A ghost is not automatically a defect: the Files Changed entry
+that *explains* the fold names the retired id on purpose, and that mention is correct. Judge each
+hit rather than deleting on sight. And the omission side reported all six `pass_to_pass` ids as
+never named when the prose names every one of them in its runner form, `parse model_list` against
+the config's `parse_model_list`, so reconcile id spellings before believing that half.
+
+**Where it was caught.** Not by the checklist and not by reading. By a scripted audit run against
+`tests/config.json` after the file had already been declared finished, which is the same finding as
+the xlwings measurement above: the recurring defect is a sentence that was true when written and a
+later round made false, and that does not read as wrong when you scan past it.

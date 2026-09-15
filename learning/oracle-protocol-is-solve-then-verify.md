@@ -83,8 +83,8 @@ combined one, say that rather than quoting an oracle number.
   `learning/tests-patch-vs-agent-edits.md` frames the restore as protection against agent edits. It is
   also what makes the verifier re-runnable. On a bundle with no restore, run the cycle twice before
   believing any 3/3.
-- **On the reviewer path this belongs in the run list**, because it is cheap and it decides a Send-gate
-  condition the submitter cannot see from a green single run.
+- **On the reviewer path this belongs in the run list**, because it is cheap and it decides a
+  pre-submit gate condition the submitter cannot see from a green single run.
 - Confirming the fix is the same command. With a base64 payload restore plus a delete list read from
   the patch itself (`sed -n 's|^+++ b/||p'`), the same three cycles returned reward 1 on all three.
 
@@ -95,3 +95,30 @@ tree on run two and is still the classic `1/3` and `2/3` signature (`learning/so
 This note adds a second, independent mechanism with the same signature, sitting one file over, and the
 `0/3` versus `1/3` arithmetic in `.claude/rules/05-evals-and-quality-check.md` does not distinguish
 them. When a platform Oracle Check comes back below 3/3, check both.
+
+## The workspace's own tool implements the refuted shape (added 2026-08-18, LEDGER L102)
+
+`bin/local-run.sh` is the disposable NOP and oracle battery, and its five rows are `nop`, `oracle`,
+`agent-edit`, `collision` and `thrice`. Read `thrice` before trusting it:
+
+```
+bin/local-run.sh:268-272   thrice)  for i in 1 2 3; do bash /solution/solve.sh ... done
+bin/local-run.sh:341                bash /tests/test.sh; echo "LOCALRUN_TEST_SH_EXIT=$?"
+```
+
+That is `solve.sh` three times and then `test.sh` **once**, which is exactly the weaker check this
+note exists to separate from the real protocol. **No row in the tool runs `solve.sh` then `test.sh`
+three times**, so a fully green matrix has measured no oracle protocol at all. The row's own header
+comment makes it worse rather than better, because it says "the platform runs the oracle 3 times and
+needs 3 of 3" right beside it, which is the sentence that makes a reader take the row for the
+covering check.
+
+Run the protocol by hand until the tool is fixed: three cycles of `solve.sh` **then** `test.sh` in
+one container, reading the reward after each cycle.
+
+**Why it survived.** The tool is dated 2026-08-04 and this note was written 2026-08-11, so the rule
+landed a week after its tooling and nobody went back through `bin/` to see what still implemented the
+old shape. That is LEDGER **L93** in a different costume: there, a reverted `bin/rezip.sh` shipped a
+broken zip while reporting PASS, because the check it had lost went with it. The habit both point at
+is the same one. **When a rule changes, grep `bin/` for the refuted version before the next round
+relies on a green tool.**

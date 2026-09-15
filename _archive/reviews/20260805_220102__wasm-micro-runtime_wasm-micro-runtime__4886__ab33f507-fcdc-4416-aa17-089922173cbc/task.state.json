@@ -1,0 +1,20 @@
+{
+  "original_dir": "20260805_220102__wasm-micro-runtime_wasm-micro-runtime__4886",
+  "submission_id": "4e2fdfd9-59a3-4e50-b513-c2300b5e2399_submission_2026-08-16T19_00_50.678Z",
+  "repo": "",
+  "pr": "",
+  "verdict": "",
+  "status": "claimed",
+  "claimed": "2026-08-19",
+  "rounds": 0,
+  "last_upload": null,
+  "checks": {
+    "static": null,
+    "prescriptiveness": null,
+    "difficulty": null,
+    "oracle": null,
+    "quality": null
+  },
+  "blocking": null,
+  "next_action": "Step 2: read the bundle and cross-check the platform data block"
+}
